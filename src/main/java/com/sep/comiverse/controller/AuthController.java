@@ -60,7 +60,7 @@ public class AuthController {
         authService.forgotPassword(request.getEmail());
         return ResponseEntity.ok(BaseResponse.<String>builder()
                 .success(true)
-                .message("Mã OTP đã được gửi đến email của bạn.")
+                .message("An OTP code has been sent to your email.")
                 .build());
     }
 
@@ -69,7 +69,7 @@ public class AuthController {
         authService.resetPassword(request.getEmail(), request.getOtp(), request.getNewPassword());
         return ResponseEntity.ok(BaseResponse.<String>builder()
                 .success(true)
-                .message("Đổi mật khẩu thành công. Bạn có thể đăng nhập lại.")
+                .message("Password reset successful. You can now log in.")
                 .build());
     }
 

@@ -21,7 +21,7 @@ public class EmailUtil {
     @Value("${spring.mail.password}")
     private String APP_PASSWORD;
 
-    private static final String FROM_NAME = "ComiVerse - Cổng Truyện Tranh Số Một";
+    private static final String FROM_NAME = "ComiVerse - The Ultimate Comic Portal";
 
     private Properties getMailProperties() {
         Properties props = new Properties();
@@ -34,7 +34,7 @@ public class EmailUtil {
     }
 
     public void sendOTP(String toEmail, String otp, String name) {
-        String subject = "Mã OTP Khôi Phục Mật Khẩu";
+        String subject = "OTP Code for Password Recovery";
         String content = buildOTPContent(otp, name);
         sendEmail(toEmail, subject, content);
     }
@@ -57,20 +57,20 @@ public class EmailUtil {
             message.setContent(content, "text/html; charset=utf-8");
 
             Transport.send(message);
-            System.out.println("✅ Gửi email thành công đến: " + toEmail);
+            System.out.println("✅ Email sent successfully to: " + toEmail);
 
         } catch (AuthenticationFailedException e) {
-            System.err.println("❌ Lỗi xác thực: " + e.getMessage());
-            throw new CustomException(500, "Cấu hình email hệ thống bị lỗi. Vui lòng liên hệ Admin!", HttpStatus.INTERNAL_SERVER_ERROR);
+            System.err.println("❌ Authentication error: " + e.getMessage());
+            throw new CustomException(500, "System email credentials failed. Please contact Admin!", HttpStatus.INTERNAL_SERVER_ERROR);
         } catch (MessagingException e) {
-            System.err.println("❌ Lỗi mạng/SMTP: " + e.getMessage());
-            throw new CustomException(500, "Không thể gửi mail lúc này (Lỗi máy chủ hoặc email không hợp lệ).", HttpStatus.INTERNAL_SERVER_ERROR);
+            System.err.println("❌ SMTP/Network error: " + e.getMessage());
+            throw new CustomException(500, "Could not send email at this time (SMTP or email is invalid).", HttpStatus.INTERNAL_SERVER_ERROR);
         } catch (UnsupportedEncodingException e) {
-            System.err.println("❌ Lỗi encoding: " + e.getMessage());
-            throw new CustomException(500, "Lỗi định dạng email hệ thống.", HttpStatus.INTERNAL_SERVER_ERROR);
+            System.err.println("❌ Encoding error: " + e.getMessage());
+            throw new CustomException(500, "System email formatting error.", HttpStatus.INTERNAL_SERVER_ERROR);
         } catch (Exception e) {
-            System.err.println("❌ Lỗi không xác định: " + e.getMessage());
-            throw new CustomException(500, "Có lỗi hệ thống xảy ra khi gửi email: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+            System.err.println("❌ Unknown error: " + e.getMessage());
+            throw new CustomException(500, "An unknown error occurred during email transmission: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -90,17 +90,17 @@ public class EmailUtil {
                 b{color:#333;}
                 </style></head><body>
                 <div class='box'>
-                <h2>Khôi Phục Mật Khẩu - %s</h2>
-                <p>Xin chào <b>%s</b>,</p>
-                <p>Bạn vừa yêu cầu đặt lại mật khẩu. Vui lòng sử dụng mã OTP dưới đây để xác thực:</p>
+                <h2>Password Recovery - %s</h2>
+                <p>Hello <b>%s</b>,</p>
+                <p>You recently requested to reset your password. Please use the OTP code below to verify:</p>
                 <div class='otp-container'><div class='otp'>%s</div></div>
-                <p>Vui lòng sử dụng mã này để đổi mật khẩu mới.</p>
-                <hr><p style='font-size:12px;color:#999;'>Không chia sẻ mã này cho ai. Nếu không phải bạn yêu cầu, hãy bỏ qua email này.</p>
-                <p>Trân trọng,<br>Đội Ngũ Hỗ Trợ %s</p>
+                <p>Please use this code to set your new password.</p>
+                <hr><p style='font-size:12px;color:#999;'>Do not share this code with anyone. If you did not request this, please ignore this email.</p>
+                <p>Best regards,<br>Support Team %s</p>
                 </div></body></html>
             """.formatted(FROM_NAME, name, otp, FROM_NAME);
         } catch (Exception e) {
-            return "Mã OTP của bạn là: " + otp;
+            return "Your OTP code is: " + otp;
         }
     }
 }

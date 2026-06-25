@@ -66,7 +66,7 @@ public class AuthService {
     @Transactional
     public void forgotPassword(String email) {
         UserEntity user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new CustomException(404, "Không tìm thấy tài khoản với email này", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new CustomException(404, "No account found with this email", HttpStatus.NOT_FOUND));
 
         String otp = String.format("%06d", new Random().nextInt(999999));
         user.setResetToken(otp);
@@ -78,9 +78,9 @@ public class AuthService {
     @Transactional
     public void resetPassword(String email, String otp, String newPassword) {
         UserEntity user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new CustomException(404, "Không tìm thấy tài khoản với email này", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new CustomException(404, "No account found with this email", HttpStatus.NOT_FOUND));
         if (user.getResetToken() == null || !user.getResetToken().equals(otp)) {
-            throw new CustomException(400, "Mã OTP không hợp lệ hoặc đã hết hạn", HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Invalid or expired OTP code", HttpStatus.BAD_REQUEST);
         }
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setResetToken(null);
@@ -90,15 +90,15 @@ public class AuthService {
     @Transactional
     public UserEntity registerStaff(RegisterRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
-            throw new CustomException(400, "Tên đăng nhập đã tồn tại", HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Username already exists", HttpStatus.BAD_REQUEST);
         }
 
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new CustomException(400, "Email đã tồn tại", HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Email already exists", HttpStatus.BAD_REQUEST);
         }
 
         RoleEntity staffRole = roleRepository.findByRoleName("STAFF")
-                .orElseThrow(() -> new CustomException(500, "Role STAFF không tồn tại", HttpStatus.INTERNAL_SERVER_ERROR));
+                .orElseThrow(() -> new CustomException(500, "Role STAFF not found", HttpStatus.INTERNAL_SERVER_ERROR));
 
         UserEntity user = UserEntity.builder()
                 .username(request.getUsername())

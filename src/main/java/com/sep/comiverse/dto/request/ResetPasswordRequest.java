@@ -7,14 +7,14 @@ import lombok.Data;
 
 @Data
 public class ResetPasswordRequest {
-    @NotBlank(message = "Email không được để trống")
-    @Email(message = "Email không đúng định dạng")
+    @NotBlank(message = "Email cannot be blank")
+    @Email(message = "Invalid email format")
     private String email;
 
-    @NotBlank(message = "Mã OTP không được để trống")
+    @NotBlank(message = "OTP code cannot be blank")
     private String otp;
 
-    @NotBlank(message = "Mật khẩu mới không được để trống")
-    @Size(min = 6, message = "Mật khẩu mới phải có ít nhất 6 ký tự")
+    @NotBlank(message = "New password cannot be blank")
+    @Size(min = 6, message = "New password must have at least 6 characters")
     private String newPassword;
 }

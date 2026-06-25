@@ -5,25 +5,25 @@ import lombok.Data;
 
 @Data
 public class RegisterRequest {
-    @NotBlank(message = "Tên đăng nhập không được để trống")
-    @Size(min = 3, max = 20, message = "Tên đăng nhập phải từ 3 đến 20 ký tự")
-    @Pattern(regexp = "^[a-zA-Z0-9._]+$", message = "Tên đăng nhập chỉ chứa chữ cái, số, dấu chấm hoặc gạch dưới")
+    @NotBlank(message = "Username cannot be blank")
+    @Size(min = 3, max = 20, message = "Username must be between 3 and 20 characters")
+    @Pattern(regexp = "^[a-zA-Z0-9._]+$", message = "Username can only contain letters, numbers, dots or underscores")
     private String username;
 
-    @NotBlank(message = "Mật khẩu không được để trống")
-    @Size(min = 6, message = "Mật khẩu phải có ít nhất 6 ký tự")
+    @NotBlank(message = "Password cannot be blank")
+    @Size(min = 6, message = "Password must have at least 6 characters")
     private String password;
 
-    @NotBlank(message = "Họ tên không được để trống")
+    @NotBlank(message = "Full name cannot be blank")
     @Pattern(regexp = "^[a-zA-ZÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼỀỀỂưăạảấầẩẫậắằẳẵặẹẻẽềềểỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪễệỉịọỏốồổỗộớờởỡợụủứừỬỮỰỲỴÝỶỸửữựỳỵỷỹ\\s]{2,50}$",
-            message = "Họ tên không hợp lệ (không chứa số hoặc ký tự đặc biệt)")
+            message = "Invalid full name (special characters or numbers not allowed)")
     private String fullName;
 
-    @NotBlank(message = "Email không được để trống")
-    @Email(message = "Email không đúng định dạng")
+    @NotBlank(message = "Email cannot be blank")
+    @Email(message = "Invalid email format")
     private String email;
 
     @Pattern(regexp = "^(0|\\+84)[3|5|7|8|9][0-9]{8}$",
-            message = "Số điện thoại không đúng định dạng Việt Nam")
+            message = "Invalid phone number format")
     private String phone;
 }

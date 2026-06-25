@@ -24,7 +24,7 @@ public class CustomUserDetailsService implements UserDetailsService {
                 .orElseThrow(() -> new UsernameNotFoundException("User not found with username or email: " + username));
 
         if ("INACTIVE".equals(user.getStatus())) {
-            throw new CustomException(401, "Tài khoản của bạn đã bị khóa", HttpStatus.UNAUTHORIZED);
+            throw new CustomException(401, "Your account has been locked.", HttpStatus.UNAUTHORIZED);
         }
 
         return new UserPrincipal(user);
