@@ -26,4 +26,6 @@ public class RegisterRequest {
     @Pattern(regexp = "^(0|\\+84)[3|5|7|8|9][0-9]{8}$",
             message = "Invalid phone number format")
     private String phone;
+
+    private String role;
 }
