@@ -11,7 +11,7 @@ import lombok.NoArgsConstructor;
 @EqualsAndHashCode(callSuper = true)
 public class AdminUserSearchDTO extends PaginationSearchDTO {
 
-    @Schema(description = "Filter by role name (e.g. USER, STAFF, ADMIN)")
+    @Schema(description = "Filter by role name (e.g. Reader, Moderator, Author, Translator, Admin)")
     @JsonProperty("role")
     private String role;
 

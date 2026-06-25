@@ -26,28 +26,19 @@ public class DbInitializer implements CommandLineRunner {
 
     private void createRoles() {
         if (roleRepository.count() == 0) {
-            RoleEntity adminRole = RoleEntity.builder()
-                    .roleName("ADMIN")
-                    .build();
-            roleRepository.save(adminRole);
+            roleRepository.save(RoleEntity.builder().roleName("Admin").build());
+            roleRepository.save(RoleEntity.builder().roleName("Moderator").build());
+            roleRepository.save(RoleEntity.builder().roleName("Author").build());
+            roleRepository.save(RoleEntity.builder().roleName("Translator").build());
+            roleRepository.save(RoleEntity.builder().roleName("Reader").build());
 
-            RoleEntity staffRole = RoleEntity.builder()
-                    .roleName("STAFF")
-                    .build();
-            roleRepository.save(staffRole);
-
-            RoleEntity userRole = RoleEntity.builder()
-                    .roleName("USER")
-                    .build();
-            roleRepository.save(userRole);
-
-            System.out.println("✅ Created roles: ADMIN, STAFF, USER");
+            System.out.println("✅ Created roles: Admin, Moderator, Author, Translator, Reader");
         }
     }
 
     private void createAdmin() {
         if (!userRepository.existsByUsername("admin")) {
-            RoleEntity adminRole = roleRepository.findByRoleName("ADMIN")
+            RoleEntity adminRole = roleRepository.findByRoleName("Admin")
                     .orElseThrow(() -> new RuntimeException("Admin role not found"));
 
             UserEntity admin = UserEntity.builder()
@@ -57,6 +48,7 @@ public class DbInitializer implements CommandLineRunner {
                     .email("admin@comiverse.com")
                     .phone("0123456789")
                     .role(adminRole)
+                    .status("ACTIVE")
                     .build();
 
             userRepository.save(admin);
@@ -65,27 +57,29 @@ public class DbInitializer implements CommandLineRunner {
     }
 
     private void createStaffs() {
-        createStaff("staff1", "Staff Member 1", "staff1@comiverse.com", "0987654321");
-        createStaff("staff2", "Staff Member 2", "staff2@comiverse.com", "0987654322");
+        createSampleUser("moderator1", "Moderator One", "moderator1@comiverse.com", "0987654321", "Moderator", "staff123");
+        createSampleUser("author1", "Author One", "author1@comiverse.com", "0987654322", "Author", "staff123");
+        createSampleUser("translator1", "Translator One", "translator1@comiverse.com", "0987654323", "Translator", "staff123");
+        createSampleUser("reader1", "Reader One", "reader1@comiverse.com", "0987654324", "Reader", "reader123");
     }
 
-    private void createStaff(String username, String fullName, String email, String phone) {
+    private void createSampleUser(String username, String fullName, String email, String phone, String roleName, String password) {
         if (!userRepository.existsByUsername(username)) {
-            RoleEntity staffRole = roleRepository.findByRoleName("STAFF")
-                    .orElseThrow(() -> new RuntimeException("Staff role not found"));
+            RoleEntity targetRole = roleRepository.findByRoleName(roleName)
+                    .orElseThrow(() -> new RuntimeException(roleName + " role not found"));
 
-            UserEntity staff = UserEntity.builder()
+            UserEntity user = UserEntity.builder()
                     .username(username)
-                    .password(passwordEncoder.encode("staff123"))
+                    .password(passwordEncoder.encode(password))
                     .fullName(fullName)
                     .email(email)
                     .phone(phone)
-                    .role(staffRole)
+                    .role(targetRole)
                     .status("ACTIVE")
                     .build();
 
-            userRepository.save(staff);
-            System.out.println("Created " + username + ": " + username + " / staff123");
+            userRepository.save(user);
+            System.out.println("Created " + username + " (" + roleName + "): " + username + " / " + password);
         }
     }
 }
