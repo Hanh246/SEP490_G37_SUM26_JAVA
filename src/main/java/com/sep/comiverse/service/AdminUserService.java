@@ -45,7 +45,7 @@ public class AdminUserService {
     public AdminUserResponse banUser(UUID userId) {
         UserEntity user = findUserOrThrow(userId);
 
-        if ("Admin".equalsIgnoreCase(user.getRole().getRoleName())) {
+        if ("ADMIN".equalsIgnoreCase(user.getRole().getRoleName())) {
             throw new CustomException(400, "Cannot ban an Admin account", HttpStatus.BAD_REQUEST);
         }
 
@@ -143,7 +143,7 @@ public class AdminUserService {
     }
 
     private AdminUserResponse toAdminUserResponse(UserEntity user) {
-        String roleName = user.getRole() != null ? user.getRole().getRoleName() : "Reader";
+        String roleName = user.getRole() != null ? user.getRole().getRoleName() : "READER";
 
         // Map INACTIVE -> Banned, ACTIVE -> Active for frontend display
         String displayStatus;

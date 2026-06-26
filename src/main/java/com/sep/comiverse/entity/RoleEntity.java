@@ -15,5 +15,5 @@ import lombok.*;
 public class RoleEntity extends BaseEntity {
 
     @Column(name = "role_name", nullable = false, unique = true)
-    private String roleName; // ADMIN, STAFF, USER
+    private String roleName; // ADMIN, MODERATOR, AUTHOR, READER, TRANSLATOR
 }

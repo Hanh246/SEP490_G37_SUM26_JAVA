@@ -42,8 +42,8 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
             }
             userRepository.save(user);
         } else {
-            RoleEntity userRole = roleRepository.findByRoleName("Reader")
-                    .orElseThrow(() -> new RuntimeException("Default role 'Reader' not found"));
+            RoleEntity userRole = roleRepository.findByRoleName("READER")
+                    .orElseThrow(() -> new RuntimeException("Default role 'READER' not found"));
             user = UserEntity.builder()
                     .email(email)
                     .fullName(name)

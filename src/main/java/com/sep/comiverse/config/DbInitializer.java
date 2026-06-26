@@ -25,21 +25,24 @@ public class DbInitializer implements CommandLineRunner {
     }
 
     private void createRoles() {
-        if (roleRepository.count() == 0) {
-            roleRepository.save(RoleEntity.builder().roleName("Admin").build());
-            roleRepository.save(RoleEntity.builder().roleName("Moderator").build());
-            roleRepository.save(RoleEntity.builder().roleName("Author").build());
-            roleRepository.save(RoleEntity.builder().roleName("Translator").build());
-            roleRepository.save(RoleEntity.builder().roleName("Reader").build());
+        createRoleIfNotExist("ADMIN");
+        createRoleIfNotExist("MODERATOR");
+        createRoleIfNotExist("AUTHOR");
+        createRoleIfNotExist("TRANSLATOR");
+        createRoleIfNotExist("READER");
+    }
 
-            System.out.println("✅ Created roles: Admin, Moderator, Author, Translator, Reader");
+    private void createRoleIfNotExist(String roleName) {
+        if (!roleRepository.findByRoleName(roleName).isPresent()) {
+            roleRepository.save(RoleEntity.builder().roleName(roleName).build());
+            System.out.println("✅ Created role: " + roleName);
         }
     }
 
     private void createAdmin() {
         if (!userRepository.existsByUsername("admin")) {
-            RoleEntity adminRole = roleRepository.findByRoleName("Admin")
-                    .orElseThrow(() -> new RuntimeException("Admin role not found"));
+            RoleEntity adminRole = roleRepository.findByRoleName("ADMIN")
+                    .orElseThrow(() -> new RuntimeException("ADMIN role not found"));
 
             UserEntity admin = UserEntity.builder()
                     .username("admin")
@@ -57,10 +60,10 @@ public class DbInitializer implements CommandLineRunner {
     }
 
     private void createStaffs() {
-        createSampleUser("moderator1", "Moderator One", "moderator1@comiverse.com", "0987654321", "Moderator", "staff123");
-        createSampleUser("author1", "Author One", "author1@comiverse.com", "0987654322", "Author", "staff123");
-        createSampleUser("translator1", "Translator One", "translator1@comiverse.com", "0987654323", "Translator", "staff123");
-        createSampleUser("reader1", "Reader One", "reader1@comiverse.com", "0987654324", "Reader", "reader123");
+        createSampleUser("moderator1", "Moderator One", "moderator1@comiverse.com", "0987654321", "MODERATOR", "staff123");
+        createSampleUser("author1", "Author One", "author1@comiverse.com", "0987654322", "AUTHOR", "staff123");
+        createSampleUser("translator1", "Translator One", "translator1@comiverse.com", "0987654323", "TRANSLATOR", "staff123");
+        createSampleUser("reader1", "Reader One", "reader1@comiverse.com", "0987654324", "READER", "reader123");
     }
 
     private void createSampleUser(String username, String fullName, String email, String phone, String roleName, String password) {
