@@ -19,30 +19,59 @@ public class DbInitializer implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        createRoles();
+        updateRolesAndUsers();
         createAdmin();
         createStaffs();
     }
 
-    private void createRoles() {
-        if (roleRepository.count() == 0) {
-            RoleEntity adminRole = RoleEntity.builder()
-                    .roleName("ADMIN")
-                    .build();
-            roleRepository.save(adminRole);
+    private void updateRolesAndUsers() {
+        // Ensure new roles exist
+        RoleEntity adminRole = roleRepository.findByRoleName("ADMIN")
+                .orElseGet(() -> roleRepository.save(RoleEntity.builder().roleName("ADMIN").build()));
 
-            RoleEntity staffRole = RoleEntity.builder()
-                    .roleName("STAFF")
-                    .build();
-            roleRepository.save(staffRole);
+        RoleEntity moderatorRole = roleRepository.findByRoleName("MODERATOR")
+                .orElseGet(() -> roleRepository.save(RoleEntity.builder().roleName("MODERATOR").build()));
 
-            RoleEntity userRole = RoleEntity.builder()
-                    .roleName("USER")
-                    .build();
-            roleRepository.save(userRole);
+        RoleEntity authorRole = roleRepository.findByRoleName("AUTHOR")
+                .orElseGet(() -> roleRepository.save(RoleEntity.builder().roleName("AUTHOR").build()));
 
-            System.out.println("✅ Created roles: ADMIN, STAFF, USER");
+        RoleEntity translatorRole = roleRepository.findByRoleName("TRANSLATOR")
+                .orElseGet(() -> roleRepository.save(RoleEntity.builder().roleName("TRANSLATOR").build()));
+
+        RoleEntity readerRole = roleRepository.findByRoleName("READER")
+                .orElseGet(() -> roleRepository.save(RoleEntity.builder().roleName("READER").build()));
+
+        // Map and clean up legacy STAFF role if present
+        java.util.Optional<RoleEntity> staffRoleOpt = roleRepository.findByRoleName("STAFF");
+        if (staffRoleOpt.isPresent()) {
+            RoleEntity staffRole = staffRoleOpt.get();
+            java.util.List<UserEntity> staffUsers = userRepository.findAll().stream()
+                    .filter(u -> u.getRole() != null && u.getRole().getId().equals(staffRole.getId()))
+                    .collect(java.util.stream.Collectors.toList());
+            for (UserEntity u : staffUsers) {
+                u.setRole(moderatorRole);
+                userRepository.save(u);
+            }
+            roleRepository.delete(staffRole);
+            System.out.println("✅ Migrated STAFF users to MODERATOR and deleted legacy STAFF role.");
         }
+
+        // Map and clean up legacy USER role if present
+        java.util.Optional<RoleEntity> userRoleOpt = roleRepository.findByRoleName("USER");
+        if (userRoleOpt.isPresent()) {
+            RoleEntity userRole = userRoleOpt.get();
+            java.util.List<UserEntity> userUsers = userRepository.findAll().stream()
+                    .filter(u -> u.getRole() != null && u.getRole().getId().equals(userRole.getId()))
+                    .collect(java.util.stream.Collectors.toList());
+            for (UserEntity u : userUsers) {
+                u.setRole(readerRole);
+                userRepository.save(u);
+            }
+            roleRepository.delete(userRole);
+            System.out.println("✅ Migrated USER users to READER and deleted legacy USER role.");
+        }
+
+        System.out.println("✅ Database roles verification complete: ADMIN, MODERATOR, AUTHOR, TRANSLATOR, READER exist.");
     }
 
     private void createAdmin() {
@@ -71,8 +100,8 @@ public class DbInitializer implements CommandLineRunner {
 
     private void createStaff(String username, String fullName, String email, String phone) {
         if (!userRepository.existsByUsername(username)) {
-            RoleEntity staffRole = roleRepository.findByRoleName("STAFF")
-                    .orElseThrow(() -> new RuntimeException("Staff role not found"));
+            RoleEntity staffRole = roleRepository.findByRoleName("MODERATOR")
+                    .orElseThrow(() -> new RuntimeException("Moderator role not found"));
 
             UserEntity staff = UserEntity.builder()
                     .username(username)

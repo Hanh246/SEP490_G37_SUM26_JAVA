@@ -143,7 +143,7 @@ public class AdminUserService {
     }
 
     private AdminUserResponse toAdminUserResponse(UserEntity user) {
-        String roleName = user.getRole() != null ? user.getRole().getRoleName() : "USER";
+        String roleName = user.getRole() != null ? user.getRole().getRoleName() : "READER";
 
         // Map INACTIVE -> Banned, ACTIVE -> Active for frontend display
         String displayStatus;

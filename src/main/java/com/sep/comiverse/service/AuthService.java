@@ -47,8 +47,8 @@ public class AuthService {
             throw new CustomException(400, "Email already exists", HttpStatus.BAD_REQUEST);
         }
 
-        RoleEntity userRole = roleRepository.findByRoleName("USER")
-                .orElseThrow(() -> new CustomException(500, "Role USER not found", HttpStatus.INTERNAL_SERVER_ERROR));
+        RoleEntity userRole = roleRepository.findByRoleName("READER")
+                .orElseThrow(() -> new CustomException(500, "Role READER not found", HttpStatus.INTERNAL_SERVER_ERROR));
 
         UserEntity user = UserEntity.builder()
                 .username(request.getUsername())
@@ -99,7 +99,7 @@ public class AuthService {
 
         String roleParam = request.getRole();
         final String finalRoleName = (roleParam == null || roleParam.trim().isEmpty()) 
-                ? "STAFF" 
+                ? "READER" 
                 : roleParam.toUpperCase().trim();
 
         RoleEntity targetRole = roleRepository.findByRoleName(finalRoleName)
