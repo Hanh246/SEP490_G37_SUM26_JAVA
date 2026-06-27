@@ -99,8 +99,8 @@ public class AuthService {
 
         String roleParam = request.getRole();
         final String finalRoleName = (roleParam == null || roleParam.trim().isEmpty()) 
-                ? "READER" 
-                : roleParam.toUpperCase().trim();
+                ? "MODERATOR" 
+                : roleParam.trim().toUpperCase();
 
         RoleEntity targetRole = roleRepository.findByRoleName(finalRoleName)
                 .orElseThrow(() -> new CustomException(400, "Role " + finalRoleName + " not found", HttpStatus.BAD_REQUEST));
@@ -116,5 +116,10 @@ public class AuthService {
                 .build();
 
         return userRepository.save(user);
+    }
+
+    private String capitalizeFirst(String str) {
+        if (str == null || str.isEmpty()) return str;
+        return str.substring(0, 1).toUpperCase() + str.substring(1).toLowerCase();
     }
 }

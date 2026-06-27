@@ -46,7 +46,7 @@ public class AdminUserService {
         UserEntity user = findUserOrThrow(userId);
 
         if ("ADMIN".equalsIgnoreCase(user.getRole().getRoleName())) {
-            throw new CustomException(400, "Cannot ban an ADMIN account", HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Cannot ban an Admin account", HttpStatus.BAD_REQUEST);
         }
 
         if ("INACTIVE".equals(user.getStatus())) {

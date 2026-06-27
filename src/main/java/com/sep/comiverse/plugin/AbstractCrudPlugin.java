@@ -20,6 +20,10 @@ public class AbstractCrudPlugin<MODEL extends BaseEntity, DTO, ID, P extends Pag
     protected final PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry;
     protected final IMapperPluginDetail<MODEL, DTO, ID> plugin;
 
+    public IMapperPluginDetail<MODEL, DTO, ID> getPlugin() {
+        return plugin;
+    }
+
     @Override
     public boolean supports(Class<?> delimiter) {
         return modelClass.equals(delimiter);
