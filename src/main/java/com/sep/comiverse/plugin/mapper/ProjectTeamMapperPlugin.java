@@ -22,6 +22,8 @@ public class ProjectTeamMapperPlugin extends AbstractMapperPlugin<ProjectTeamEnt
     public ProjectTeamDTO toDto(ProjectTeamEntity model) {
         if (model == null) return null;
         ProjectTeamDTO dto = super.toDto(model);
+        dto.setComicTitle(model.getComicName());
+        dto.setNotes(model.getNotes());
         if (model.getChaptersList() != null) {
             dto.setChaptersList(model.getChaptersList().stream()
                     .map(chap -> {
@@ -36,6 +38,13 @@ public class ProjectTeamMapperPlugin extends AbstractMapperPlugin<ProjectTeamEnt
                     .collect(Collectors.toList()));
         }
         return dto;
+    }
+
+    @Override
+    protected void configureModelMapper() {
+        super.configureModelMapper();
+        modelMapper.typeMap(ProjectTeamDTO.class, ProjectTeamEntity.class)
+                .addMappings(mapper -> mapper.skip(ProjectTeamEntity::setChaptersList));
     }
 
     @Override
