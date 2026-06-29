@@ -5,6 +5,9 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.*;
 
+import java.util.Date;
+import java.util.UUID;
+
 @Data
 @Entity
 @NoArgsConstructor
@@ -14,8 +17,20 @@ import lombok.*;
 @EqualsAndHashCode(callSuper = true)
 public class ComicEntity extends BaseEntity {
 
+    @Column(name = "author_id")
+    private UUID authorId;
+
     @Column(name = "title", nullable = false)
     private String title;
+
+    @Column(name = "slug")
+    private String slug;
+
+    @Column(name = "description", columnDefinition = "TEXT")
+    private String description;
+
+    @Column(name = "cover_image_url")
+    private String coverImageUrl;
 
     @Column(name = "author")
     private String author;
@@ -30,11 +45,20 @@ public class ComicEntity extends BaseEntity {
     private String views;
 
     @Column(name = "status")
-    private String status; // Ongoing, Completed, Paused, Archived
+    private String status; // Publication status: Ongoing, Completed, Hiatus, Archived
+
+    @Column(name = "moderation_status")
+    private String moderationStatus; // DRAFT, SUBMITTED_FOR_REVIEW, PUBLISHED, REJECTED, NEEDS_CHANGES
+
+    @Column(name = "moderation_note", columnDefinition = "TEXT")
+    private String moderationNote;
+
+    @Column(name = "published_at")
+    private Date publishedAt;
 
     @Column(name = "genres")
     private String genres; // Comma-separated list of genres (e.g. "Action, Fantasy")
 
     @Column(name = "cover")
-    private String cover; // Cover emoji or image path (e.g. "⚔️")
+    private String cover; // Cover emoji or image path fallback
 }

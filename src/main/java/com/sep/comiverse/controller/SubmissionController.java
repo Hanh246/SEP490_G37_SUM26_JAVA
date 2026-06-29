@@ -7,6 +7,8 @@ import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.ProjectTeamEntity;
 import com.sep.comiverse.entity.SubmissionEntity;
+import com.sep.comiverse.entity.enums.ChapterStatus;
+import com.sep.comiverse.entity.enums.ComicStatus;
 import com.sep.comiverse.plugin.crud.SubmissionCrudPlugin;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IComicRepository;
@@ -60,28 +62,48 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
         // Process side effects of approval
         if ("author".equalsIgnoreCase(submission.getQueueType())) {
-            // Approving an author submission creates/updates a comic
-            String title = submission.getTitle();
-            ComicEntity comic = comicRepository.findByTitle(title).orElse(null);
-            if (comic != null) {
-                comic.setChapters(comic.getChapters() + 1);
-                comicRepository.save(comic);
+            if (submission.getChapterId() != null) {
+                ChapterEntity chapter = chapterRepository.findById(submission.getChapterId())
+                        .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Chapter with id " + submission.getChapterId() + " not found"));
+                chapter.setStatus(ChapterStatus.APPROVED);
+                chapter.setApprovedAt(new java.util.Date());
+                chapterRepository.save(chapter);
+
+                comicRepository.findById(submission.getComicId()).ifPresent(comic -> {
+                    comic.setModerationStatus(ComicStatus.PUBLISHED.name());
+                    comic.setChapters((comic.getChapters() == null ? 0 : comic.getChapters()) + 1);
+                    if (comic.getPublishedAt() == null) {
+                        comic.setPublishedAt(new java.util.Date());
+                    }
+                    comicRepository.save(comic);
+                });
             } else {
-                String authorName = submission.getSubmittedBy();
-                if (authorName != null && authorName.startsWith("Author: ")) {
-                    authorName = authorName.substring(8);
+                // Backward-compatible approval for old author submissions without chapter linkage.
+                String title = submission.getTitle();
+                ComicEntity comic = comicRepository.findByTitle(title).orElse(null);
+                if (comic != null) {
+                    comic.setChapters((comic.getChapters() == null ? 0 : comic.getChapters()) + 1);
+                    comicRepository.save(comic);
+                } else {
+                    String authorName = submission.getSubmittedBy();
+                    if (authorName != null && authorName.startsWith("Author: ")) {
+                        authorName = authorName.substring(8);
+                    }
+                    ComicEntity newComic = ComicEntity.builder()
+                            .title(title)
+                            .author(authorName)
+                            .projectTeam("-")
+                            .chapters(1)
+                            .views("0")
+                            .status("Ongoing")
+                            .moderationStatus(ComicStatus.PUBLISHED.name())
+                            .genres("Action, Fantasy")
+                            .cover(submission.getCover() != null ? submission.getCover() : "📖")
+                            .coverImageUrl(submission.getCover())
+                            .publishedAt(new java.util.Date())
+                            .build();
+                    comicRepository.save(newComic);
                 }
-                ComicEntity newComic = ComicEntity.builder()
-                        .title(title)
-                        .author(authorName)
-                        .projectTeam("-")
-                        .chapters(1)
-                        .views("0")
-                        .status("Ongoing")
-                        .genres("Action, Fantasy")
-                        .cover(submission.getCover() != null ? submission.getCover() : "📖")
-                        .build();
-                comicRepository.save(newComic);
             }
         } else if ("translator".equalsIgnoreCase(submission.getQueueType())) {
             // Approving a translator submission increments project chapters & adds a chapter record
@@ -133,6 +155,15 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         String reason = body != null ? body.getOrDefault("reason", "No reason provided.") : "No reason provided.";
         submission.setStatus("rejected");
         submission.setRejectionReason(reason);
+
+        if ("author".equalsIgnoreCase(submission.getQueueType()) && submission.getChapterId() != null) {
+            chapterRepository.findById(submission.getChapterId()).ifPresent(chapter -> {
+                chapter.setStatus(ChapterStatus.REJECTED);
+                chapter.setRejectedAt(new java.util.Date());
+                chapter.setModerationNote(reason);
+                chapterRepository.save(chapter);
+            });
+        }
 
         SubmissionEntity savedSubmission = submissionRepository.save(submission);
 

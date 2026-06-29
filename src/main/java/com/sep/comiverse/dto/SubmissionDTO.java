@@ -9,6 +9,9 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class SubmissionDTO {
+    private UUID comicId;
+    private UUID chapterId;
+    private UUID authorId;
     private UUID id;
     private String title;
     private String chapter;

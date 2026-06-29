@@ -1,0 +1,122 @@
+package com.sep.comiverse.controller;
+
+import com.sep.comiverse.dto.pagination.PaginationMetadata;
+import com.sep.comiverse.dto.pagination.PaginationResponse;
+import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
+import com.sep.comiverse.dto.request.AuthorComicCreateRequest;
+import com.sep.comiverse.dto.request.AuthorComicUpdateRequest;
+import com.sep.comiverse.dto.response.AuthorComicResponse;
+import com.sep.comiverse.dto.response.BaseResponse;
+import com.sep.comiverse.security.UserPrincipal;
+import com.sep.comiverse.service.AuthorComicService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Page;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/author/comics")
+@RequiredArgsConstructor
+@PreAuthorize("hasAuthority('AUTHOR')")
+@Tag(name = "Author - Comics", description = "APIs for author comic creation and management")
+public class AuthorComicController {
+
+    private final AuthorComicService authorComicService;
+
+    @PostMapping
+    @Operation(summary = "Create a new comic", description = "Creates a comic owned by the authenticated author and sends it to moderation review")
+    public ResponseEntity<BaseResponse<AuthorComicResponse>> createComic(
+            @Valid @RequestBody AuthorComicCreateRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        applyPrincipalAuthorId(request, principal);
+        AuthorComicResponse data = authorComicService.createComic(request);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(BaseResponse.<AuthorComicResponse>builder()
+                        .success(true)
+                        .message("Comic submitted for moderator review")
+                        .data(data)
+                        .build());
+    }
+
+    @GetMapping
+    @Operation(summary = "List own comics", description = "Returns comics owned by the authenticated author")
+    public ResponseEntity<PaginationResponse<List<AuthorComicResponse>>> listOwnComics(
+            @RequestParam(value = "authorId", required = false) UUID authorId,
+            @Valid @ParameterObject PaginationSearchDTO pagination,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        UUID resolvedAuthorId = resolveAuthorId(authorId, principal);
+        Page<AuthorComicResponse> data = authorComicService.listOwnComics(resolvedAuthorId, pagination);
+        return ResponseEntity.ok(
+                PaginationResponse.<List<AuthorComicResponse>>builder()
+                        .success(true)
+                        .data(data.getContent())
+                        .metadata(new PaginationMetadata(
+                                pagination.getPage(),
+                                pagination.getSize(),
+                                data.getTotalElements(),
+                                data.getTotalPages()
+                        ))
+                        .build()
+        );
+    }
+
+    @GetMapping("/{comicId}")
+    @Operation(summary = "Get own comic detail", description = "Returns detail for one comic owned by the authenticated author")
+    public ResponseEntity<BaseResponse<AuthorComicResponse>> getComic(
+            @PathVariable UUID comicId,
+            @RequestParam(value = "authorId", required = false) UUID authorId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        UUID resolvedAuthorId = resolveAuthorId(authorId, principal);
+        return ResponseEntity.ok(BaseResponse.<AuthorComicResponse>builder()
+                .success(true)
+                .data(authorComicService.getComic(comicId, resolvedAuthorId))
+                .build());
+    }
+
+    @PutMapping("/{comicId}")
+    @Operation(summary = "Update own comic", description = "Updates editable comic information for the authenticated author")
+    public ResponseEntity<BaseResponse<AuthorComicResponse>> updateComic(
+            @PathVariable UUID comicId,
+            @Valid @RequestBody AuthorComicUpdateRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        applyPrincipalAuthorId(request, principal);
+        return ResponseEntity.ok(BaseResponse.<AuthorComicResponse>builder()
+                .success(true)
+                .message("Comic information updated")
+                .data(authorComicService.updateComic(comicId, request))
+                .build());
+    }
+
+    private UUID resolveAuthorId(UUID requestAuthorId, UserPrincipal principal) {
+        if (principal != null) {
+            return principal.getId();
+        }
+        return requestAuthorId;
+    }
+
+    private void applyPrincipalAuthorId(AuthorComicCreateRequest request, UserPrincipal principal) {
+        if (principal != null) {
+            request.setAuthorId(principal.getId());
+        }
+    }
+
+    private void applyPrincipalAuthorId(AuthorComicUpdateRequest request, UserPrincipal principal) {
+        if (principal != null) {
+            request.setAuthorId(principal.getId());
+        }
+    }
+}

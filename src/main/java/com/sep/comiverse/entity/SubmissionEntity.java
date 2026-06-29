@@ -3,6 +3,8 @@ package com.sep.comiverse.entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+
+import java.util.UUID;
 import lombok.*;
 
 @Data
@@ -13,6 +15,16 @@ import lombok.*;
 @Table(name = "submissions")
 @EqualsAndHashCode(callSuper = true)
 public class SubmissionEntity extends BaseEntity {
+
+
+    @Column(name = "comic_id")
+    private UUID comicId;
+
+    @Column(name = "chapter_id")
+    private UUID chapterId;
+
+    @Column(name = "author_id")
+    private UUID authorId;
 
     @Column(name = "title", nullable = false)
     private String title;
