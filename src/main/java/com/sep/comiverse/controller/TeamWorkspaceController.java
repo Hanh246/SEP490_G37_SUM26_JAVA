@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/team-workspace")
+@RequestMapping("/team-workspace")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*")
 public class TeamWorkspaceController {
