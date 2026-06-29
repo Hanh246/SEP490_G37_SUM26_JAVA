@@ -25,6 +25,8 @@ public class ProjectTeamDTO {
     private String priority;
     private String cover;
     private String description;
+    private String notes;
+    private String comicTitle;
     private Boolean assignedToMe;
     private List<ChapterDTO> chaptersList;
 }
