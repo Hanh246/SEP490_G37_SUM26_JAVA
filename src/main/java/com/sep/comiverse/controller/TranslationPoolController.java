@@ -3,12 +3,17 @@ package com.sep.comiverse.controller;
 import com.sep.comiverse.dto.TranslationRequestDTO;
 import com.sep.comiverse.dto.ProjectTeamDTO;
 import com.sep.comiverse.dto.response.BaseResponse;
+import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
+import com.sep.comiverse.dto.pagination.PaginationResponse;
+import com.sep.comiverse.dto.pagination.PaginationMetadata;
 import com.sep.comiverse.entity.ProjectTeamEntity;
 import com.sep.comiverse.repository.IProjectTeamRepository;
 import com.sep.comiverse.plugin.mapper.ProjectTeamMapperPlugin;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -71,18 +76,39 @@ public class TranslationPoolController {
     }
 
     @GetMapping("/unclaimed")
-    @Operation(summary = "Get unclaimed translation projects", description = "Returns all projects with status UNCLAIMED")
-    public ResponseEntity<BaseResponse<List<ProjectTeamDTO>>> getUnclaimedProjects() {
-        List<ProjectTeamEntity> unclaimed = projectTeamRepository.findAll().stream()
-                .filter(t -> "UNCLAIMED".equalsIgnoreCase(t.getStatus()))
-                .collect(Collectors.toList());
+    @Operation(summary = "Get unclaimed translation projects with pagination", description = "Returns paginated list of unclaimed projects")
+    public ResponseEntity<PaginationResponse<List<ProjectTeamDTO>>> getUnclaimedProjects(
+            @Valid @ParameterObject PaginationSearchDTO paginationDTO
+    ) {
+        org.springframework.data.domain.Pageable pageable = paginationDTO.toPageRequest();
+        org.springframework.data.domain.Page<ProjectTeamEntity> pageResult;
 
-        List<ProjectTeamDTO> dtos = unclaimed.stream()
+        if (paginationDTO.getSearch() == null || paginationDTO.getSearch().isBlank()) {
+            pageResult = projectTeamRepository.findByStatusAndDeletedFalse("UNCLAIMED", pageable);
+        } else {
+            org.springframework.data.jpa.domain.Specification<ProjectTeamEntity> spec = 
+                (root, query, cb) -> cb.and(
+                    cb.equal(cb.upper(root.get("status")), "UNCLAIMED"),
+                    cb.equal(root.get("deleted"), false)
+                );
+            spec = spec.and(projectTeamRepository.contains(List.of("title", "comicName", "sourceLang", "targetLang"), paginationDTO.getSearch()));
+            pageResult = projectTeamRepository.findAll(spec, pageable);
+        }
+
+        List<ProjectTeamDTO> dtos = pageResult.getContent().stream()
                 .map(projectTeamMapper::toDto)
                 .collect(Collectors.toList());
 
         return ResponseEntity.ok(
-                BaseResponse.<List<ProjectTeamDTO>>builder()
+                PaginationResponse.<List<ProjectTeamDTO>>builder()
+                        .metadata(
+                                new PaginationMetadata(
+                                        paginationDTO.getPage(),
+                                        paginationDTO.getSize(),
+                                        pageResult.getTotalElements(),
+                                        pageResult.getTotalPages()
+                                )
+                        )
                         .success(true)
                         .data(dtos)
                         .build()
