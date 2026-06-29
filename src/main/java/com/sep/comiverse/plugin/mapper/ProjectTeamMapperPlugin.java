@@ -39,6 +39,13 @@ public class ProjectTeamMapperPlugin extends AbstractMapperPlugin<ProjectTeamEnt
     }
 
     @Override
+    protected void configureModelMapper() {
+        super.configureModelMapper();
+        modelMapper.typeMap(ProjectTeamDTO.class, ProjectTeamEntity.class)
+                .addMappings(mapper -> mapper.skip(ProjectTeamEntity::setChaptersList));
+    }
+
+    @Override
     public List<String> getSearchableFieldNames() {
         return List.of("title", "comicName", "leaderName");
     }
