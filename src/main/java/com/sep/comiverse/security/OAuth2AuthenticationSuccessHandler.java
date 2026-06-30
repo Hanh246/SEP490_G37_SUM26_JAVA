@@ -36,7 +36,7 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
 
         String targetUrl = UriComponentsBuilder.fromUriString(authorizedRedirectUri)
                 .queryParam("token", token)
-                .build().toUriString(); // Chuyển hướng về React với token
+                .build().toUriString(); // Redirect to React app with authentication token
 
         getRedirectStrategy().sendRedirect(request, response, targetUrl);
     }
