@@ -37,8 +37,8 @@ public class JwtTokenUtil {
         this.signingKey = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public String generateToken(String username) {
-        return buildToken(username, Instant.now().plusMillis(jwtExpirationMs));
+    public String generateToken(String subject) {
+        return buildToken(subject, Instant.now().plusMillis(jwtExpirationMs));
     }
 
     private String buildToken(String subject, Instant expiration) {
@@ -50,7 +50,7 @@ public class JwtTokenUtil {
                 .compact();
     }
 
-    public String getUserNameFromJwtToken(String token) {
+    public String getSubjectFromJwtToken(String token) {
         return Jwts.parser()
                 .verifyWith(signingKey)
                 .build()

@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @EqualsAndHashCode(callSuper = true)
 public class PaginationSearchDTO extends PaginationDTO {
-    @Schema(description = "Từ khóa tìm kiếm")
+    @Schema(description = "Search keyword")
     @JsonProperty("search")
     private String search = "";
 

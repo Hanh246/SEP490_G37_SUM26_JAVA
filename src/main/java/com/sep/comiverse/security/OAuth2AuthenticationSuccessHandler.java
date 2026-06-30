@@ -17,6 +17,7 @@ import java.io.IOException;
 public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
 
     private final JwtTokenUtil jwtTokenUtil;
+    private final com.sep.comiverse.repository.IUserRepository userRepository;
 
     @Value("${app.oauth2.authorizedRedirectUri}")
     private String authorizedRedirectUri;
@@ -26,12 +27,16 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
         OAuth2User oAuth2User = (OAuth2User) authentication.getPrincipal();
         String email = oAuth2User.getAttribute("email");
 
-        // Tạo token từ email
-        String token = jwtTokenUtil.generateToken(email);
+        // Fetch UserEntity by email to obtain their UUID
+        com.sep.comiverse.entity.UserEntity user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found with email: " + email));
+
+        // Generate token using user ID
+        String token = jwtTokenUtil.generateToken(user.getId().toString());
 
         String targetUrl = UriComponentsBuilder.fromUriString(authorizedRedirectUri)
                 .queryParam("token", token)
-                .build().toUriString(); // Chuyển hướng về React với token
+                .build().toUriString(); // Redirect to React app with authentication token
 
         getRedirectStrategy().sendRedirect(request, response, targetUrl);
     }

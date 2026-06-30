@@ -24,6 +24,11 @@ public class DbInitializer implements CommandLineRunner {
     private final IChatFlagRepository chatFlagRepository;
     private final IForumThreadRepository forumThreadRepository;
 
+    private final ITeamAnnouncementRepository teamAnnouncementRepository;
+    private final ITeamMessageRepository teamMessageRepository;
+    private final ITeamTaskRepository teamTaskRepository;
+    private final ITeamJoinRequestRepository teamJoinRequestRepository;
+
     @Override
     @Transactional
     public void run(String... args) throws Exception {
@@ -173,7 +178,7 @@ public class DbInitializer implements CommandLineRunner {
                     .membersCount(7)
                     .chaptersCount(45)
                     .progress(68)
-                    .leaderName("Translator One") // Map to seeded translator username or display name
+                    .leaderName("Translator One")
                     .leaderInitials("TO")
                     .deadline("Jul 15, 2026")
                     .sourceLang("Japanese")
@@ -187,7 +192,141 @@ public class DbInitializer implements CommandLineRunner {
             team1.getChaptersList().add(ChapterEntity.builder().num("Chapter 45").date("2 hours ago").words(3200).content("Content of Chapter 45...").projectTeam(team1).build());
             team1.getChaptersList().add(ChapterEntity.builder().num("Chapter 44").date("1 day ago").words(2900).content("Content of Chapter 44...").projectTeam(team1).build());
             team1.getChaptersList().add(ChapterEntity.builder().num("Chapter 43").date("3 days ago").words(3100).content("Content of Chapter 43...").projectTeam(team1).build());
-            projectTeamRepository.save(team1);
+            team1 = projectTeamRepository.save(team1);
+
+            // Seed workspace items for team1
+            teamAnnouncementRepository.save(TeamAnnouncementEntity.builder()
+                    .projectTeamId(team1.getId())
+                    .author("John Smith")
+                    .role("Group Leader")
+                    .avatar("JS")
+                    .time("2 hours ago")
+                    .content("📢 Announcement: Chapter 43 deadline is June 12th. QC members, please finish this ASAP! Keep up the great work everyone 🏆")
+                    .likes(8)
+                    .build());
+
+            teamAnnouncementRepository.save(TeamAnnouncementEntity.builder()
+                    .projectTeamId(team1.getId())
+                    .author("Emily Brown")
+                    .role("Member")
+                    .avatar("EB")
+                    .time("1 day ago")
+                    .content("Welcome our new member @Robert Taylor to the group! Looking forward to your contributions 🎉")
+                    .likes(12)
+                    .build());
+
+            teamMessageRepository.save(TeamMessageEntity.builder()
+                    .projectTeamId(team1.getId())
+                    .sender("Michael Chen")
+                    .avatar("MC")
+                    .time("12:30")
+                    .text("Is Chapter 45 translation done yet?")
+                    .build());
+
+            teamMessageRepository.save(TeamMessageEntity.builder()
+                    .projectTeamId(team1.getId())
+                    .sender("Translator One")
+                    .avatar("TO")
+                    .time("12:32")
+                    .text("Almost at page 18, should be done in about an hour")
+                    .build());
+
+            teamMessageRepository.save(TeamMessageEntity.builder()
+                    .projectTeamId(team1.getId())
+                    .sender("Sarah Davis")
+                    .avatar("SD")
+                    .time("12:33")
+                    .text("OK I'm ready to proofread, ping me when you're done!")
+                    .build());
+
+            teamMessageRepository.save(TeamMessageEntity.builder()
+                    .projectTeamId(team1.getId())
+                    .sender("Translator One")
+                    .avatar("TO")
+                    .time("12:45")
+                    .text("Good job everyone! We're on track for today's deadline 🔥")
+                    .build());
+
+            teamJoinRequestRepository.save(TeamJoinRequestEntity.builder()
+                    .projectTeamId(team1.getId())
+                    .name("Alex Johnson")
+                    .time("2 hours ago")
+                    .text("I have 2 years of Chinese translation experience and would love to contribute to the group.")
+                    .roles("Translator,Proofreader")
+                    .avatar("AJ")
+                    .build());
+
+            teamJoinRequestRepository.save(TeamJoinRequestEntity.builder()
+                    .projectTeamId(team1.getId())
+                    .name("Maria Garcia")
+                    .time("5 hours ago")
+                    .text("I specialize in typesetting and am proficient with image editing software.")
+                    .roles("Typesetter")
+                    .avatar("MG")
+                    .build());
+
+            teamJoinRequestRepository.save(TeamJoinRequestEntity.builder()
+                    .projectTeamId(team1.getId())
+                    .name("Kevin Lee")
+                    .time("1 day ago")
+                    .text("Looking to learn and contribute to the translation community.")
+                    .roles("Quality Check")
+                    .avatar("KL")
+                    .build());
+
+            teamTaskRepository.save(TeamTaskEntity.builder()
+                    .projectTeamId(team1.getId())
+                    .title("Chapter 46 - Translation")
+                    .columnName("backlog")
+                    .progress(0)
+                    .assignees("MC")
+                    .dueDate("06/20/2024")
+                    .build());
+
+            teamTaskRepository.save(TeamTaskEntity.builder()
+                    .projectTeamId(team1.getId())
+                    .title("Chapter 45 - Translation")
+                    .columnName("in_progress")
+                    .progress(65)
+                    .assignees("MC,SD")
+                    .dueDate("06/15/2024")
+                    .build());
+
+            teamTaskRepository.save(TeamTaskEntity.builder()
+                    .projectTeamId(team1.getId())
+                    .title("Chapter 44 - Typesetting")
+                    .columnName("in_progress")
+                    .progress(80)
+                    .assignees("EB")
+                    .dueDate("06/14/2024")
+                    .build());
+
+            teamTaskRepository.save(TeamTaskEntity.builder()
+                    .projectTeamId(team1.getId())
+                    .title("Chapter 43 - QC")
+                    .columnName("under_review")
+                    .progress(95)
+                    .assignees("LM,SD")
+                    .dueDate("06/07/2024")
+                    .build());
+
+            teamTaskRepository.save(TeamTaskEntity.builder()
+                    .projectTeamId(team1.getId())
+                    .title("Chapter 42")
+                    .columnName("completed")
+                    .progress(100)
+                    .assignees("MC")
+                    .dueDate("06/10/2024")
+                    .build());
+
+            teamTaskRepository.save(TeamTaskEntity.builder()
+                    .projectTeamId(team1.getId())
+                    .title("Chapter 10")
+                    .columnName("paused")
+                    .progress(0)
+                    .assignees("")
+                    .dueDate("05/01/2024")
+                    .build());
 
             // Team 2: Jade Group
             ProjectTeamEntity team2 = ProjectTeamEntity.builder()
@@ -236,7 +375,7 @@ public class DbInitializer implements CommandLineRunner {
             team3.getChaptersList().add(ChapterEntity.builder().num("Chapter 17").date("2 weeks ago").words(3300).content("Content of Chapter 17...").projectTeam(team3).build());
             projectTeamRepository.save(team3);
 
-            System.out.println("✅ Sample project teams initialized in DB.");
+            System.out.println("✅ Sample project teams and workspace details initialized in DB.");
         }
     }
 

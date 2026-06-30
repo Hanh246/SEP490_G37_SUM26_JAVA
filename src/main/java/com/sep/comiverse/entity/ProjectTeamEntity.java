@@ -57,6 +57,9 @@ public class ProjectTeamEntity extends BaseEntity {
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
+    @Column(name = "notes", columnDefinition = "TEXT")
+    private String notes;
+
     @Column(name = "assigned_to_me")
     private Boolean assignedToMe; // simple indicator flag for frontend display
 

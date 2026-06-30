@@ -29,4 +29,15 @@ public class CustomUserDetailsService implements UserDetailsService {
 
         return new UserPrincipal(user);
     }
+
+    public UserDetails loadUserById(java.util.UUID id) throws UsernameNotFoundException {
+        UserEntity user = userRepository.findById(id)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found with id: " + id));
+
+        if ("INACTIVE".equals(user.getStatus())) {
+            throw new CustomException(401, "Your account has been locked.", HttpStatus.UNAUTHORIZED);
+        }
+
+        return new UserPrincipal(user);
+    }
 }
