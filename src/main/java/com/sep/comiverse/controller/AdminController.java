@@ -23,7 +23,7 @@ import java.util.UUID;
 @RequestMapping("/admin/users")
 @RequiredArgsConstructor
 @PreAuthorize("hasAuthority('ADMIN')")
-@Tag(name = "Admin - User Management", description = "APIs for managing user accounts (ADMIN only)")
+@Tag(name = "Admin - User Management", description = "APIs for managing user accounts (Admin only)")
 public class AdminController {
 
     private final AdminUserService adminUserService;

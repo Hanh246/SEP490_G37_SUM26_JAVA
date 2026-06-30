@@ -28,7 +28,7 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody AuthRequest request) {
         UserEntity user = authService.authenticate(request.getUsername(), request.getPassword());
-        String token = jwtTokenUtil.generateToken(user.getUsername());
+        String token = jwtTokenUtil.generateToken(user.getId().toString());
 
         return ResponseEntity.ok(new AuthResponse(
                 token,
@@ -43,7 +43,7 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
         UserEntity user = authService.register(request);
-        String token = jwtTokenUtil.generateToken(user.getUsername());
+        String token = jwtTokenUtil.generateToken(user.getId().toString());
 
         return ResponseEntity.ok(new AuthResponse(
                 token,
@@ -85,5 +85,26 @@ public class AuthController {
                 user.getEmail(),
                 user.getRole().getRoleName()
         ));
+    }
+
+    @org.springframework.web.bind.annotation.GetMapping("/me")
+    public ResponseEntity<com.sep.comiverse.dto.response.BaseResponse<AuthResponse>> getMyProfile(org.springframework.security.core.Authentication authentication) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof com.sep.comiverse.security.UserPrincipal)) {
+            return ResponseEntity.status(401).body(com.sep.comiverse.dto.response.BaseResponse.<AuthResponse>builder().success(false).message("Unauthorized").build());
+        }
+        com.sep.comiverse.security.UserPrincipal principal = (com.sep.comiverse.security.UserPrincipal) authentication.getPrincipal();
+        UserEntity user = principal.user();
+        AuthResponse response = new AuthResponse(
+                null,
+                user.getId(),
+                user.getUsername(),
+                user.getFullName(),
+                user.getEmail(),
+                user.getRole().getRoleName()
+        );
+        return ResponseEntity.ok(com.sep.comiverse.dto.response.BaseResponse.<AuthResponse>builder()
+                .success(true)
+                .data(response)
+                .build());
     }
 }

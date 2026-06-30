@@ -21,15 +21,15 @@ public class SwaggerConfig {
 
         Server localServer = new Server();
         localServer.setUrl("/api");
-        localServer.setDescription("Môi trường phát triển cục bộ (Local)");
+        localServer.setDescription("Local Development Environment");
 
         return new OpenAPI()
                 .info(new Info()
-                        .title("COMIVERSE - WEBSITE ĐỌC TRUYỆN TRANH API")
+                        .title("COMIVERSE - WEB COMIC PLATFORM API")
                         .version("1.0.0")
-                        .description("Tài liệu đặc tả hệ thống API cho dự án Web Truyện Tranh Comiverse. Sử dụng Plugin-based Architecture.")
+                        .description("API specification document for the Comiverse web comic platform project. Implements a Plugin-based Architecture.")
                         .contact(new Contact()
-                                .name("Nguyễn Xuân Hanh")
+                                .name("Nguyen Xuan Hanh")
                                 .email("nguyenxuanhanh0440@gmail.com")))
                 .addSecurityItem(new SecurityRequirement().addList(securitySchemeName))
                 .components(new Components()

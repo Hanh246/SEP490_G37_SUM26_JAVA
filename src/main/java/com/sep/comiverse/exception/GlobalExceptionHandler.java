@@ -23,7 +23,7 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
-    // Xử lý các lỗi do @Valid
+    // Handle validation exceptions caused by @Valid
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<BaseResponse<Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
         Map<String, String> errors = new HashMap<>();
@@ -41,7 +41,7 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
-    // Xử lý tất cả các lỗi hệ thống không lường trước được
+    // Handle all unforeseen system errors
     @ExceptionHandler(Exception.class)
     public ResponseEntity<BaseResponse<Object>> handleGeneralException(Exception ex) {
         ex.printStackTrace();
