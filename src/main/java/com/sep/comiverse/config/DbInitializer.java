@@ -16,6 +16,7 @@ public class DbInitializer implements CommandLineRunner {
     private final IUserRepository userRepository;
     private final IRoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     private final IGenreRepository genreRepository;
     private final IComicRepository comicRepository;
@@ -32,6 +33,11 @@ public class DbInitializer implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) throws Exception {
+        // Correct legacy lowercase/mixedcase enum values in existing comics table
+        jdbcTemplate.execute("UPDATE comics SET status = 'ONGOING' WHERE status = 'Ongoing' OR status = 'ongoing'");
+        jdbcTemplate.execute("UPDATE comics SET status = 'COMPLETED' WHERE status = 'Completed' OR status = 'completed'");
+        jdbcTemplate.execute("UPDATE comics SET status = 'PAUSED' WHERE status = 'Paused' OR status = 'paused'");
+
         createRoles();
         createAdmin();
         createStaffs();
@@ -120,47 +126,57 @@ public class DbInitializer implements CommandLineRunner {
 
     private void createComics() {
         if (comicRepository.findAll().isEmpty()) {
+            UserEntity author = userRepository.findByUsername("author1").orElse(null);
+            java.util.UUID authorId = author != null ? author.getId() : null;
+
+            // Fetch genres from DB
+            java.util.List<GenreEntity> allGenres = genreRepository.findAll();
+            java.util.Set<GenreEntity> genres1 = allGenres.stream()
+                    .filter(g -> g.getName().equalsIgnoreCase("Action") || g.getName().equalsIgnoreCase("Fantasy"))
+                    .collect(java.util.stream.Collectors.toSet());
+            java.util.Set<GenreEntity> genres2 = allGenres.stream()
+                    .filter(g -> g.getName().equalsIgnoreCase("Adventure") || g.getName().equalsIgnoreCase("Mystery"))
+                    .collect(java.util.stream.Collectors.toSet());
+            java.util.Set<GenreEntity> genres3 = allGenres.stream()
+                    .filter(g -> g.getName().equalsIgnoreCase("Fantasy") || g.getName().equalsIgnoreCase("Drama"))
+                    .collect(java.util.stream.Collectors.toSet());
+            java.util.Set<GenreEntity> genres4 = allGenres.stream()
+                    .filter(g -> g.getName().equalsIgnoreCase("Cultivation") || g.getName().equalsIgnoreCase("Action"))
+                    .collect(java.util.stream.Collectors.toSet());
+
             comicRepository.save(ComicEntity.builder()
                     .title("Invincible Sword God")
-                    .author("Wu Xing")
-                    .projectTeam("Dragon Group")
-                    .chapters(45)
-                    .views("1.2M")
-                    .status("Ongoing")
-                    .genres("Action, Fantasy")
+                    .slug("invincible-sword-god")
+                    .authorId(authorId)
+                    .status(com.sep.comiverse.constants.ComicStatus.ONGOING)
+                    .genres(genres1)
                     .cover("⚔️")
                     .build());
 
             comicRepository.save(ComicEntity.builder()
                     .title("Spirit Recovery")
-                    .author("Chen Wei")
-                    .projectTeam("Jade Group")
-                    .chapters(32)
-                    .views("890K")
-                    .status("Ongoing")
-                    .genres("Adventure, Mystery")
+                    .slug("spirit-recovery")
+                    .authorId(authorId)
+                    .status(com.sep.comiverse.constants.ComicStatus.ONGOING)
+                    .genres(genres2)
                     .cover("🔮")
                     .build());
 
             comicRepository.save(ComicEntity.builder()
                     .title("Demon King Reborn")
-                    .author("Li Ming")
-                    .projectTeam("Phoenix Group")
-                    .chapters(18)
-                    .views("654K")
-                    .status("Paused")
-                    .genres("Fantasy, Drama")
+                    .slug("demon-king-reborn")
+                    .authorId(authorId)
+                    .status(com.sep.comiverse.constants.ComicStatus.PAUSED)
+                    .genres(genres3)
                     .cover("👑")
                     .build());
 
             comicRepository.save(ComicEntity.builder()
                     .title("Heavenly Dao")
-                    .author("Zhang Yu")
-                    .projectTeam("Dragon Group")
-                    .chapters(120)
-                    .views("2.5M")
-                    .status("Completed")
-                    .genres("Cultivation, Action")
+                    .slug("heavenly-dao")
+                    .authorId(authorId)
+                    .status(com.sep.comiverse.constants.ComicStatus.COMPLETED)
+                    .genres(genres4)
                     .cover("☯️")
                     .build());
 
@@ -170,6 +186,11 @@ public class DbInitializer implements CommandLineRunner {
 
     private void createProjectTeams() {
         if (projectTeamRepository.findAll().isEmpty()) {
+            // Query comics from DB
+            ComicEntity comic1 = comicRepository.findByTitle("Invincible Sword God").orElse(null);
+            ComicEntity comic2 = comicRepository.findByTitle("Spirit Recovery").orElse(null);
+            ComicEntity comic3 = comicRepository.findByTitle("Demon King Reborn").orElse(null);
+
             // Team 1: Dragon Group
             ProjectTeamEntity team1 = ProjectTeamEntity.builder()
                     .title("Dragon Group")
@@ -189,9 +210,27 @@ public class DbInitializer implements CommandLineRunner {
                     .assignedToMe(true)
                     .build();
 
-            team1.getChaptersList().add(ChapterEntity.builder().num("Chapter 45").date("2 hours ago").words(3200).content("Content of Chapter 45...").projectTeam(team1).build());
-            team1.getChaptersList().add(ChapterEntity.builder().num("Chapter 44").date("1 day ago").words(2900).content("Content of Chapter 44...").projectTeam(team1).build());
-            team1.getChaptersList().add(ChapterEntity.builder().num("Chapter 43").date("3 days ago").words(3100).content("Content of Chapter 43...").projectTeam(team1).build());
+            team1.getChaptersList().add(ChapterEntity.builder()
+                    .chapterNumber("45")
+                    .title("Chapter 45: Rebirth")
+                    .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
+                    .comic(comic1)
+                    .projectTeam(team1)
+                    .build());
+            team1.getChaptersList().add(ChapterEntity.builder()
+                    .chapterNumber("44")
+                    .title("Chapter 44: Reincarnation")
+                    .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
+                    .comic(comic1)
+                    .projectTeam(team1)
+                    .build());
+            team1.getChaptersList().add(ChapterEntity.builder()
+                    .chapterNumber("43")
+                    .title("Chapter 43: Ascending")
+                    .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
+                    .comic(comic1)
+                    .projectTeam(team1)
+                    .build());
             team1 = projectTeamRepository.save(team1);
 
             // Seed workspace items for team1
@@ -347,9 +386,27 @@ public class DbInitializer implements CommandLineRunner {
                     .assignedToMe(true)
                     .build();
 
-            team2.getChaptersList().add(ChapterEntity.builder().num("Chapter 32").date("1 day ago").words(2800).content("Content of Chapter 32...").projectTeam(team2).build());
-            team2.getChaptersList().add(ChapterEntity.builder().num("Chapter 31").date("3 days ago").words(2600).content("Content of Chapter 31...").projectTeam(team2).build());
-            team2.getChaptersList().add(ChapterEntity.builder().num("Chapter 30").date("5 days ago").words(3000).content("Content of Chapter 30...").projectTeam(team2).build());
+            team2.getChaptersList().add(ChapterEntity.builder()
+                    .chapterNumber("32")
+                    .title("Chapter 32: Energy Recovery")
+                    .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
+                    .comic(comic2)
+                    .projectTeam(team2)
+                    .build());
+            team2.getChaptersList().add(ChapterEntity.builder()
+                    .chapterNumber("31")
+                    .title("Chapter 31: Spiritual Awakening")
+                    .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
+                    .comic(comic2)
+                    .projectTeam(team2)
+                    .build());
+            team2.getChaptersList().add(ChapterEntity.builder()
+                    .chapterNumber("30")
+                    .title("Chapter 30: Discovery")
+                    .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
+                    .comic(comic2)
+                    .projectTeam(team2)
+                    .build());
             projectTeamRepository.save(team2);
 
             // Team 3: Phoenix Group
@@ -371,8 +428,20 @@ public class DbInitializer implements CommandLineRunner {
                     .assignedToMe(false)
                     .build();
 
-            team3.getChaptersList().add(ChapterEntity.builder().num("Chapter 18").date("1 week ago").words(3500).content("Content of Chapter 18...").projectTeam(team3).build());
-            team3.getChaptersList().add(ChapterEntity.builder().num("Chapter 17").date("2 weeks ago").words(3300).content("Content of Chapter 17...").projectTeam(team3).build());
+            team3.getChaptersList().add(ChapterEntity.builder()
+                    .chapterNumber("18")
+                    .title("Chapter 18: The Awakening")
+                    .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
+                    .comic(comic3)
+                    .projectTeam(team3)
+                    .build());
+            team3.getChaptersList().add(ChapterEntity.builder()
+                    .chapterNumber("17")
+                    .title("Chapter 17: Awakening Part 1")
+                    .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
+                    .comic(comic3)
+                    .projectTeam(team3)
+                    .build());
             projectTeamRepository.save(team3);
 
             System.out.println("✅ Sample project teams and workspace details initialized in DB.");

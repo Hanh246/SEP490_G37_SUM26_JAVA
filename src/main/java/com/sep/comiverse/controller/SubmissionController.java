@@ -37,6 +37,9 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
     private IChapterRepository chapterRepository;
 
     @Autowired
+    private com.sep.comiverse.repository.IUserRepository userRepository;
+
+    @Autowired
     public SubmissionController(SubmissionCrudPlugin crud) {
         super(crud, SubmissionEntity.class);
     }
@@ -64,21 +67,25 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             String title = submission.getTitle();
             ComicEntity comic = comicRepository.findByTitle(title).orElse(null);
             if (comic != null) {
-                comic.setChapters(comic.getChapters() + 1);
+                comic.setLatestChapterNumber(String.valueOf(Integer.parseInt(comic.getLatestChapterNumber() == null ? "0" : comic.getLatestChapterNumber()) + 1));
                 comicRepository.save(comic);
             } else {
                 String authorName = submission.getSubmittedBy();
                 if (authorName != null && authorName.startsWith("Author: ")) {
                     authorName = authorName.substring(8);
                 }
+                final String searchName = authorName;
+                com.sep.comiverse.entity.UserEntity authorUser = userRepository.findAll().stream()
+                        .filter(u -> (u.getFullName() != null && u.getFullName().equalsIgnoreCase(searchName)) || u.getUsername().equalsIgnoreCase(searchName))
+                        .findFirst()
+                        .orElse(null);
+                UUID authorId = authorUser != null ? authorUser.getId() : null;
+
                 ComicEntity newComic = ComicEntity.builder()
                         .title(title)
-                        .author(authorName)
-                        .projectTeam("-")
-                        .chapters(1)
-                        .views("0")
-                        .status("Ongoing")
-                        .genres("Action, Fantasy")
+                        .slug(title.toLowerCase().replaceAll("[^a-z0-9]+", "-"))
+                        .authorId(authorId)
+                        .status(com.sep.comiverse.constants.ComicStatus.ONGOING)
                         .cover(submission.getCover() != null ? submission.getCover() : "📖")
                         .build();
                 comicRepository.save(newComic);
@@ -93,24 +100,27 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                     .findFirst()
                     .orElse(null);
 
+            ComicEntity comic = comicRepository.findByTitle(comicTitle).orElse(null);
+
             if (team != null) {
                 team.setChaptersCount(team.getChaptersCount() + 1);
 
-                // Add to Chapters table
-                ChapterEntity chapter = ChapterEntity.builder()
-                        .num(submission.getChapter())
-                        .date("Just now")
-                        .words(submission.getWords() != null ? submission.getWords() : 3000)
-                        .content(submission.getContent())
-                        .projectTeam(team)
-                        .build();
-                chapterRepository.save(chapter);
+                if (comic != null) {
+                    // Add to Chapters table
+                    ChapterEntity chapter = ChapterEntity.builder()
+                            .chapterNumber(submission.getChapter() != null ? submission.getChapter().replaceAll("[^0-9]+", "") : "1")
+                            .title(submission.getChapter() != null ? submission.getChapter() : "Chapter 1")
+                            .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
+                            .comic(comic)
+                            .projectTeam(team)
+                            .build();
+                    chapterRepository.save(chapter);
+                }
                 projectTeamRepository.save(team);
             }
 
-            ComicEntity comic = comicRepository.findByTitle(comicTitle).orElse(null);
             if (comic != null) {
-                comic.setChapters(comic.getChapters() + 1);
+                comic.setLatestChapterNumber(submission.getChapter() != null ? submission.getChapter().replaceAll("[^0-9]+", "") : "1");
                 comicRepository.save(comic);
             }
         }

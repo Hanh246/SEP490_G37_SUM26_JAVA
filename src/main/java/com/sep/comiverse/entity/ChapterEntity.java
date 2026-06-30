@@ -16,28 +16,32 @@ import java.util.List;
         @UniqueConstraint(columnNames = {"comic_id", "chapter_number"})
 })
 @EqualsAndHashCode(callSuper = true)
-@ToString(exclude = "comic")
+@ToString(exclude = {"comic", "projectTeam"})
 public class ChapterEntity extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "comic_id", nullable = false)
+    @JoinColumn(name = "comic_id")
     private ComicEntity comic;
 
-    @Column(name = "chapter_number", nullable = false)
+    @Column(name = "chapter_number", nullable = false, columnDefinition = "varchar(255) default '1'")
     private String chapterNumber;
 
     @Column(name = "title")
     private String title;
 
     @JdbcTypeCode(SqlTypes.ARRAY)
-    @Column(name = "images", columnDefinition = "text[]", nullable = false)
+    @Column(name = "images", columnDefinition = "text[]")
     private List<String> images;
 
     @Builder.Default
-    @Column(name = "view_count", nullable = false)
+    @Column(name = "view_count", nullable = false, columnDefinition = "bigint default 0")
     private Long viewCount = 0L;
 
     @Builder.Default
-    @Column(name = "is_premium", nullable = false)
+    @Column(name = "is_premium", nullable = false, columnDefinition = "boolean default false")
     private Boolean isPremium = false;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "project_team_id")
+    private ProjectTeamEntity projectTeam;
 }

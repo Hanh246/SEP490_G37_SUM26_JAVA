@@ -23,7 +23,7 @@ public class ComicEntity extends BaseEntity {
     @Column(name = "title", nullable = false)
     private String title;
 
-    @Column(name = "slug", nullable = false, unique = true)
+    @Column(name = "slug", unique = true)
     private String slug;
 
     @Column(name = "summary", columnDefinition = "TEXT")
@@ -52,19 +52,19 @@ public class ComicEntity extends BaseEntity {
 
     //fast query
     @Builder.Default
-    @Column(name = "view_count", nullable = false)
+    @Column(name = "view_count", nullable = false, columnDefinition = "bigint default 0")
     private Long viewCount = 0L;
 
     @Builder.Default
-    @Column(name = "save_count", nullable = false)
+    @Column(name = "save_count", nullable = false, columnDefinition = "integer default 0")
     private Integer saveCount = 0;
 
     @Builder.Default
-    @Column(name = "rating_average", nullable = false)
+    @Column(name = "rating_average", nullable = false, columnDefinition = "double precision default 0.0")
     private Double ratingAverage = 0.0;
 
     @Builder.Default
-    @Column(name = "rating_count", nullable = false)
+    @Column(name = "rating_count", nullable = false, columnDefinition = "integer default 0")
     private Integer ratingCount = 0;
 
     @Column(name = "latest_chapter_number")
