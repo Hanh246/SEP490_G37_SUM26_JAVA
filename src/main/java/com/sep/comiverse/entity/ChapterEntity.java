@@ -2,30 +2,42 @@ package com.sep.comiverse.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.util.List;
 
 @Data
 @Entity
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Table(name = "chapters")
+@Table(name = "chapters", uniqueConstraints = {
+        @UniqueConstraint(columnNames = {"comic_id", "chapter_number"})
+})
 @EqualsAndHashCode(callSuper = true)
-@ToString(exclude = "projectTeam")
+@ToString(exclude = "comic")
 public class ChapterEntity extends BaseEntity {
 
-    @Column(name = "num")
-    private String num; // e.g. "Chapter 45"
-
-    @Column(name = "date")
-    private String date; // date/time representation or formatted relative label
-
-    @Column(name = "words")
-    private Integer words;
-
-    @Column(name = "content", columnDefinition = "TEXT")
-    private String content;
-
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "project_team_id")
-    private ProjectTeamEntity projectTeam;
+    @JoinColumn(name = "comic_id", nullable = false)
+    private ComicEntity comic;
+
+    @Column(name = "chapter_number", nullable = false)
+    private String chapterNumber;
+
+    @Column(name = "title")
+    private String title;
+
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "images", columnDefinition = "text[]", nullable = false)
+    private List<String> images;
+
+    @Builder.Default
+    @Column(name = "view_count", nullable = false)
+    private Long viewCount = 0L;
+
+    @Builder.Default
+    @Column(name = "is_premium", nullable = false)
+    private Boolean isPremium = false;
 }

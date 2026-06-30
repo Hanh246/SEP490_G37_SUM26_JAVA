@@ -8,14 +8,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.UUID;
 
 @Component
 public class GenreMapperPlugin
-        extends AbstractMapperPlugin<GenreEntity, GenreDTO, Long> {
+        extends AbstractMapperPlugin<GenreEntity, GenreDTO, UUID> {
 
     @Autowired
     public GenreMapperPlugin(ModelMapper modelMapper) {
-        super(GenreEntity.class, GenreDTO.class, Long.class, modelMapper);
+        super(GenreEntity.class, GenreDTO.class, UUID.class, modelMapper);
     }
 
     @Override

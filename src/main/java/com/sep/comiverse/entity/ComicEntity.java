@@ -1,9 +1,14 @@
 package com.sep.comiverse.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Table;
+import com.sep.comiverse.constants.ComicStatus;
+import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 @Data
 @Entity
@@ -11,30 +16,66 @@ import lombok.*;
 @AllArgsConstructor
 @Builder
 @Table(name = "comics")
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode(callSuper = true, exclude = "genres")
+@ToString(exclude = "genres")
 public class ComicEntity extends BaseEntity {
 
     @Column(name = "title", nullable = false)
     private String title;
 
-    @Column(name = "author")
-    private String author;
+    @Column(name = "slug", nullable = false, unique = true)
+    private String slug;
 
-    @Column(name = "project_team")
-    private String projectTeam;
+    @Column(name = "summary", columnDefinition = "TEXT")
+    private String summary;
 
-    @Column(name = "chapters")
-    private Integer chapters;
+    @Column(name = "author_id")
+    private UUID authorId;
 
-    @Column(name = "views")
-    private String views;
-
-    @Column(name = "status")
-    private String status; // Ongoing, Completed, Paused, Archived
-
-    @Column(name = "genres")
-    private String genres; // Comma-separated list of genres (e.g. "Action, Fantasy")
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    private ComicStatus status;
 
     @Column(name = "cover")
     private String cover; // Cover emoji or image path (e.g. "⚔️")
+
+    @Column(name = "thumbnail")
+    private String thumbnail;
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "comic_genre",
+            joinColumns = @JoinColumn(name = "comic_id"),
+            inverseJoinColumns = @JoinColumn(name = "genre_id")
+    )
+    private Set<GenreEntity> genres;
+
+    //fast query
+    @Builder.Default
+    @Column(name = "view_count", nullable = false)
+    private Long viewCount = 0L;
+
+    @Builder.Default
+    @Column(name = "save_count", nullable = false)
+    private Integer saveCount = 0;
+
+    @Builder.Default
+    @Column(name = "rating_average", nullable = false)
+    private Double ratingAverage = 0.0;
+
+    @Builder.Default
+    @Column(name = "rating_count", nullable = false)
+    private Integer ratingCount = 0;
+
+    @Column(name = "latest_chapter_number")
+    private String latestChapterNumber;
+
+    //Recommendation
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "genre_ids", columnDefinition = "uuid[]")
+    private List<UUID> genreIds;
+
+    @Column(name = "summary_vector", columnDefinition = "vector(384)")
+    @JdbcTypeCode(SqlTypes.OTHER)
+    private float[] summaryVector;
 }
