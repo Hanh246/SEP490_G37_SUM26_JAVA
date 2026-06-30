@@ -1,11 +1,11 @@
 package com.sep.comiverse.config;
 
-import lombok.RequiredArgsConstructor;
 import com.sep.comiverse.security.OAuth2AuthenticationSuccessHandler;
 import com.sep.comiverse.security.RestAuthenticationEntryPoint;
 import com.sep.comiverse.security.TokenAuthenticationFilter;
 import com.sep.comiverse.service.CustomOAuth2UserService;
 import com.sep.comiverse.service.CustomUserDetailsService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -21,11 +21,10 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.web.servlet.config.annotation.CorsRegistry;
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
 import java.util.List;
 
 @Configuration
@@ -42,6 +41,7 @@ public class SecurityConfig {
 
     private static final String[] URL_WHITELIST = {
             "/auth/**",
+            "/upload/**",
             "/error",
             "/v3/api-docs/**",
             "/swagger-ui/**",
