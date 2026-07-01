@@ -1,9 +1,11 @@
 package com.sep.comiverse.controller;
 
 import com.sep.comiverse.dto.ComicDTO;
+import com.sep.comiverse.dto.pagination.CursorResponseDTO;
 import com.sep.comiverse.dto.pagination.PaginationMetadata;
 import com.sep.comiverse.dto.pagination.PaginationResponse;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
+import com.sep.comiverse.dto.request.ComicExploreRequestDTO;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.plugin.crud.ComicCrudPlugin;
@@ -74,6 +76,19 @@ public class ComicController extends BaseController<ComicEntity, ComicDTO, UUID,
                         data.getTotalPages()
                 ))
                 .data(data.toList())
+                .build());
+    }
+
+    @GetMapping("/explore")
+    @Operation(summary = "Explore catalog using highly optimized cursor pagination with filters and dynamic sorting")
+    public ResponseEntity<BaseResponse<CursorResponseDTO<ComicDTO>>> getExploreComics(
+            @Valid @ParameterObject ComicExploreRequestDTO request) {
+
+        CursorResponseDTO<ComicDTO> result = comicCrudPlugin.getExploreComicsCursor(request);
+
+        return ResponseEntity.ok(BaseResponse.<CursorResponseDTO<ComicDTO>>builder()
+                .success(true)
+                .data(result)
                 .build());
     }
 }
