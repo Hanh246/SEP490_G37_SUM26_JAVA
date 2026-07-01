@@ -39,6 +39,16 @@ public class JwtTokenUtil {
 
     public String generateToken(com.sep.comiverse.entity.UserEntity user) {
         Instant expiration = Instant.now().plusMillis(jwtExpirationMs);
+        return buildToken(user, expiration);
+    }
+
+    public String generateRefreshToken(com.sep.comiverse.entity.UserEntity user) {
+        long refreshExpirationMs = 7 * 24 * 60 * 60 * 1000L;
+        Instant expiration = Instant.now().plusMillis(refreshExpirationMs);
+        return buildToken(user, expiration);
+    }
+
+    private String buildToken(com.sep.comiverse.entity.UserEntity user, Instant expiration) {
         return Jwts.builder()
                 .subject(user.getId().toString())
                 .claim("email", user.getEmail())
