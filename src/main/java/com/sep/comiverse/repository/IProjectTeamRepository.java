@@ -7,4 +7,5 @@ import java.util.UUID;
 @Repository
 public interface IProjectTeamRepository extends AbstractCrudRepository<ProjectTeamEntity, UUID> {
     java.util.Optional<ProjectTeamEntity> findByComicName(String comicName);
+    org.springframework.data.domain.Page<ProjectTeamEntity> findByStatusAndDeletedFalse(String status, org.springframework.data.domain.Pageable pageable);
 }

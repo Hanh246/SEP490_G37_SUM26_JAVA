@@ -29,10 +29,11 @@ public class ProjectTeamMapperPlugin extends AbstractMapperPlugin<ProjectTeamEnt
                     .map(chap -> {
                         var chapDto = new com.sep.comiverse.dto.ChapterDTO();
                         chapDto.setId(chap.getId());
-                        chapDto.setNum(chap.getNum());
-                        chapDto.setDate(chap.getDate());
-                        chapDto.setWords(chap.getWords());
-                        chapDto.setContent(chap.getContent());
+                        chapDto.setComicId(chap.getComic() != null ? chap.getComic().getId() : null);
+                        chapDto.setChapterNumber(chap.getChapterNumber());
+                        chapDto.setTitle(chap.getTitle());
+                        chapDto.setNum("Chapter " + chap.getChapterNumber());
+                        chapDto.setDate("Just now");
                         return chapDto;
                     })
                     .collect(Collectors.toList()));

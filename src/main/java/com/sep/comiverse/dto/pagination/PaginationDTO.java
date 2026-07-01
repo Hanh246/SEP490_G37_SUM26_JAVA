@@ -15,13 +15,13 @@ public class PaginationDTO {
     private final static int DEFAULT_PAGE_SIZE = 10;
     private final static int DEFAULT_PAGE = 1;
 
-    @Schema(description = "Số trang", example = "1", defaultValue = "1")
-    @Min(value = 1, message = "Số trang phải lớn hơn hoặc bằng 1")
+    @Schema(description = "Page index", example = "1", defaultValue = "1")
+    @Min(value = 1, message = "Page index must be greater than or equal to 1")
     @JsonProperty("page")
     private Integer page = DEFAULT_PAGE;
 
-    @Schema(description = "Số phần tử trong 1 trang", example = "10", defaultValue = "10")
-    @Min(value = 1, message = "1 trang phải có ít nhất 1 phần tử")
+    @Schema(description = "Page size", example = "10", defaultValue = "10")
+    @Min(value = 1, message = "Page size must have at least 1 item")
     @JsonProperty("size")
     private Integer size = DEFAULT_PAGE_SIZE;
 

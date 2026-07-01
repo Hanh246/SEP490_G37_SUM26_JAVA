@@ -12,6 +12,8 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 public class ComiverseApplication {
 
 	public static void main(String[] args) {
+		java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
+
 		Dotenv dotenv = Dotenv.configure()
 				.filename("key.env")
 				.load();

@@ -7,8 +7,6 @@ import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.ProjectTeamEntity;
 import com.sep.comiverse.entity.SubmissionEntity;
-import com.sep.comiverse.entity.enums.ChapterStatus;
-import com.sep.comiverse.entity.enums.ComicStatus;
 import com.sep.comiverse.plugin.crud.SubmissionCrudPlugin;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IComicRepository;
@@ -39,6 +37,9 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
     private IChapterRepository chapterRepository;
 
     @Autowired
+    private com.sep.comiverse.repository.IUserRepository userRepository;
+
+    @Autowired
     public SubmissionController(SubmissionCrudPlugin crud) {
         super(crud, SubmissionEntity.class);
     }
@@ -62,48 +63,32 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
         // Process side effects of approval
         if ("author".equalsIgnoreCase(submission.getQueueType())) {
-            if (submission.getChapterId() != null) {
-                ChapterEntity chapter = chapterRepository.findById(submission.getChapterId())
-                        .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Chapter with id " + submission.getChapterId() + " not found"));
-                chapter.setStatus(ChapterStatus.APPROVED);
-                chapter.setApprovedAt(new java.util.Date());
-                chapterRepository.save(chapter);
-
-                comicRepository.findById(submission.getComicId()).ifPresent(comic -> {
-                    comic.setModerationStatus(ComicStatus.PUBLISHED.name());
-                    comic.setChapters((comic.getChapters() == null ? 0 : comic.getChapters()) + 1);
-                    if (comic.getPublishedAt() == null) {
-                        comic.setPublishedAt(new java.util.Date());
-                    }
-                    comicRepository.save(comic);
-                });
+            // Approving an author submission creates/updates a comic
+            String title = submission.getTitle();
+            ComicEntity comic = comicRepository.findByTitle(title).orElse(null);
+            if (comic != null) {
+                comic.setLatestChapterNumber(String.valueOf(Integer.parseInt(comic.getLatestChapterNumber() == null ? "0" : comic.getLatestChapterNumber()) + 1));
+                comicRepository.save(comic);
             } else {
-                // Backward-compatible approval for old author submissions without chapter linkage.
-                String title = submission.getTitle();
-                ComicEntity comic = comicRepository.findByTitle(title).orElse(null);
-                if (comic != null) {
-                    comic.setChapters((comic.getChapters() == null ? 0 : comic.getChapters()) + 1);
-                    comicRepository.save(comic);
-                } else {
-                    String authorName = submission.getSubmittedBy();
-                    if (authorName != null && authorName.startsWith("Author: ")) {
-                        authorName = authorName.substring(8);
-                    }
-                    ComicEntity newComic = ComicEntity.builder()
-                            .title(title)
-                            .author(authorName)
-                            .projectTeam("-")
-                            .chapters(1)
-                            .views("0")
-                            .status("Ongoing")
-                            .moderationStatus(ComicStatus.PUBLISHED.name())
-                            .genres("Action, Fantasy")
-                            .cover(submission.getCover() != null ? submission.getCover() : "📖")
-                            .coverImageUrl(submission.getCover())
-                            .publishedAt(new java.util.Date())
-                            .build();
-                    comicRepository.save(newComic);
+                String authorName = submission.getSubmittedBy();
+                if (authorName != null && authorName.startsWith("Author: ")) {
+                    authorName = authorName.substring(8);
                 }
+                final String searchName = authorName;
+                com.sep.comiverse.entity.UserEntity authorUser = userRepository.findAll().stream()
+                        .filter(u -> (u.getFullName() != null && u.getFullName().equalsIgnoreCase(searchName)) || u.getUsername().equalsIgnoreCase(searchName))
+                        .findFirst()
+                        .orElse(null);
+                UUID authorId = authorUser != null ? authorUser.getId() : null;
+
+                ComicEntity newComic = ComicEntity.builder()
+                        .title(title)
+                        .slug(title.toLowerCase().replaceAll("[^a-z0-9]+", "-"))
+                        .authorId(authorId)
+                        .status(com.sep.comiverse.constants.ComicStatus.ONGOING)
+                        .cover(submission.getCover() != null ? submission.getCover() : "📖")
+                        .build();
+                comicRepository.save(newComic);
             }
         } else if ("translator".equalsIgnoreCase(submission.getQueueType())) {
             // Approving a translator submission increments project chapters & adds a chapter record
@@ -115,24 +100,27 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                     .findFirst()
                     .orElse(null);
 
+            ComicEntity comic = comicRepository.findByTitle(comicTitle).orElse(null);
+
             if (team != null) {
                 team.setChaptersCount(team.getChaptersCount() + 1);
 
-                // Add to Chapters table
-                ChapterEntity chapter = ChapterEntity.builder()
-                        .num(submission.getChapter())
-                        .date("Just now")
-                        .words(submission.getWords() != null ? submission.getWords() : 3000)
-                        .content(submission.getContent())
-                        .projectTeam(team)
-                        .build();
-                chapterRepository.save(chapter);
+                if (comic != null) {
+                    // Add to Chapters table
+                    ChapterEntity chapter = ChapterEntity.builder()
+                            .chapterNumber(submission.getChapter() != null ? submission.getChapter().replaceAll("[^0-9]+", "") : "1")
+                            .title(submission.getChapter() != null ? submission.getChapter() : "Chapter 1")
+                            .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
+                            .comic(comic)
+                            .projectTeam(team)
+                            .build();
+                    chapterRepository.save(chapter);
+                }
                 projectTeamRepository.save(team);
             }
 
-            ComicEntity comic = comicRepository.findByTitle(comicTitle).orElse(null);
             if (comic != null) {
-                comic.setChapters(comic.getChapters() + 1);
+                comic.setLatestChapterNumber(submission.getChapter() != null ? submission.getChapter().replaceAll("[^0-9]+", "") : "1");
                 comicRepository.save(comic);
             }
         }
@@ -155,15 +143,6 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         String reason = body != null ? body.getOrDefault("reason", "No reason provided.") : "No reason provided.";
         submission.setStatus("rejected");
         submission.setRejectionReason(reason);
-
-        if ("author".equalsIgnoreCase(submission.getQueueType()) && submission.getChapterId() != null) {
-            chapterRepository.findById(submission.getChapterId()).ifPresent(chapter -> {
-                chapter.setStatus(ChapterStatus.REJECTED);
-                chapter.setRejectedAt(new java.util.Date());
-                chapter.setModerationNote(reason);
-                chapterRepository.save(chapter);
-            });
-        }
 
         SubmissionEntity savedSubmission = submissionRepository.save(submission);
 
