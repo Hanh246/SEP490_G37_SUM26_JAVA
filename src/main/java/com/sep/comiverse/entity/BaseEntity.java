@@ -7,7 +7,7 @@ import org.hibernate.annotations.GenericGenerator;
 import org.springframework.data.domain.Sort;
 
 import java.io.Serializable;
-import java.util.Date;
+import java.time.Instant;
 import java.util.UUID;
 
 @Data
@@ -27,27 +27,27 @@ public class BaseEntity implements Serializable {
     private Boolean deleted = false;
 
     @Column(name = "create_at", nullable = false)
-    private Date createdAt;
+    private Instant createdAt;
 
     @Column(name = "update_at")
-    private Date updatedAt;
+    private Instant updatedAt;
 
     @PrePersist
     protected void prePersist() {
         if (this.createdAt == null)
-            createdAt = new Date();
+            createdAt = Instant.now();
         if (this.updatedAt == null)
-            updatedAt = new Date();
+            updatedAt = Instant.now();
     }
 
     @PreUpdate
     protected void preUpdate() {
-        this.updatedAt = new Date();
+        this.updatedAt = Instant.now();
     }
 
     @PreRemove
     protected void preRemove() {
-        this.updatedAt = new Date();
+        this.updatedAt = Instant.now();
     }
 
 }
