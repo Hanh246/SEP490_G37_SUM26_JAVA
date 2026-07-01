@@ -88,3 +88,5 @@ public class ComicEntity extends BaseEntity {
     @JdbcTypeCode(SqlTypes.OTHER)
     private float[] summaryVector;
 }
+
+
