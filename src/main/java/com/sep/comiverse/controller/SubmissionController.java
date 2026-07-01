@@ -100,6 +100,13 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                     .findFirst()
                     .orElse(null);
 
+            if (team == null) {
+                team = projectTeamRepository.findAll().stream()
+                        .filter(t -> t.getComicName().equalsIgnoreCase(comicTitle))
+                        .findFirst()
+                        .orElse(null);
+            }
+
             ComicEntity comic = comicRepository.findByTitle(comicTitle).orElse(null);
 
             if (team != null) {
