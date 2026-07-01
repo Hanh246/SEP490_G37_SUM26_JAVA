@@ -6,6 +6,7 @@ import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -60,6 +61,10 @@ public class ComicEntity extends BaseEntity {
     private Integer saveCount = 0;
 
     @Builder.Default
+    @Column(name = "like_count", nullable = false, columnDefinition = "integer default 0")
+    private Integer likeCount = 0;
+
+    @Builder.Default
     @Column(name = "rating_average", nullable = false, columnDefinition = "double precision default 0.0")
     private Double ratingAverage = 0.0;
 
@@ -69,6 +74,10 @@ public class ComicEntity extends BaseEntity {
 
     @Column(name = "latest_chapter_number")
     private String latestChapterNumber;
+
+    @Builder.Default
+    @Column(name = "latest_chapter_update_at")
+    private Instant lastChapterUpdatedAt = Instant.now();
 
     //Recommendation
     @JdbcTypeCode(SqlTypes.ARRAY)

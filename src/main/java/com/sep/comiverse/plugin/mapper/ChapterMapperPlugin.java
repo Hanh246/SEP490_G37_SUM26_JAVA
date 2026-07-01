@@ -10,6 +10,7 @@ import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -43,6 +44,21 @@ public class ChapterMapperPlugin
             ComicEntity comic = comicRepository.findById(dto.getComicId())
                     .orElseThrow(() -> new EntityNotFoundException("Comic with id " + dto.getComicId() + " not found"));
             model.setComic(comic);
+        }
+    }
+
+    @Override
+    protected void performCustomCreate(ChapterEntity model, ChapterDTO dto) {
+        if (dto.getComicId() != null) {
+            ComicEntity comic = comicRepository.findById(dto.getComicId())
+                    .orElseThrow(() -> new EntityNotFoundException("Comic with id " + dto.getComicId() + " not found"));
+            model.setComic(comic);
+
+            if (dto.getChapterNumber() != null) {
+                comic.setLatestChapterNumber(dto.getChapterNumber());
+            }
+
+            comic.setLastChapterUpdatedAt(Instant.now());
         }
     }
 

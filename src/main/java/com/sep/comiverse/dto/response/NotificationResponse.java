@@ -5,7 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.Date;
+import java.time.Instant;
 import java.util.UUID;
 
 @Data
@@ -18,5 +18,5 @@ public class NotificationResponse {
     private String message;
     private String type;
     private Boolean isRead;
-    private Date createdAt;
+    private Instant createdAt;
 }
