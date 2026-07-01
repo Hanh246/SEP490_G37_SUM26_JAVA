@@ -37,22 +37,35 @@ public class JwtTokenUtil {
         this.signingKey = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public String generateToken(String subject) {
-        return buildToken(subject, Instant.now().plusMillis(jwtExpirationMs));
+    public String generateToken(com.sep.comiverse.entity.UserEntity user) {
+        Instant expiration = Instant.now().plusMillis(jwtExpirationMs);
+        return buildToken(user, expiration);
     }
 
-    public String generateRefreshToken(String subject) {
+    public String generateRefreshToken(com.sep.comiverse.entity.UserEntity user) {
         long refreshExpirationMs = 7 * 24 * 60 * 60 * 1000L;
-        return buildToken(subject, Instant.now().plusMillis(refreshExpirationMs));
+        Instant expiration = Instant.now().plusMillis(refreshExpirationMs);
+        return buildToken(user, expiration);
     }
 
-    private String buildToken(String subject, Instant expiration) {
+    private String buildToken(com.sep.comiverse.entity.UserEntity user, Instant expiration) {
         return Jwts.builder()
-                .subject(subject)
-                .issuedAt(new Date())
+                .subject(user.getId().toString())
+                .claim("email", user.getEmail())
+                .claim("fullName", user.getFullName())
+                .claim("role", user.getRole() != null ? user.getRole().getRoleName() : "READER")
+                .issuedAt(Date.from(Instant.now()))
                 .expiration(Date.from(expiration))
                 .signWith(signingKey, Jwts.SIG.HS256)
                 .compact();
+    }
+
+    public io.jsonwebtoken.Claims getClaimsFromToken(String token) {
+        return Jwts.parser()
+                .verifyWith(signingKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
     }
 
     public String getSubjectFromJwtToken(String token) {

@@ -36,8 +36,27 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
         String jwt = getJwtFromRequest(request);
         try {
             if (StringUtils.hasLength(jwt) && jwtTokenUtil.validateJwtToken(jwt)) {
-                String userIdStr = jwtTokenUtil.getSubjectFromJwtToken(jwt);
-                UserDetails userDetails = customUserDetailsService.loadUserById(java.util.UUID.fromString(userIdStr));
+                // Read claims directly from token without DB lookup
+                io.jsonwebtoken.Claims claims = jwtTokenUtil.getClaimsFromToken(jwt);
+                String userId = claims.getSubject();
+
+                String email = claims.get("email", String.class);
+                String role = claims.get("role", String.class);
+                String fullName = claims.get("fullName", String.class);
+
+                // Construct temp user entity and principal
+                com.sep.comiverse.entity.RoleEntity roleEntity = com.sep.comiverse.entity.RoleEntity.builder()
+                        .roleName(role)
+                        .build();
+
+                com.sep.comiverse.entity.UserEntity tempUser = new com.sep.comiverse.entity.UserEntity();
+                tempUser.setId(java.util.UUID.fromString(userId));
+                tempUser.setEmail(email);
+                tempUser.setFullName(fullName);
+                tempUser.setRole(roleEntity);
+                tempUser.setStatus("ACTIVE");
+
+                UserDetails userDetails = new UserPrincipal(tempUser);
 
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());

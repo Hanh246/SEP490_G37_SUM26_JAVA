@@ -32,8 +32,8 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody AuthRequest request) {
         UserEntity user = authService.authenticate(request.getUsername(), request.getPassword());
-        String token = jwtTokenUtil.generateToken(user.getId().toString());
-        String refreshToken = jwtTokenUtil.generateRefreshToken(user.getId().toString());
+        String token = jwtTokenUtil.generateToken(user);
+        String refreshToken = jwtTokenUtil.generateRefreshToken(user);
 
         return ResponseEntity.ok(new AuthResponse(token, refreshToken));
     }
@@ -41,8 +41,8 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
         UserEntity user = authService.register(request);
-        String token = jwtTokenUtil.generateToken(user.getId().toString());
-        String refreshToken = jwtTokenUtil.generateRefreshToken(user.getId().toString());
+        String token = jwtTokenUtil.generateToken(user);
+        String refreshToken = jwtTokenUtil.generateRefreshToken(user);
 
         return ResponseEntity.ok(new AuthResponse(token, refreshToken));
     }
