@@ -61,6 +61,7 @@ public class AuthService {
                 .phone(request.getPhone())
                 .role(userRole)
                 .status("ACTIVE")
+                .dateOfBirth(request.getDateOfBirth())
                 .build();
 
         return userRepository.save(user);
@@ -126,6 +127,7 @@ public class AuthService {
                 .phone(request.getPhone())
                 .role(targetRole)
                 .status("ACTIVE")
+                .dateOfBirth(request.getDateOfBirth())
                 .build();
 
         return userRepository.save(user);

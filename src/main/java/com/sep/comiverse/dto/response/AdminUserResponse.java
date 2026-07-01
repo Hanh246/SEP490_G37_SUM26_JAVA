@@ -6,7 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.Instant;
+import java.util.Date;
 import java.util.UUID;
 
 @Data
@@ -45,8 +45,11 @@ public class AdminUserResponse {
     private String avatarUrl;
 
     @JsonProperty("createdDate")
-    private Instant createdDate;
+    private Date createdDate;
 
     @JsonProperty("updatedDate")
-    private Instant updatedDate;
+    private Date updatedDate;
+
+    @JsonProperty("dateOfBirth")
+    private java.time.LocalDate dateOfBirth;
 }

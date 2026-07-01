@@ -2,6 +2,9 @@ package com.sep.comiverse.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import java.time.LocalDate;
+
+import java.time.LocalDateTime;
 
 import java.time.LocalDateTime;
 
@@ -29,7 +32,7 @@ public class UserEntity extends BaseEntity {
     @Column(name = "phone")
     private String phone;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "role_id")
     private RoleEntity role;
 
@@ -52,4 +55,7 @@ public class UserEntity extends BaseEntity {
     @Builder.Default
     @Column(name = "status", nullable = false)
     private String status = "ACTIVE";
+
+    @Column(name = "date_of_birth")
+    private LocalDate dateOfBirth;
 }

@@ -10,6 +10,7 @@ import com.sep.comiverse.dto.request.ResetPasswordRequest;
 import com.sep.comiverse.dto.request.ChangePasswordRequest;
 import com.sep.comiverse.dto.request.UpdateProfileRequest;
 import com.sep.comiverse.dto.response.AuthResponse;
+import com.sep.comiverse.dto.response.UserProfileResponse;
 import com.sep.comiverse.dto.request.RegisterRequest;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.security.JwtTokenUtil;
@@ -31,33 +32,19 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody AuthRequest request) {
         UserEntity user = authService.authenticate(request.getUsername(), request.getPassword());
-        String token = jwtTokenUtil.generateToken(user.getId().toString());
+        String token = jwtTokenUtil.generateToken(user);
+        String refreshToken = jwtTokenUtil.generateRefreshToken(user);
 
-        return ResponseEntity.ok(new AuthResponse(
-                token,
-                user.getId(),
-                user.getUsername(),
-                user.getFullName(),
-                user.getEmail(),
-                user.getRole().getRoleName(),
-                user.getAvatarUrl()
-        ));
+        return ResponseEntity.ok(new AuthResponse(token, refreshToken));
     }
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
         UserEntity user = authService.register(request);
-        String token = jwtTokenUtil.generateToken(user.getId().toString());
+        String token = jwtTokenUtil.generateToken(user);
+        String refreshToken = jwtTokenUtil.generateRefreshToken(user);
 
-        return ResponseEntity.ok(new AuthResponse(
-                token,
-                user.getId(),
-                user.getUsername(),
-                user.getFullName(),
-                user.getEmail(),
-                user.getRole().getRoleName(),
-                user.getAvatarUrl()
-        ));
+        return ResponseEntity.ok(new AuthResponse(token, refreshToken));
     }
 
     @PostMapping("/forgot-password")
@@ -82,27 +69,18 @@ public class AuthController {
     @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<AuthResponse> registerStaff(@Valid @RequestBody RegisterRequest request) {
         UserEntity user = authService.registerStaff(request);
-        return ResponseEntity.ok(new AuthResponse(
-                null,
-                user.getId(),
-                user.getUsername(),
-                user.getFullName(),
-                user.getEmail(),
-                user.getRole().getRoleName(),
-                user.getAvatarUrl()
-        ));
+        return ResponseEntity.ok(new AuthResponse(null, null));
     }
 
     @GetMapping("/me")
-    public ResponseEntity<BaseResponse<AuthResponse>> getMyProfile(org.springframework.security.core.Authentication authentication) {
+    public ResponseEntity<BaseResponse<UserProfileResponse>> getMyProfile(org.springframework.security.core.Authentication authentication) {
         if (authentication == null || !(authentication.getPrincipal() instanceof UserPrincipal)) {
-            return ResponseEntity.status(401).body(BaseResponse.<AuthResponse>builder().success(false).message("Unauthorized").build());
+            return ResponseEntity.status(401).body(BaseResponse.<UserProfileResponse>builder().success(false).message("Unauthorized").build());
         }
         UserPrincipal principal = (UserPrincipal) authentication.getPrincipal();
         UserEntity user = principal.user();
         
-        AuthResponse response = new AuthResponse(
-                null,
+        UserProfileResponse response = new UserProfileResponse(
                 user.getId(),
                 user.getUsername(),
                 user.getFullName(),
@@ -110,7 +88,7 @@ public class AuthController {
                 user.getRole().getRoleName(),
                 user.getAvatarUrl()
         );
-        return ResponseEntity.ok(BaseResponse.<AuthResponse>builder()
+        return ResponseEntity.ok(BaseResponse.<UserProfileResponse>builder()
                 .success(true)
                 .data(response)
                 .build());
@@ -134,7 +112,7 @@ public class AuthController {
 
     @PutMapping("/profile")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<BaseResponse<AuthResponse>> updateProfile(
+    public ResponseEntity<BaseResponse<UserProfileResponse>> updateProfile(
             @Valid @RequestBody UpdateProfileRequest request,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
@@ -142,8 +120,7 @@ public class AuthController {
             throw new CustomException(401, "Unauthorized", HttpStatus.UNAUTHORIZED);
         }
         UserEntity updatedUser = authService.updateProfile(principal.getId(), request.getFullName(), request.getAvatarUrl());
-        AuthResponse response = new AuthResponse(
-                null,
+        UserProfileResponse response = new UserProfileResponse(
                 updatedUser.getId(),
                 updatedUser.getUsername(),
                 updatedUser.getFullName(),
@@ -151,7 +128,7 @@ public class AuthController {
                 updatedUser.getRole().getRoleName(),
                 updatedUser.getAvatarUrl()
         );
-        return ResponseEntity.ok(BaseResponse.<AuthResponse>builder()
+        return ResponseEntity.ok(BaseResponse.<UserProfileResponse>builder()
                 .success(true)
                 .data(response)
                 .message("Profile updated successfully.")
