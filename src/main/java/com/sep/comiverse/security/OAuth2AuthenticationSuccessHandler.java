@@ -31,8 +31,8 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
         com.sep.comiverse.entity.UserEntity user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found with email: " + email));
 
-        // Generate token using user ID
-        String token = jwtTokenUtil.generateToken(user.getId().toString());
+        // Generate token using UserEntity
+        String token = jwtTokenUtil.generateToken(user);
 
         String targetUrl = UriComponentsBuilder.fromUriString(authorizedRedirectUri)
                 .queryParam("token", token)

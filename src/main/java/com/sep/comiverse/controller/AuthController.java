@@ -28,7 +28,7 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody AuthRequest request) {
         UserEntity user = authService.authenticate(request.getUsername(), request.getPassword());
-        String token = jwtTokenUtil.generateToken(user.getId().toString());
+        String token = jwtTokenUtil.generateToken(user);
 
         return ResponseEntity.ok(new AuthResponse(
                 token,
@@ -36,14 +36,15 @@ public class AuthController {
                 user.getUsername(),
                 user.getFullName(),
                 user.getEmail(),
-                user.getRole().getRoleName()
+                user.getRole().getRoleName(),
+                user.getDateOfBirth()
         ));
     }
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
         UserEntity user = authService.register(request);
-        String token = jwtTokenUtil.generateToken(user.getId().toString());
+        String token = jwtTokenUtil.generateToken(user);
 
         return ResponseEntity.ok(new AuthResponse(
                 token,
@@ -51,7 +52,8 @@ public class AuthController {
                 user.getUsername(),
                 user.getFullName(),
                 user.getEmail(),
-                user.getRole().getRoleName()
+                user.getRole().getRoleName(),
+                user.getDateOfBirth()
         ));
     }
 
@@ -83,7 +85,8 @@ public class AuthController {
                 user.getUsername(),
                 user.getFullName(),
                 user.getEmail(),
-                user.getRole().getRoleName()
+                user.getRole().getRoleName(),
+                user.getDateOfBirth()
         ));
     }
 
@@ -100,7 +103,8 @@ public class AuthController {
                 user.getUsername(),
                 user.getFullName(),
                 user.getEmail(),
-                user.getRole().getRoleName()
+                user.getRole().getRoleName(),
+                user.getDateOfBirth()
         );
         return ResponseEntity.ok(com.sep.comiverse.dto.response.BaseResponse.<AuthResponse>builder()
                 .success(true)

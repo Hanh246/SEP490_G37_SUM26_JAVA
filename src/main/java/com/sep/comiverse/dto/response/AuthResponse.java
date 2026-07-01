@@ -3,6 +3,7 @@ package com.sep.comiverse.dto.response;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import java.util.UUID;
+import java.time.LocalDate;
 
 @Data
 @AllArgsConstructor
@@ -13,4 +14,5 @@ public class AuthResponse {
     private String fullName;
     private String email;
     private String role;
+    private LocalDate dateOfBirth;
 }

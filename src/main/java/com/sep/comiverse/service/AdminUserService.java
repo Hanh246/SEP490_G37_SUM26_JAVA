@@ -55,6 +55,7 @@ public class AdminUserService {
 
         user.setStatus("INACTIVE");
         userRepository.save(user);
+
         return toAdminUserResponse(user);
     }
 
@@ -71,6 +72,7 @@ public class AdminUserService {
 
         user.setStatus("ACTIVE");
         userRepository.save(user);
+
         return toAdminUserResponse(user);
     }
 
@@ -166,6 +168,7 @@ public class AdminUserService {
                 .avatarUrl(user.getAvatarUrl())
                 .createdDate(user.getCreatedAt())
                 .updatedDate(user.getUpdatedAt())
+                .dateOfBirth(user.getDateOfBirth())
                 .build();
     }
 

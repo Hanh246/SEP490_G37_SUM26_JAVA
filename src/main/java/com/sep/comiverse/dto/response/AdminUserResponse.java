@@ -49,4 +49,7 @@ public class AdminUserResponse {
 
     @JsonProperty("updatedDate")
     private Date updatedDate;
+
+    @JsonProperty("dateOfBirth")
+    private java.time.LocalDate dateOfBirth;
 }

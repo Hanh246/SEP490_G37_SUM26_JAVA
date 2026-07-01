@@ -37,17 +37,25 @@ public class JwtTokenUtil {
         this.signingKey = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public String generateToken(String subject) {
-        return buildToken(subject, Instant.now().plusMillis(jwtExpirationMs));
-    }
-
-    private String buildToken(String subject, Instant expiration) {
+    public String generateToken(com.sep.comiverse.entity.UserEntity user) {
+        Instant expiration = Instant.now().plusMillis(jwtExpirationMs);
         return Jwts.builder()
-                .subject(subject)
+                .subject(user.getId().toString())
+                .claim("email", user.getEmail())
+                .claim("fullName", user.getFullName())
+                .claim("role", user.getRole() != null ? user.getRole().getRoleName() : "READER")
                 .issuedAt(new Date())
                 .expiration(Date.from(expiration))
                 .signWith(signingKey, Jwts.SIG.HS256)
                 .compact();
+    }
+
+    public io.jsonwebtoken.Claims getClaimsFromToken(String token) {
+        return Jwts.parser()
+                .verifyWith(signingKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
     }
 
     public String getSubjectFromJwtToken(String token) {
