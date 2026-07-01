@@ -65,10 +65,11 @@ public class DbInitializer implements CommandLineRunner {
     }
 
     private void createAdmin() {
-        if (!userRepository.existsByUsername("admin")) {
-            RoleEntity adminRole = roleRepository.findByRoleName("ADMIN")
-                    .orElseThrow(() -> new RuntimeException("ADMIN role not found"));
+        RoleEntity adminRole = roleRepository.findByRoleName("ADMIN")
+                .orElseThrow(() -> new RuntimeException("ADMIN role not found"));
 
+        java.util.Optional<UserEntity> adminOpt = userRepository.findByUsername("admin");
+        if (adminOpt.isEmpty()) {
             UserEntity admin = UserEntity.builder()
                     .username("admin")
                     .password(passwordEncoder.encode("admin123"))
@@ -81,6 +82,13 @@ public class DbInitializer implements CommandLineRunner {
 
             userRepository.save(admin);
             System.out.println("Created admin: admin / admin123");
+        } else {
+            UserEntity admin = adminOpt.get();
+            admin.setPassword(passwordEncoder.encode("admin123"));
+            admin.setStatus("ACTIVE");
+            admin.setRole(adminRole);
+            userRepository.save(admin);
+            System.out.println("Reset admin password and status to ACTIVE / admin123");
         }
     }
 
@@ -92,10 +100,11 @@ public class DbInitializer implements CommandLineRunner {
     }
 
     private void createSampleUser(String username, String fullName, String email, String phone, String roleName, String password) {
-        if (!userRepository.existsByUsername(username)) {
-            RoleEntity targetRole = roleRepository.findByRoleName(roleName)
-                    .orElseThrow(() -> new RuntimeException(roleName + " role not found"));
+        RoleEntity targetRole = roleRepository.findByRoleName(roleName)
+                .orElseThrow(() -> new RuntimeException(roleName + " role not found"));
 
+        java.util.Optional<UserEntity> userOpt = userRepository.findByUsername(username);
+        if (userOpt.isEmpty()) {
             UserEntity user = UserEntity.builder()
                     .username(username)
                     .password(passwordEncoder.encode(password))
@@ -108,6 +117,13 @@ public class DbInitializer implements CommandLineRunner {
 
             userRepository.save(user);
             System.out.println("Created " + username + " (" + roleName + "): " + username + " / " + password);
+        } else {
+            UserEntity user = userOpt.get();
+            user.setPassword(passwordEncoder.encode(password));
+            user.setStatus("ACTIVE");
+            user.setRole(targetRole);
+            userRepository.save(user);
+            System.out.println("Reset sample user " + username + " to ACTIVE / " + password);
         }
     }
 
