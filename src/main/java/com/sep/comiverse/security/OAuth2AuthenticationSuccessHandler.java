@@ -33,9 +33,11 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
 
         // Generate token using user ID
         String token = jwtTokenUtil.generateToken(user.getId().toString());
+        String refreshToken = jwtTokenUtil.generateRefreshToken(user.getId().toString());
 
         String targetUrl = UriComponentsBuilder.fromUriString(authorizedRedirectUri)
                 .queryParam("token", token)
+                .queryParam("refreshToken", refreshToken)
                 .build().toUriString(); // Redirect to React app with authentication token
 
         getRedirectStrategy().sendRedirect(request, response, targetUrl);
