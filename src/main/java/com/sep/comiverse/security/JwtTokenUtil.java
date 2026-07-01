@@ -41,6 +41,11 @@ public class JwtTokenUtil {
         return buildToken(subject, Instant.now().plusMillis(jwtExpirationMs));
     }
 
+    public String generateRefreshToken(String subject) {
+        long refreshExpirationMs = 7 * 24 * 60 * 60 * 1000L;
+        return buildToken(subject, Instant.now().plusMillis(refreshExpirationMs));
+    }
+
     private String buildToken(String subject, Instant expiration) {
         return Jwts.builder()
                 .subject(subject)
