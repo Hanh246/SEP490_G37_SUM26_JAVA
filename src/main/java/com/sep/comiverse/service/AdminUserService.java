@@ -166,8 +166,8 @@ public class AdminUserService {
                 .status(displayStatus)
                 .provider(user.getProvider())
                 .avatarUrl(user.getAvatarUrl())
-                .createdDate(user.getCreatedAt())
-                .updatedDate(user.getUpdatedAt())
+                .createdDate(user.getCreatedAt() != null ? java.util.Date.from(user.getCreatedAt()) : null)
+                .updatedDate(user.getUpdatedAt() != null ? java.util.Date.from(user.getUpdatedAt()) : null)
                 .dateOfBirth(user.getDateOfBirth())
                 .build();
     }

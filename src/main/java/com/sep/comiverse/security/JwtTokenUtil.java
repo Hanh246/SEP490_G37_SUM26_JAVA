@@ -44,7 +44,7 @@ public class JwtTokenUtil {
                 .claim("email", user.getEmail())
                 .claim("fullName", user.getFullName())
                 .claim("role", user.getRole() != null ? user.getRole().getRoleName() : "READER")
-                .issuedAt(new Date())
+                .issuedAt(Date.from(Instant.now()))
                 .expiration(Date.from(expiration))
                 .signWith(signingKey, Jwts.SIG.HS256)
                 .compact();
