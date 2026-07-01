@@ -12,10 +12,10 @@ public interface IUserRepository extends AbstractCrudRepository<UserEntity, UUID
     @Query("SELECT u FROM UserEntity u WHERE u.username = :username AND u.deleted = false")
     Optional<UserEntity> findByUsername(@Param("username") String username);
 
-    @Query("SELECT u FROM UserEntity u WHERE u.email = :email AND u.deleted = false")
+    @Query("SELECT u FROM UserEntity u WHERE LOWER(u.email) = LOWER(:email) AND u.deleted = false")
     Optional<UserEntity> findByEmail(@Param("email") String email);
 
-    @Query("SELECT u FROM UserEntity u WHERE (u.username = :username OR u.email = :email) AND u.deleted = false")
+    @Query("SELECT u FROM UserEntity u WHERE (u.username = :username OR LOWER(u.email) = LOWER(:email)) AND u.deleted = false")
     Optional<UserEntity> findByUsernameOrEmail(@Param("username") String username, @Param("email") String email);
 
     @Query("SELECT u FROM UserEntity u JOIN u.role r WHERE LOWER(r.roleName) = 'translator' " +
