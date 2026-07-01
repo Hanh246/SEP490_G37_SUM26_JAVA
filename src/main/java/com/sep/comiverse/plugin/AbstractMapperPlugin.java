@@ -46,7 +46,7 @@ public abstract class AbstractMapperPlugin<MODEL extends BaseEntity, DTO, ID>
         if (dto == null)
             return null;
         var model = modelMapper.map(dto, modelClass);
-        performCustomUpdate(model, dto);
+        performCustomCreate(model, dto);
         return model;
     }
 
@@ -71,6 +71,15 @@ public abstract class AbstractMapperPlugin<MODEL extends BaseEntity, DTO, ID>
      * that cannot be handled by ModelMapper automatically
      */
     protected void performCustomUpdate(MODEL existingModel, DTO dto) {
+        // Default implementation does nothing
+        // Override in specific plugins for custom logic
+    }
+
+    /**
+     * Override this method to perform custom create logic
+     * that cannot be handled by ModelMapper automatically
+     */
+    protected void performCustomCreate(MODEL existingModel, DTO dto) {
         // Default implementation does nothing
         // Override in specific plugins for custom logic
     }
