@@ -118,6 +118,33 @@ public class AuthService {
         return userRepository.save(user);
     }
 
+    @Transactional
+    public void changePassword(java.util.UUID userId, String currentPassword, String newPassword) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(404, "User not found", HttpStatus.NOT_FOUND));
+
+        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+            throw new CustomException(400, "Current password incorrect", HttpStatus.BAD_REQUEST);
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public UserEntity updateProfile(java.util.UUID userId, String fullName, String avatarUrl) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(404, "User not found", HttpStatus.NOT_FOUND));
+
+        if (fullName != null && !fullName.trim().isEmpty()) {
+            user.setFullName(fullName.trim());
+        }
+        if (avatarUrl != null) {
+            user.setAvatarUrl(avatarUrl);
+        }
+        return userRepository.save(user);
+    }
+
     private String capitalizeFirst(String str) {
         if (str == null || str.isEmpty()) return str;
         return str.substring(0, 1).toUpperCase() + str.substring(1).toLowerCase();
