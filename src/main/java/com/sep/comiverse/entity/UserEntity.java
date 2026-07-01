@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDate;
 
+import java.time.LocalDateTime;
+
 @Data
 @Entity
 @NoArgsConstructor
@@ -44,6 +46,9 @@ public class UserEntity extends BaseEntity {
 
     @Column(name = "reset_token")
     private String resetToken;
+
+    @Column(name = "reset_token_expires_at")
+    private LocalDateTime resetTokenExpiresAt;
 
     @Builder.Default
     @Column(name = "status", nullable = false)
