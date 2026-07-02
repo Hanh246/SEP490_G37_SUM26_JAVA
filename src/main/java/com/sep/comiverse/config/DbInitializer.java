@@ -554,12 +554,14 @@ public class DbInitializer implements CommandLineRunner {
             forumThreadRepository.save(ForumThreadEntity.builder()
                     .title("Spam Link Post")
                     .author("bot_account")
+                    .category("Site Feedback")
                     .content("\"Check out this site for free gift cards: bit.ly/spam-link\"")
                     .build());
 
             forumThreadRepository.save(ForumThreadEntity.builder()
                     .title("Off-topic Flame War")
                     .author("angry_user_12")
+                    .category("Story Discussion")
                     .content("\"You guys are all idiots, this series is trash and everyone who likes it has zero braincells!\"")
                     .build());
 

@@ -20,6 +20,9 @@ public class ForumThreadEntity extends BaseEntity {
     @Column(name = "author")
     private String author;
 
+    @Column(name = "category")
+    private String category;
+
     @Column(name = "content", columnDefinition = "TEXT")
     private String content;
 }

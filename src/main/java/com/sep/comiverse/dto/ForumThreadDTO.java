@@ -12,5 +12,6 @@ public class ForumThreadDTO {
     private UUID id;
     private String title;
     private String author;
+    private String category;
     private String content;
 }
