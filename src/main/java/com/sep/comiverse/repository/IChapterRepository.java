@@ -10,9 +10,12 @@ import java.util.UUID;
 
 @Repository
 public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity, UUID> {
-    Optional<ChapterEntity> findByIdAndComicIdAndAuthorIdAndDeletedFalse(UUID id, UUID comicId, UUID authorId);
+    Optional<ChapterEntity> findByIdAndComic_IdAndComic_AuthorIdAndDeletedFalse(UUID id, UUID comicId, UUID authorId);
 
-    boolean existsByComicIdAndChapterNumberAndDeletedFalse(UUID comicId, Integer chapterNumber);
+    boolean existsByComic_IdAndChapterNumberAndDeletedFalse(UUID comicId, String chapterNumber);
 
-    Page<ChapterEntity> findAllByComicIdAndAuthorIdAndDeletedFalse(UUID comicId, UUID authorId, Pageable pageable);
+    Page<ChapterEntity> findAllByComic_IdAndComic_AuthorIdAndDeletedFalse(UUID comicId, UUID authorId, Pageable pageable);
+
+    long countByComic_IdAndDeletedFalse(UUID comicId);
 }
+

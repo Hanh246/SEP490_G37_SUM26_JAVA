@@ -57,14 +57,15 @@ public class AuthorComicController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         UUID resolvedAuthorId = resolveAuthorId(authorId, principal);
-        Page<AuthorComicResponse> data = authorComicService.listOwnComics(resolvedAuthorId, pagination);
+        PaginationSearchDTO safePagination = pagination != null ? pagination : new PaginationSearchDTO();
+        Page<AuthorComicResponse> data = authorComicService.listOwnComics(resolvedAuthorId, safePagination);
         return ResponseEntity.ok(
                 PaginationResponse.<List<AuthorComicResponse>>builder()
                         .success(true)
                         .data(data.getContent())
                         .metadata(new PaginationMetadata(
-                                pagination.getPage(),
-                                pagination.getSize(),
+                                safePagination.getPage(),
+                                safePagination.getSize(),
                                 data.getTotalElements(),
                                 data.getTotalPages()
                         ))

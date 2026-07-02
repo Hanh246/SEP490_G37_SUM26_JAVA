@@ -1,6 +1,7 @@
 package com.sep.comiverse.entity;
 
 import com.sep.comiverse.constants.ComicStatus;
+import com.sep.comiverse.entity.enums.ComicPublicationStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -11,7 +12,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-@Data
+@Getter
+@Setter
 @Entity
 @NoArgsConstructor
 @AllArgsConstructor
@@ -30,12 +32,19 @@ public class ComicEntity extends BaseEntity {
     @Column(name = "summary", columnDefinition = "TEXT")
     private String summary;
 
+    @Column(name = "minimum_age")
+    private Integer minimumAge;
+
     @Column(name = "author_id")
     private UUID authorId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private ComicStatus status;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "publication_status")
+    private ComicPublicationStatus publicationStatus;
 
     @Column(name = "cover")
     private String cover; // Cover emoji or image path (e.g. "⚔️")
@@ -79,6 +88,9 @@ public class ComicEntity extends BaseEntity {
     @Column(name = "latest_chapter_update_at")
     private Instant lastChapterUpdatedAt = Instant.now();
 
+    @Builder.Default
+    @Column(name = "chapter_count", nullable = false, columnDefinition = "integer default 0")
+    private Integer chapterCount = 0;
     //Recommendation
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(name = "genre_ids", columnDefinition = "uuid[]")

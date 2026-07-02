@@ -23,8 +23,9 @@ public class ChapterEntity extends BaseEntity {
     @JoinColumn(name = "comic_id")
     private ComicEntity comic;
 
-    @Column(name = "chapter_number", nullable = false, columnDefinition = "varchar(255) default '1'")
-    private String chapterNumber;
+    @Builder.Default
+    @Column(name = "chapter_number", nullable = false)
+    private String chapterNumber = "1";
 
     @Column(name = "title")
     private String title;
