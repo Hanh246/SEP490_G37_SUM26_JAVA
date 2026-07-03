@@ -88,15 +88,23 @@ public class BroadcastService {
     public List<BroadcastResponse> getBroadcastHistory() {
         List<Object[]> rows = notificationRepository.findBroadcastSummaries();
         return rows.stream()
-                .map(row -> BroadcastResponse.builder()
-                        .id((UUID) row[0])
-                        .type((String) row[1])
-                        .title((String) row[2])
-                        .message((String) row[3])
-                        .targetRoles((String) row[4])
-                        .recipientCount((Long) row[5])
-                        .sentAt((Date) row[6])
-                        .build())
+                .map(row -> {
+                    Date sentAtDate = null;
+                    if (row[6] instanceof java.time.Instant) {
+                        sentAtDate = Date.from((java.time.Instant) row[6]);
+                    } else if (row[6] instanceof Date) {
+                        sentAtDate = (Date) row[6];
+                    }
+                    return BroadcastResponse.builder()
+                            .id((UUID) row[0])
+                            .type((String) row[1])
+                            .title((String) row[2])
+                            .message((String) row[3])
+                            .targetRoles((String) row[4])
+                            .recipientCount((Long) row[5])
+                            .sentAt(sentAtDate)
+                            .build();
+                })
                 .collect(Collectors.toList());
     }
 
