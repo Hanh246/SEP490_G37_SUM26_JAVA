@@ -37,7 +37,8 @@ public class ChapterCrudPlugin
     }
 
     @Transactional(readOnly = true)
-    public ChapterDTO getChapterDetail(UUID chapterId, UUID userId) {
+    public ChapterDTO getChapterDetail(UUID chapterId, String clientIp) {
+        UUID userId = null;
         String cacheKey = CHAPTER_CACHE_PREFIX + chapterId.toString();
 
         ChapterDTO dto = (ChapterDTO) redisTemplate.opsForValue().get(cacheKey);
@@ -51,7 +52,20 @@ public class ChapterCrudPlugin
             redisTemplate.opsForValue().set(cacheKey, dto, Duration.ofDays(3));
         }
 
-        trackAndIncrementView(dto.getComicId(), chapterId, userId);
+        if (Boolean.TRUE.equals(dto.getIsPremium())) {
+            // Check if the user is authorized to read this premium chapter
+            boolean isAuthorized = checkUserPremiumAccess(userId, chapterId);
+
+            if (!isAuthorized) {
+                // Secure Data Masking: Empty the images payload before returning to unauthorized users
+                dto.setImages(java.util.Collections.emptyList());
+
+                // OPTIONAL: Alternatively, you can throw a custom Security Exception here
+                // throw new AccessDeniedException("This is a premium chapter. Purchase required.");
+            }
+        }
+
+        trackAndIncrementView(dto.getComicId(), chapterId, userId, clientIp);
 
         Integer redisChapterViews = (Integer) redisTemplate.opsForHash().get(CHAPTER_VIEW_HASH, chapterId.toString());
         if (redisChapterViews != null) {
@@ -61,9 +75,10 @@ public class ChapterCrudPlugin
         return dto;
     }
 
-    private void trackAndIncrementView(UUID comicId, UUID chapterId, UUID userId) {
-        String userIdentity = (userId != null) ? userId.toString() : "anonymous";
-        String lockKey = String.format("view:lock:user:%s:chapter:%s", userIdentity, chapterId);
+    private void trackAndIncrementView(UUID comicId, UUID chapterId, UUID userId, String clientIp) {
+        String userIdentity = (userId != null) ? "user:" + userId : "guest:ip:" + clientIp;
+
+        String lockKey = String.format("view:lock:%s:chapter:%s", userIdentity, chapterId);
 
         Boolean isFirstTimeIn10Mins = redisTemplate.opsForValue()
                 .setIfAbsent(lockKey, "1", Duration.ofMinutes(10));
@@ -74,5 +89,14 @@ public class ChapterCrudPlugin
 
             // TODO: Đẩy thêm 1 event "user_id đã đọc chapter_id" vào Kafka/Redis Queue để lưu Lịch sử đọc truyện
         }
+    }
+
+    private boolean checkUserPremiumAccess(UUID userId, UUID chapterId) {
+        if (userId == null) {
+            return false; // Anonymous guests never have premium access
+        }
+
+        // TODO: Query your transactional/subscription repository to check access
+        return false; // Defaulted to false for fallback safety
     }
 }
