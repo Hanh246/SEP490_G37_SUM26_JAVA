@@ -66,9 +66,12 @@ public class SecurityConfig {
                 .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(entryPoint))
-                .authorizeHttpRequests(auth ->
-                        auth.requestMatchers(URL_WHITELIST).permitAll()
-                                .anyRequest().authenticated()
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(URL_WHITELIST).permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/comics/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/chapters/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/genres/**").permitAll()
+                        .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2
                         .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
