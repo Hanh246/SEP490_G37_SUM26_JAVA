@@ -7,16 +7,20 @@ import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.dto.request.AuthRequest;
 import com.sep.comiverse.dto.request.ForgotPasswordRequest;
 import com.sep.comiverse.dto.request.ResetPasswordRequest;
+import com.sep.comiverse.dto.request.ChangePasswordRequest;
+import com.sep.comiverse.dto.request.UpdateProfileRequest;
 import com.sep.comiverse.dto.response.AuthResponse;
+import com.sep.comiverse.dto.response.UserProfileResponse;
 import com.sep.comiverse.dto.request.RegisterRequest;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.security.JwtTokenUtil;
+import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.AuthService;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import com.sep.comiverse.exception.CustomException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/auth")
@@ -28,31 +32,19 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody AuthRequest request) {
         UserEntity user = authService.authenticate(request.getUsername(), request.getPassword());
-        String token = jwtTokenUtil.generateToken(user.getId().toString());
+        String token = jwtTokenUtil.generateToken(user);
+        String refreshToken = jwtTokenUtil.generateRefreshToken(user);
 
-        return ResponseEntity.ok(new AuthResponse(
-                token,
-                user.getId(),
-                user.getUsername(),
-                user.getFullName(),
-                user.getEmail(),
-                user.getRole().getRoleName()
-        ));
+        return ResponseEntity.ok(new AuthResponse(token, refreshToken));
     }
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
         UserEntity user = authService.register(request);
-        String token = jwtTokenUtil.generateToken(user.getId().toString());
+        String token = jwtTokenUtil.generateToken(user);
+        String refreshToken = jwtTokenUtil.generateRefreshToken(user);
 
-        return ResponseEntity.ok(new AuthResponse(
-                token,
-                user.getId(),
-                user.getUsername(),
-                user.getFullName(),
-                user.getEmail(),
-                user.getRole().getRoleName()
-        ));
+        return ResponseEntity.ok(new AuthResponse(token, refreshToken));
     }
 
     @PostMapping("/forgot-password")
@@ -77,34 +69,69 @@ public class AuthController {
     @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<AuthResponse> registerStaff(@Valid @RequestBody RegisterRequest request) {
         UserEntity user = authService.registerStaff(request);
-        return ResponseEntity.ok(new AuthResponse(
-                null,
-                user.getId(),
-                user.getUsername(),
-                user.getFullName(),
-                user.getEmail(),
-                user.getRole().getRoleName()
-        ));
+        return ResponseEntity.ok(new AuthResponse(null, null));
     }
 
-    @org.springframework.web.bind.annotation.GetMapping("/me")
-    public ResponseEntity<com.sep.comiverse.dto.response.BaseResponse<AuthResponse>> getMyProfile(org.springframework.security.core.Authentication authentication) {
-        if (authentication == null || !(authentication.getPrincipal() instanceof com.sep.comiverse.security.UserPrincipal)) {
-            return ResponseEntity.status(401).body(com.sep.comiverse.dto.response.BaseResponse.<AuthResponse>builder().success(false).message("Unauthorized").build());
+    @GetMapping("/me")
+    public ResponseEntity<BaseResponse<UserProfileResponse>> getMyProfile(org.springframework.security.core.Authentication authentication) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof UserPrincipal)) {
+            return ResponseEntity.status(401).body(BaseResponse.<UserProfileResponse>builder().success(false).message("Unauthorized").build());
         }
-        com.sep.comiverse.security.UserPrincipal principal = (com.sep.comiverse.security.UserPrincipal) authentication.getPrincipal();
+        UserPrincipal principal = (UserPrincipal) authentication.getPrincipal();
         UserEntity user = principal.user();
-        AuthResponse response = new AuthResponse(
-                null,
+        
+        UserProfileResponse response = new UserProfileResponse(
                 user.getId(),
                 user.getUsername(),
                 user.getFullName(),
                 user.getEmail(),
-                user.getRole().getRoleName()
+                user.getRole().getRoleName(),
+                user.getAvatarUrl()
         );
-        return ResponseEntity.ok(com.sep.comiverse.dto.response.BaseResponse.<AuthResponse>builder()
+        return ResponseEntity.ok(BaseResponse.<UserProfileResponse>builder()
                 .success(true)
                 .data(response)
+                .build());
+    }
+
+    @PostMapping("/change-password")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<BaseResponse<String>> changePassword(
+            @Valid @RequestBody ChangePasswordRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null) {
+            throw new CustomException(401, "Unauthorized", HttpStatus.UNAUTHORIZED);
+        }
+        authService.changePassword(principal.getId(), request.getCurrentPassword(), request.getNewPassword());
+        return ResponseEntity.ok(BaseResponse.<String>builder()
+                .success(true)
+                .message("Password updated successfully.")
+                .build());
+    }
+
+    @PutMapping("/profile")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<BaseResponse<UserProfileResponse>> updateProfile(
+            @Valid @RequestBody UpdateProfileRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null) {
+            throw new CustomException(401, "Unauthorized", HttpStatus.UNAUTHORIZED);
+        }
+        UserEntity updatedUser = authService.updateProfile(principal.getId(), request.getFullName(), request.getAvatarUrl());
+        UserProfileResponse response = new UserProfileResponse(
+                updatedUser.getId(),
+                updatedUser.getUsername(),
+                updatedUser.getFullName(),
+                updatedUser.getEmail(),
+                updatedUser.getRole().getRoleName(),
+                updatedUser.getAvatarUrl()
+        );
+        return ResponseEntity.ok(BaseResponse.<UserProfileResponse>builder()
+                .success(true)
+                .data(response)
+                .message("Profile updated successfully.")
                 .build());
     }
 }

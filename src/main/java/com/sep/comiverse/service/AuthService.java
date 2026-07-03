@@ -13,11 +13,14 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Random;
+import java.security.SecureRandom;
+import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+    private static final int PASSWORD_RESET_OTP_TTL_MINUTES = 10;
+    private static final SecureRandom OTP_RANDOM = new SecureRandom();
 
     private final IUserRepository userRepository;
     private final IRoleRepository roleRepository;
@@ -58,6 +61,7 @@ public class AuthService {
                 .phone(request.getPhone())
                 .role(userRole)
                 .status("ACTIVE")
+                .dateOfBirth(request.getDateOfBirth())
                 .build();
 
         return userRepository.save(user);
@@ -65,11 +69,13 @@ public class AuthService {
 
     @Transactional
     public void forgotPassword(String email) {
-        UserEntity user = userRepository.findByEmail(email)
+        String normalizedEmail = email.trim().toLowerCase();
+        UserEntity user = userRepository.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new CustomException(404, "No account found with this email", HttpStatus.NOT_FOUND));
 
-        String otp = String.format("%06d", new Random().nextInt(999999));
+        String otp = String.format("%06d", OTP_RANDOM.nextInt(1_000_000));
         user.setResetToken(otp);
+        user.setResetTokenExpiresAt(LocalDateTime.now().plusMinutes(PASSWORD_RESET_OTP_TTL_MINUTES));
         userRepository.save(user);
 
         emailUtil.sendOTP(user.getEmail(), otp, user.getFullName());
@@ -77,13 +83,21 @@ public class AuthService {
 
     @Transactional
     public void resetPassword(String email, String otp, String newPassword) {
-        UserEntity user = userRepository.findByEmail(email)
+        String normalizedEmail = email.trim().toLowerCase();
+        UserEntity user = userRepository.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new CustomException(404, "No account found with this email", HttpStatus.NOT_FOUND));
-        if (user.getResetToken() == null || !user.getResetToken().equals(otp)) {
+        if (user.getResetToken() == null || !user.getResetToken().equals(otp.trim())) {
             throw new CustomException(400, "Invalid or expired OTP code", HttpStatus.BAD_REQUEST);
+        }
+        if (user.getResetTokenExpiresAt() == null || user.getResetTokenExpiresAt().isBefore(LocalDateTime.now())) {
+            user.setResetToken(null);
+            user.setResetTokenExpiresAt(null);
+            userRepository.save(user);
+            throw new CustomException(400, "OTP code has expired. Please request a new code.", HttpStatus.BAD_REQUEST);
         }
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setResetToken(null);
+        user.setResetTokenExpiresAt(null);
         userRepository.save(user);
     }
 
@@ -113,8 +127,36 @@ public class AuthService {
                 .phone(request.getPhone())
                 .role(targetRole)
                 .status("ACTIVE")
+                .dateOfBirth(request.getDateOfBirth())
                 .build();
 
+        return userRepository.save(user);
+    }
+
+    @Transactional
+    public void changePassword(java.util.UUID userId, String currentPassword, String newPassword) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(404, "User not found", HttpStatus.NOT_FOUND));
+
+        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+            throw new CustomException(400, "Current password incorrect", HttpStatus.BAD_REQUEST);
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public UserEntity updateProfile(java.util.UUID userId, String fullName, String avatarUrl) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(404, "User not found", HttpStatus.NOT_FOUND));
+
+        if (fullName != null && !fullName.trim().isEmpty()) {
+            user.setFullName(fullName.trim());
+        }
+        if (avatarUrl != null) {
+            user.setAvatarUrl(avatarUrl);
+        }
         return userRepository.save(user);
     }
 
