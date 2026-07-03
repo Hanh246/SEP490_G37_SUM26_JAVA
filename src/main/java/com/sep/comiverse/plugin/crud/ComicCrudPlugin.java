@@ -141,6 +141,14 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         return dto;
     }
 
+    @SuppressWarnings("unchecked")
+    public List<ComicDTO> getCachedLeaderboard(String timeframe) {
+        String cacheKey = "comic:leaderboard:" + timeframe;
+        List<ComicDTO> ranking = (List<ComicDTO>) redisTemplate.opsForValue().get(cacheKey);
+
+        return ranking != null ? ranking : java.util.Collections.emptyList();
+    }
+
     public boolean toggleLikeComic(UUID comicId, UUID userId) {
         String comicIdStr = comicId.toString();
         String userSetKey = COMIC_LIKE_USERS_SET_PREFIX + comicIdStr;
