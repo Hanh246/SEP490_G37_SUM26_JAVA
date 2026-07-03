@@ -50,7 +50,7 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
 
             List<UUID> validGenreIds = genreEntities.stream()
                     .map(GenreEntity::getId)
-                    .collect(Collectors.toList());
+                    .toList();
             model.setGenreIds(validGenreIds);
         } else {
             model.setGenres(new HashSet<>());
