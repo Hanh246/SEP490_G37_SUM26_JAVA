@@ -5,11 +5,16 @@ import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.plugin.crud.ChapterCrudPlugin;
+import com.sep.comiverse.security.UserPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
@@ -28,13 +33,18 @@ public class ChapterController extends BaseController<ChapterEntity, ChapterDTO,
     @Operation(summary = "get chapter detail")
     public ResponseEntity<BaseResponse<ChapterDTO>> getChapterDetail(
             @PathVariable UUID id,
-            HttpServletRequest request) {
+            HttpServletRequest request,
+            Authentication authentication) {
 
-        // Extract IP Address if userId is absent
+        UUID userId = null;
+        if (authentication != null && authentication.getPrincipal() instanceof UserPrincipal principal) {
+            userId = principal.getId();
+        }
+
         String clientIp = request.getRemoteAddr();
         return ResponseEntity.ok(BaseResponse.<ChapterDTO>builder()
                         .success(true)
-                        .data(chapterCrudPlugin.getChapterDetail(id, clientIp))
+                        .data(chapterCrudPlugin.getChapterDetail(id, userId, clientIp))
                         .build());
     }
 }

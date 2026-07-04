@@ -11,9 +11,12 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 @EnableJpaRepositories(basePackages = "com.sep.comiverse.repository")
 public class ComiverseApplication {
 
-	public static void main(String[] args) {
-		java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
+	static {
+		System.setProperty("user.timezone", "UTC");
+		java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"));
+	}
 
+	public static void main(String[] args) {
 		Dotenv dotenv = Dotenv.configure()
 				.filename("key.env")
 				.load();
