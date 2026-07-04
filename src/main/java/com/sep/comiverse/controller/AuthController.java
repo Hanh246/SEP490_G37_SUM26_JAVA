@@ -16,6 +16,7 @@ import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.security.JwtTokenUtil;
 import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.AuthService;
+import com.sep.comiverse.service.PremiumPlanService;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import com.sep.comiverse.exception.CustomException;
 import org.springframework.http.HttpStatus;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
     private final AuthService authService;
     private final JwtTokenUtil jwtTokenUtil;
+    private final PremiumPlanService premiumPlanService;
 
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody AuthRequest request) {
@@ -68,26 +70,16 @@ public class AuthController {
     @PostMapping("/register-staff")
     @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<AuthResponse> registerStaff(@Valid @RequestBody RegisterRequest request) {
-        UserEntity user = authService.registerStaff(request);
+        authService.registerStaff(request);
         return ResponseEntity.ok(new AuthResponse(null, null));
     }
 
     @GetMapping("/me")
     public ResponseEntity<BaseResponse<UserProfileResponse>> getMyProfile(org.springframework.security.core.Authentication authentication) {
-        if (authentication == null || !(authentication.getPrincipal() instanceof UserPrincipal)) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof UserPrincipal principal)) {
             return ResponseEntity.status(401).body(BaseResponse.<UserProfileResponse>builder().success(false).message("Unauthorized").build());
         }
-        UserPrincipal principal = (UserPrincipal) authentication.getPrincipal();
-        UserEntity user = principal.user();
-        
-        UserProfileResponse response = new UserProfileResponse(
-                user.getId(),
-                user.getUsername(),
-                user.getFullName(),
-                user.getEmail(),
-                user.getRole().getRoleName(),
-                user.getAvatarUrl()
-        );
+        UserProfileResponse response = premiumPlanService.toUserProfileResponse(principal.user());
         return ResponseEntity.ok(BaseResponse.<UserProfileResponse>builder()
                 .success(true)
                 .data(response)
@@ -120,14 +112,7 @@ public class AuthController {
             throw new CustomException(401, "Unauthorized", HttpStatus.UNAUTHORIZED);
         }
         UserEntity updatedUser = authService.updateProfile(principal.getId(), request.getFullName(), request.getAvatarUrl());
-        UserProfileResponse response = new UserProfileResponse(
-                updatedUser.getId(),
-                updatedUser.getUsername(),
-                updatedUser.getFullName(),
-                updatedUser.getEmail(),
-                updatedUser.getRole().getRoleName(),
-                updatedUser.getAvatarUrl()
-        );
+        UserProfileResponse response = premiumPlanService.toUserProfileResponse(updatedUser);
         return ResponseEntity.ok(BaseResponse.<UserProfileResponse>builder()
                 .success(true)
                 .data(response)

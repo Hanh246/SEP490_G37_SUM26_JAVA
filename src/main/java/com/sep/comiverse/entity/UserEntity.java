@@ -3,9 +3,6 @@ package com.sep.comiverse.entity;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDate;
-
-import java.time.LocalDateTime;
-
 import java.time.LocalDateTime;
 
 @Data
@@ -52,6 +49,12 @@ public class UserEntity extends BaseEntity {
     @Column(name = "reset_token_expires_at")
     private LocalDateTime resetTokenExpiresAt;
 
+    @Column(name = "premium_plan")
+    private String premiumPlan;
+
+    @Column(name = "premium_expires_at")
+    private LocalDateTime premiumExpiresAt;
+
     @Builder.Default
     @Column(name = "status", nullable = false)
     private String status = "ACTIVE";
@@ -59,3 +62,4 @@ public class UserEntity extends BaseEntity {
     @Column(name = "date_of_birth")
     private LocalDate dateOfBirth;
 }
+
