@@ -51,8 +51,6 @@ public class JwtTokenUtil {
     private String buildToken(com.sep.comiverse.entity.UserEntity user, Instant expiration) {
         return Jwts.builder()
                 .subject(user.getId().toString())
-                .claim("email", user.getEmail())
-                .claim("fullName", user.getFullName())
                 .claim("role", user.getRole() != null ? user.getRole().getRoleName() : "READER")
                 .issuedAt(Date.from(Instant.now()))
                 .expiration(Date.from(expiration))

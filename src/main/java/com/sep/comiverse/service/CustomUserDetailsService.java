@@ -31,7 +31,7 @@ public class CustomUserDetailsService implements UserDetailsService {
     }
 
     public UserDetails loadUserById(java.util.UUID id) throws UsernameNotFoundException {
-        UserEntity user = userRepository.findById(id)
+        UserEntity user = userRepository.findByIdWithRole(id)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found with id: " + id));
 
         if ("INACTIVE".equals(user.getStatus())) {
