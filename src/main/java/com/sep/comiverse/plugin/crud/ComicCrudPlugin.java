@@ -5,6 +5,7 @@ import com.sep.comiverse.dto.pagination.CursorResponseDTO;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.dto.request.ComicExploreRequestDTO;
 import com.sep.comiverse.entity.ComicEntity;
+import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.plugin.AbstractCrudPlugin;
 import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.repository.IComicRepository;
@@ -33,10 +34,26 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         this.comicRepository = repository;
     }
 
+    public List<ComicDTO> listPublishedComics() {
+        return comicRepository.findAllByDeletedFalseAndModerationStatus(ComicModerationStatus.PUBLISHED)
+                .stream()
+                .map(plugin::toDto)
+                .toList();
+    }
+
+    public Page<ComicDTO> listPublishedComics(PaginationSearchDTO paginationDTO) {
+        Pageable pageable = paginationDTO.toPageRequest();
+        return comicRepository.findPublishedComics(ComicModerationStatus.PUBLISHED, paginationDTO.getSearch(), pageable)
+                .map(plugin::toDto);
+    }
+
     public Page<ComicDTO> getTopViews(PaginationSearchDTO paginationDTO) {
         Pageable pageable = paginationDTO.toPageRequest();
 
-        Page<ComicEntity> comicPage = comicRepository.findByOrderByViewCountDesc(pageable);
+        Page<ComicEntity> comicPage = comicRepository.findByDeletedFalseAndModerationStatusOrderByViewCountDesc(
+                ComicModerationStatus.PUBLISHED,
+                pageable
+        );
 
         return comicPage.map(plugin::toDto);
     }
@@ -44,7 +61,7 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
     public Page<ComicDTO> getComicsByLatestChapters(PaginationSearchDTO paginationDTO) {
         Pageable pageable = paginationDTO.toPageRequest();
 
-        Page<ComicEntity> comicPage = comicRepository.findComicsByLatestChapters(pageable);
+        Page<ComicEntity> comicPage = comicRepository.findComicsByLatestChapters(ComicModerationStatus.PUBLISHED, pageable);
 
         return comicPage.map(plugin::toDto);
     }
@@ -85,10 +102,11 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         List<ComicEntity> resultEntities = hasMore ? entities.subList(0, request.getSize()) : entities;
 
         List<ComicDTO> dtoList = resultEntities.stream().map(entity -> {
-            ComicDTO dto = new ComicDTO();
+            ComicDTO dto = plugin.toDto(entity);
             dto.setId(entity.getId());
             dto.setTitle(entity.getTitle());
             dto.setStatus(entity.getStatus());
+            dto.setModerationStatus(entity.getModerationStatus());
             dto.setCover(entity.getCover());
             dto.setViewCount(entity.getViewCount());
             return dto;

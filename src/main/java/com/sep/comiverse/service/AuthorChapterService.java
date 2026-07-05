@@ -35,7 +35,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -49,7 +51,11 @@ public class AuthorChapterService {
     private static final List<String> ALLOWED_EXTENSIONS = List.of("jpg", "jpeg", "png", "gif", "webp");
     private static final long MAX_IMAGE_SIZE_BYTES = 10L * 1024L * 1024L;
     private static final Pattern NATURAL_PART_PATTERN = Pattern.compile("\\d+|\\D+");
+    private static final Pattern CHAPTER_ZIP_NAME_PATTERN =
+            Pattern.compile("(?i)^chapter\\s+([1-9][0-9]*(?:[,.][0-9]+)?)\\.cbz$");
 
+    private static final Pattern CHAPTER_NUMBER_PATTERN =
+            Pattern.compile("^[1-9][0-9]*(?:[,.][0-9]+)?$");
     private final AuthorComicService authorComicService;
     private final IComicRepository comicRepository;
     private final IChapterRepository chapterRepository;
@@ -66,7 +72,7 @@ public class AuthorChapterService {
         validateZipFile(zipFile);
 
         ComicEntity comic = authorComicService.getOwnedComic(comicId, request.getAuthorId());
-        String chapterNumber = String.valueOf(request.getChapterNumber());
+        String chapterNumber = resolveChapterNumber(request, zipFile);
         if (chapterRepository.existsByComic_IdAndChapterNumberAndDeletedFalse(comicId, chapterNumber)) {
             throw new CustomException(409, "Chapter number already exists for this comic", HttpStatus.CONFLICT);
         }
@@ -78,6 +84,7 @@ public class AuthorChapterService {
                 .comic(comic)
                 .chapterNumber(chapterNumber)
                 .title(trimToNull(request.getTitle()))
+                .moderationStatus(ChapterStatus.PREVIEW_READY)
                 .images(new ArrayList<>())
                 .build();
         ChapterEntity savedChapter = chapterRepository.save(chapter);
@@ -110,12 +117,6 @@ public class AuthorChapterService {
 
         savedChapter.setImages(imageUrls);
         savedChapter = chapterRepository.save(savedChapter);
-
-        comic.setLatestChapterNumber(chapterNumber);
-        comic.setLastChapterUpdatedAt(Instant.now());
-        long chapterCount = chapterRepository.countByComic_IdAndDeletedFalse(comic.getId());
-        comic.setChapterCount(chapterCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) chapterCount);
-        comicRepository.save(comic);
 
         return toPreviewResponse(savedChapter, pages);
     }
@@ -179,6 +180,8 @@ public class AuthorChapterService {
                 .content("Chapter " + chapter.getChapterNumber() + " has " + resolvePageCount(chapter, pages) + " image pages waiting for moderation review.")
                 .build();
         submissionRepository.save(submission);
+        chapter.setModerationStatus(ChapterStatus.SUBMITTED_FOR_REVIEW);
+        chapterRepository.save(chapter);
 
         return SubmitChapterReviewResponse.builder()
                 .chapterId(chapter.getId())
@@ -187,6 +190,97 @@ public class AuthorChapterService {
                 .submittedAt(now)
                 .message("Chapter submitted for moderator review")
                 .build();
+    }
+
+    @Transactional
+    public ChapterPreviewResponse updateChapter(UUID comicId, UUID chapterId, UUID authorId, ChapterUploadRequest request) {
+        if (request == null) {
+            throw new CustomException(400, "Chapter update request is required", HttpStatus.BAD_REQUEST);
+        }
+        ChapterEntity chapter = getOwnedChapter(comicId, chapterId, authorId);
+        boolean changed = false;
+
+        String requestedChapterNumber = normalizeChapterNumber(request.getChapterNumber());
+        if (StringUtils.hasText(requestedChapterNumber) && !requestedChapterNumber.equals(chapter.getChapterNumber())) {
+            if (chapterRepository.existsByComic_IdAndChapterNumberAndDeletedFalse(comicId, requestedChapterNumber)) {
+                throw new CustomException(409, "Chapter number already exists for this comic", HttpStatus.CONFLICT);
+            }
+            chapter.setChapterNumber(requestedChapterNumber);
+            changed = true;
+        }
+
+        if (request.getTitle() != null) {
+            String title = trimToNull(request.getTitle());
+            if (!java.util.Objects.equals(trimToNull(chapter.getTitle()), title)) {
+                chapter.setTitle(title);
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            if (chapter.getModerationStatus() == ChapterStatus.PUBLISHED) {
+                chapter.setModerationStatus(ChapterStatus.SUBMITTED_FOR_REVIEW);
+                if (!hasPendingChapterSubmission(chapter.getId(), authorId)) {
+                    createChapterReviewSubmission(chapter.getComic(), chapter, authorId);
+                }
+            } else {
+                chapter.setModerationStatus(ChapterStatus.PREVIEW_READY);
+            }
+        }
+
+        ChapterEntity savedChapter = chapterRepository.save(chapter);
+        List<ChapterPageEntity> pages = chapterPageRepository.findAllByChapterIdAndDeletedFalseOrderByPageNumberAsc(chapterId);
+        return toPreviewResponse(savedChapter, pages);
+    }
+
+    @Transactional
+    public void deleteChapter(UUID comicId, UUID chapterId, UUID authorId) {
+        ComicEntity comic = authorComicService.getOwnedComic(comicId, authorId);
+        ChapterEntity chapter = getOwnedChapter(comicId, chapterId, authorId);
+        chapter.setDeleted(true);
+        chapterRepository.save(chapter);
+
+        chapterPageRepository.findAllByChapterIdAndDeletedFalseOrderByPageNumberAsc(chapterId).forEach(page -> {
+            page.setDeleted(true);
+            chapterPageRepository.save(page);
+        });
+
+        long chapterCount = chapterRepository.countByComic_IdAndDeletedFalse(comic.getId());
+        comic.setChapterCount(chapterCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) chapterCount);
+        comicRepository.save(comic);
+    }
+
+    private boolean hasPendingChapterSubmission(UUID chapterId, UUID authorId) {
+        return submissionRepository.findTopByChapterIdAndAuthorIdAndQueueTypeIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(
+                        chapterId, authorId, "author")
+                .map(SubmissionEntity::getStatus)
+                .filter(StringUtils::hasText)
+                .map(status -> status.trim().toLowerCase(Locale.ROOT))
+                .filter("pending"::equals)
+                .isPresent();
+    }
+
+    private SubmissionEntity createChapterReviewSubmission(ComicEntity comic, ChapterEntity chapter, UUID authorId) {
+        List<ChapterPageEntity> pages = chapterPageRepository.findAllByChapterIdAndDeletedFalseOrderByPageNumberAsc(chapter.getId());
+        Date now = new Date();
+        SubmissionEntity submission = SubmissionEntity.builder()
+                .comicId(comic.getId())
+                .chapterId(chapter.getId())
+                .authorId(authorId)
+                .title(comic.getTitle())
+                .chapter("Chapter " + chapter.getChapterNumber())
+                .submittedBy("Author: " + authorId)
+                .queueType("author")
+                .timeLabel("Just now")
+                .timestamp(now.getTime())
+                .words(0)
+                .priority("Medium")
+                .flags(0)
+                .status("pending")
+                .cover(firstNonBlank(comic.getThumbnail(), comic.getCover()))
+                .content("Chapter " + chapter.getChapterNumber() + " has " + resolvePageCount(chapter, pages) + " image pages waiting for moderation review.")
+                .build();
+        return submissionRepository.save(submission);
     }
 
     private ChapterEntity getOwnedChapter(UUID comicId, UUID chapterId, UUID authorId) {
@@ -204,23 +298,32 @@ public class AuthorChapterService {
         if (request.getAuthorId() == null) {
             throw new CustomException(400, "Author id is required", HttpStatus.BAD_REQUEST);
         }
-        if (request.getChapterNumber() == null || request.getChapterNumber() < 1) {
-            throw new CustomException(400, "Chapter number must be at least 1", HttpStatus.BAD_REQUEST);
-        }
     }
 
     private void validateZipFile(MultipartFile zipFile) {
         if (zipFile == null || zipFile.isEmpty()) {
-            throw new CustomException(400, "ZIP file is required", HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Chapter archive file is required", HttpStatus.BAD_REQUEST);
         }
+
         String originalFilename = zipFile.getOriginalFilename();
-        if (!StringUtils.hasText(originalFilename) || !originalFilename.toLowerCase(Locale.ROOT).endsWith(".zip")) {
-            throw new CustomException(400, "Only .zip chapter files are accepted", HttpStatus.BAD_REQUEST);
+        if (!StringUtils.hasText(originalFilename) || !isCbzArchiveFileName(originalFilename)) {
+            throw new CustomException(400, "Only .cbz chapter files are accepted", HttpStatus.BAD_REQUEST);
+        }
+
+        String fileName = getBaseName(normalizeEntryName(originalFilename));
+        if (!CHAPTER_ZIP_NAME_PATTERN.matcher(fileName).matches()) {
+            throw new CustomException(
+                    400,
+                    "Chapter archive name must be like 'Chapter 1.cbz' or 'Chapter 1,5.cbz'. Invalid file: " + fileName,
+                    HttpStatus.BAD_REQUEST
+            );
         }
     }
 
     private List<ImageCandidate> extractAndValidateImages(MultipartFile zipFile) {
         List<ImageCandidate> images = new ArrayList<>();
+        Map<String, Integer> duplicateNameCounter = new HashMap<>();
+        int zipOrder = 0;
 
         try (ZipInputStream zipInputStream = new ZipInputStream(zipFile.getInputStream())) {
             ZipEntry entry;
@@ -229,35 +332,50 @@ public class AuthorChapterService {
                     continue;
                 }
 
+                zipOrder++;
                 String entryName = normalizeEntryName(entry.getName());
                 if (!isCandidateFile(entryName)) {
                     continue;
                 }
-                if (!isAllowedImage(entryName)) {
-                    throw new CustomException(400, "Unsupported image format in ZIP: " + entryName, HttpStatus.BAD_REQUEST);
+
+                if (splitCleanPath(entryName).length != 1) {
+                    throw new CustomException(400, "Chapter CBZ must contain image files at root only. Invalid entry: " + entryName, HttpStatus.BAD_REQUEST);
+                }
+
+                String baseFileName = getBaseName(entryName);
+                if (isCbzArchiveFileName(baseFileName)) {
+                    throw new CustomException(
+                            400,
+                            "Upload Chapter only accepts page images. Do not put another archive inside chapter CBZ: " + entryName,
+                            HttpStatus.BAD_REQUEST
+                    );
+                }
+                if (!isAllowedImage(baseFileName)) {
+                    throw new CustomException(400, "Unsupported image format in chapter archive: " + entryName, HttpStatus.BAD_REQUEST);
                 }
 
                 byte[] bytes = readCurrentEntry(zipInputStream);
                 if (bytes.length == 0) {
-                    throw new CustomException(400, "Empty image file in ZIP: " + entryName, HttpStatus.BAD_REQUEST);
+                    throw new CustomException(400, "Empty image file in chapter CBZ: " + entryName, HttpStatus.BAD_REQUEST);
                 }
                 if (bytes.length > MAX_IMAGE_SIZE_BYTES) {
                     throw new CustomException(400, "Image exceeds 10MB limit: " + entryName, HttpStatus.BAD_REQUEST);
                 }
 
+                String safeDisplayName = makeDuplicateSafeDisplayName(baseFileName, duplicateNameCounter);
                 ImageDimension dimension = readImageDimension(entryName, bytes);
-                images.add(new ImageCandidate(entryName, bytes, dimension));
+                images.add(new ImageCandidate(safeDisplayName, entryName, zipOrder, bytes, dimension));
 
                 if (images.size() > maxPages) {
-                    throw new CustomException(400, "Chapter ZIP exceeds maximum page count of " + maxPages, HttpStatus.BAD_REQUEST);
+                    throw new CustomException(400, "Chapter archive exceeds maximum page count of " + maxPages, HttpStatus.BAD_REQUEST);
                 }
             }
         } catch (IOException e) {
-            throw new CustomException(400, "Invalid or unreadable ZIP file", HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Invalid or unreadable chapter CBZ file", HttpStatus.BAD_REQUEST);
         }
 
         if (images.isEmpty()) {
-            throw new CustomException(400, "ZIP file does not contain any supported images", HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Chapter CBZ file does not contain any supported images", HttpStatus.BAD_REQUEST);
         }
         return images;
     }
@@ -279,12 +397,26 @@ public class AuthorChapterService {
                 if (fileName.toLowerCase(Locale.ROOT).endsWith(".webp")) {
                     return new ImageDimension(null, null);
                 }
-                throw new CustomException(400, "Invalid image file in ZIP: " + fileName, HttpStatus.BAD_REQUEST);
+                throw new CustomException(400, "Invalid image file in chapter CBZ: " + fileName, HttpStatus.BAD_REQUEST);
             }
             return new ImageDimension(image.getWidth(), image.getHeight());
         } catch (IOException e) {
-            throw new CustomException(400, "Invalid image file in ZIP: " + fileName, HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Invalid image file in chapter CBZ: " + fileName, HttpStatus.BAD_REQUEST);
         }
+    }
+
+    private String makeDuplicateSafeDisplayName(String baseFileName, Map<String, Integer> duplicateNameCounter) {
+        String normalizedKey = baseFileName.toLowerCase(Locale.ROOT);
+        int occurrence = duplicateNameCounter.merge(normalizedKey, 1, Integer::sum);
+        if (occurrence <= 1) {
+            return baseFileName;
+        }
+
+        int dotIndex = baseFileName.lastIndexOf('.');
+        if (dotIndex <= 0) {
+            return baseFileName + "-duplicate-" + occurrence;
+        }
+        return baseFileName.substring(0, dotIndex) + "-duplicate-" + occurrence + baseFileName.substring(dotIndex);
     }
 
     private boolean isCandidateFile(String entryName) {
@@ -296,7 +428,7 @@ public class AuthorChapterService {
             return false;
         }
         if (normalized.startsWith("/") || normalized.contains("../") || normalized.contains("..\\")) {
-            throw new CustomException(400, "Unsafe ZIP entry path: " + entryName, HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Unsafe archive entry path: " + entryName, HttpStatus.BAD_REQUEST);
         }
         return true;
     }
@@ -310,10 +442,24 @@ public class AuthorChapterService {
         return ALLOWED_EXTENSIONS.stream().anyMatch(extension -> lower.endsWith("." + extension));
     }
 
+    private boolean isCbzArchiveFileName(String fileName) {
+        if (!StringUtils.hasText(fileName)) {
+            return false;
+        }
+        String lower = fileName.toLowerCase(Locale.ROOT);
+        return lower.endsWith(".cbz");
+    }
+
     private Comparator<ImageCandidate> imageNaturalComparator() {
         Collator collator = Collator.getInstance(Locale.ENGLISH);
         collator.setStrength(Collator.PRIMARY);
-        return (left, right) -> compareNaturally(left.originalFileName(), right.originalFileName(), collator);
+        return (left, right) -> {
+            int comparison = compareNaturally(left.originalFileName(), right.originalFileName(), collator);
+            if (comparison != 0) {
+                return comparison;
+            }
+            return Integer.compare(left.zipOrder(), right.zipOrder());
+        };
     }
 
     private int compareNaturally(String left, String right, Collator collator) {
@@ -355,7 +501,7 @@ public class AuthorChapterService {
                 .id(chapter.getId())
                 .comicId(chapter.getComic() == null ? null : chapter.getComic().getId())
                 .authorId(chapter.getComic() == null ? null : chapter.getComic().getAuthorId())
-                .chapterNumber(parseChapterNumber(chapter.getChapterNumber()))
+                .chapterNumber(chapter.getChapterNumber())
                 .title(chapter.getTitle())
                 .status(resolveChapterStatus(chapter, storedPages))
                 .pageCount(pageResponses.size())
@@ -393,8 +539,78 @@ public class AuthorChapterService {
                 .height(page.getHeight())
                 .build();
     }
+    private String resolveChapterNumber(ChapterUploadRequest request, MultipartFile zipFile) {
+        String fileName = getBaseName(normalizeEntryName(zipFile.getOriginalFilename()));
+        String numberFromFileName = parseChapterNumberFromFileName(fileName);
+        String numberFromRequest = normalizeChapterNumber(request.getChapterNumber());
+
+        if (!StringUtils.hasText(numberFromRequest)) {
+            return numberFromFileName;
+        }
+
+        if (!numberFromRequest.equals(numberFromFileName)) {
+            throw new CustomException(
+                    400,
+                    "Chapter number does not match archive filename. Form value: "
+                            + request.getChapterNumber()
+                            + ", archive filename: "
+                            + fileName,
+                    HttpStatus.BAD_REQUEST
+            );
+        }
+
+        return numberFromFileName;
+    }
+
+    private String parseChapterNumberFromFileName(String fileName) {
+        Matcher matcher = CHAPTER_ZIP_NAME_PATTERN.matcher(fileName);
+        if (!matcher.matches()) {
+            return null;
+        }
+        return matcher.group(1).replace(',', '.');
+    }
+
+    private String normalizeChapterNumber(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+
+        String normalized = value.trim().replace(',', '.');
+        if (!CHAPTER_NUMBER_PATTERN.matcher(normalized).matches()) {
+            throw new CustomException(
+                    400,
+                    "Chapter number must be like 1 or 1,5",
+                    HttpStatus.BAD_REQUEST
+            );
+        }
+
+        return normalized;
+    }
+
+    private String getBaseName(String entryName) {
+        if (entryName == null) {
+            return "";
+        }
+        int slashIndex = entryName.lastIndexOf('/');
+        return slashIndex >= 0 ? entryName.substring(slashIndex + 1) : entryName;
+    }
+
+    private String[] splitCleanPath(String entryName) {
+        String normalized = normalizeEntryName(entryName);
+        String[] rawParts = normalized.split("/");
+        List<String> parts = new ArrayList<>();
+        for (String part : rawParts) {
+            if (StringUtils.hasText(part)) {
+                parts.add(part);
+            }
+        }
+        return parts.toArray(new String[0]);
+    }
 
     private ChapterStatus resolveChapterStatus(ChapterEntity chapter, List<ChapterPageEntity> storedPages) {
+        if (chapter.getModerationStatus() != null) {
+            return chapter.getModerationStatus();
+        }
         UUID chapterId = chapter.getId();
         UUID authorId = chapter.getComic() == null ? null : chapter.getComic().getAuthorId();
         if (chapterId != null && authorId != null) {
@@ -429,17 +645,6 @@ public class AuthorChapterService {
         return chapter.getImages() == null ? 0 : chapter.getImages().size();
     }
 
-    private Integer parseChapterNumber(String value) {
-        if (!StringUtils.hasText(value)) {
-            return null;
-        }
-        try {
-            return Integer.parseInt(value.trim().replaceAll("[^0-9]", ""));
-        } catch (NumberFormatException ex) {
-            return null;
-        }
-    }
-
     private String buildOrderedFileName(int pageNumber, String originalFileName) {
         String fileName = originalFileName;
         int slashIndex = fileName.lastIndexOf('/');
@@ -461,7 +666,7 @@ public class AuthorChapterService {
         return StringUtils.hasText(first) ? first : second;
     }
 
-    private record ImageCandidate(String originalFileName, byte[] bytes, ImageDimension dimension) {
+    private record ImageCandidate(String originalFileName, String originalEntryName, int zipOrder, byte[] bytes, ImageDimension dimension) {
     }
 
     private record ImageDimension(Integer width, Integer height) {

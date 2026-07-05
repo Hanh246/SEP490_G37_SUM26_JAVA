@@ -18,7 +18,7 @@ public class ChapterPreviewResponse {
     private UUID id;
     private UUID comicId;
     private UUID authorId;
-    private Integer chapterNumber;
+    private String chapterNumber;
     private String title;
     private ChapterStatus status;
     private Integer pageCount;

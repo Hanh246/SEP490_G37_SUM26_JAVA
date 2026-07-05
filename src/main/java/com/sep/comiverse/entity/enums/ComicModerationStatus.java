@@ -1,12 +1,10 @@
 package com.sep.comiverse.entity.enums;
 
-public enum ChapterStatus {
+public enum ComicModerationStatus {
     DRAFT,
-    PREVIEW_READY,
     SUBMITTED_FOR_REVIEW,
-    APPROVED,
+    PUBLISHED,
     REJECTED,
     NEEDS_CHANGES,
-    PUBLISHED,
     UNPUBLISHED
 }

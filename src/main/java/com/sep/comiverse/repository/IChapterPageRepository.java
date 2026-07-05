@@ -9,4 +9,6 @@ import java.util.UUID;
 @Repository
 public interface IChapterPageRepository extends AbstractCrudRepository<ChapterPageEntity, UUID> {
     List<ChapterPageEntity> findAllByChapterIdAndDeletedFalseOrderByPageNumberAsc(UUID chapterId);
+
+    List<ChapterPageEntity> findAllByComicIdAndDeletedFalse(UUID comicId);
 }

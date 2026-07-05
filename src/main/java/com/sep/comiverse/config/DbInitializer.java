@@ -43,6 +43,8 @@ public class DbInitializer implements CommandLineRunner {
         jdbcTemplate.execute("UPDATE comics SET status = 'ONGOING' WHERE status = 'Ongoing' OR status = 'ongoing'");
         jdbcTemplate.execute("UPDATE comics SET status = 'COMPLETED' WHERE status = 'Completed' OR status = 'completed'");
         jdbcTemplate.execute("UPDATE comics SET status = 'PAUSED' WHERE status = 'Paused' OR status = 'paused'");
+        jdbcTemplate.execute("UPDATE comics SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
+        jdbcTemplate.execute("UPDATE chapters SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
 
         createRoles();
         createAdmin();
@@ -166,6 +168,7 @@ public class DbInitializer implements CommandLineRunner {
                     .summary("A legendary sword cultivator reincarnates and rebuilds his power from the lowest rank.")
                     .authorId(authorId)
                     .status(com.sep.comiverse.constants.ComicStatus.ONGOING)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
                     .genres(genres1)
                     .genreIds(toGenreIds(genres1))
                     .cover("⚔️")
@@ -184,6 +187,7 @@ public class DbInitializer implements CommandLineRunner {
                     .summary("An urban student discovers that spiritual energy is returning to the modern world.")
                     .authorId(authorId)
                     .status(com.sep.comiverse.constants.ComicStatus.ONGOING)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
                     .genres(genres2)
                     .genreIds(toGenreIds(genres2))
                     .cover("🔮")
@@ -202,6 +206,7 @@ public class DbInitializer implements CommandLineRunner {
                     .summary("The fallen Demon Monarch wakes up in a rival kingdom and plans a second rise.")
                     .authorId(authorId)
                     .status(com.sep.comiverse.constants.ComicStatus.PAUSED)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
                     .genres(genres3)
                     .genreIds(toGenreIds(genres3))
                     .cover("👑")
@@ -220,6 +225,7 @@ public class DbInitializer implements CommandLineRunner {
                     .summary("A young cultivator studies the rules of heaven and challenges the order of the realms.")
                     .authorId(authorId)
                     .status(com.sep.comiverse.constants.ComicStatus.COMPLETED)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
                     .genres(genres4)
                     .genreIds(toGenreIds(genres4))
                     .cover("☯️")
@@ -281,6 +287,7 @@ public class DbInitializer implements CommandLineRunner {
                     .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
                     .comic(comic1)
                     .projectTeam(team1)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED)
                     .build());
             team1.getChaptersList().add(ChapterEntity.builder()
                     .chapterNumber("44")
@@ -288,6 +295,7 @@ public class DbInitializer implements CommandLineRunner {
                     .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
                     .comic(comic1)
                     .projectTeam(team1)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED)
                     .build());
             team1.getChaptersList().add(ChapterEntity.builder()
                     .chapterNumber("43")
@@ -295,6 +303,7 @@ public class DbInitializer implements CommandLineRunner {
                     .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
                     .comic(comic1)
                     .projectTeam(team1)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED)
                     .build());
             team1 = projectTeamRepository.save(team1);
 
@@ -457,6 +466,7 @@ public class DbInitializer implements CommandLineRunner {
                     .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
                     .comic(comic2)
                     .projectTeam(team2)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED)
                     .build());
             team2.getChaptersList().add(ChapterEntity.builder()
                     .chapterNumber("31")
@@ -464,6 +474,7 @@ public class DbInitializer implements CommandLineRunner {
                     .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
                     .comic(comic2)
                     .projectTeam(team2)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED)
                     .build());
             team2.getChaptersList().add(ChapterEntity.builder()
                     .chapterNumber("30")
@@ -471,6 +482,7 @@ public class DbInitializer implements CommandLineRunner {
                     .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
                     .comic(comic2)
                     .projectTeam(team2)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED)
                     .build());
             projectTeamRepository.save(team2);
 
@@ -499,6 +511,7 @@ public class DbInitializer implements CommandLineRunner {
                     .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
                     .comic(comic3)
                     .projectTeam(team3)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED)
                     .build());
             team3.getChaptersList().add(ChapterEntity.builder()
                     .chapterNumber("17")
@@ -506,6 +519,7 @@ public class DbInitializer implements CommandLineRunner {
                     .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
                     .comic(comic3)
                     .projectTeam(team3)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED)
                     .build());
             projectTeamRepository.save(team3);
 

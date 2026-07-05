@@ -2,6 +2,7 @@ package com.sep.comiverse.entity;
 
 import com.sep.comiverse.constants.ComicStatus;
 import com.sep.comiverse.entity.enums.ComicPublicationStatus;
+import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -18,7 +19,10 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Table(name = "comics")
+@Table(name = "comics", indexes = {
+        @Index(name = "idx_comics_slug_deleted", columnList = "slug, deleted"),
+        @Index(name = "idx_comics_moderation_deleted", columnList = "moderation_status, deleted")
+})
 @EqualsAndHashCode(callSuper = true, exclude = "genres")
 @ToString(exclude = "genres")
 public class ComicEntity extends BaseEntity {
@@ -26,7 +30,7 @@ public class ComicEntity extends BaseEntity {
     @Column(name = "title", nullable = false)
     private String title;
 
-    @Column(name = "slug", unique = true)
+    @Column(name = "slug")
     private String slug;
 
     @Column(name = "summary", columnDefinition = "TEXT")
@@ -46,8 +50,13 @@ public class ComicEntity extends BaseEntity {
     @Column(name = "publication_status")
     private ComicPublicationStatus publicationStatus;
 
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "moderation_status", nullable = false, columnDefinition = "varchar(32) default 'DRAFT'")
+    private ComicModerationStatus moderationStatus = ComicModerationStatus.DRAFT;
+
     @Column(name = "cover")
-    private String cover; // Cover emoji or image path (e.g. "⚔️")
+    private String cover;
 
     @Column(name = "thumbnail")
     private String thumbnail;
@@ -60,7 +69,7 @@ public class ComicEntity extends BaseEntity {
     )
     private Set<GenreEntity> genres;
 
-    //fast query
+    // Fast query
     @Builder.Default
     @Column(name = "view_count", nullable = false, columnDefinition = "bigint default 0")
     private Long viewCount = 0L;
@@ -91,14 +100,15 @@ public class ComicEntity extends BaseEntity {
     @Builder.Default
     @Column(name = "chapter_count", nullable = false, columnDefinition = "integer default 0")
     private Integer chapterCount = 0;
-    //Recommendation
+    // Recommendation
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(name = "genre_ids", columnDefinition = "uuid[]")
     private List<UUID> genreIds;
-
-    @Column(name = "summary_vector", columnDefinition = "vector(384)")
-    @JdbcTypeCode(SqlTypes.OTHER)
-    private float[] summaryVector;
+    /*
+     * PostgreSQL column summary_vector is pgvector type: vector(384).
+     * Do not map it as byte[] because Hibernate will insert it as bytea.
+     * Current Author upload flow does not need to write this field.
+     */
+    @Transient
+    private byte[] summaryVector;
 }
-
-

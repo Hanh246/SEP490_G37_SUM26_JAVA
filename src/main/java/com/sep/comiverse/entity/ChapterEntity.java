@@ -1,5 +1,6 @@
 package com.sep.comiverse.entity;
 
+import com.sep.comiverse.entity.enums.ChapterStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -12,8 +13,8 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Table(name = "chapters", uniqueConstraints = {
-        @UniqueConstraint(columnNames = {"comic_id", "chapter_number"})
+@Table(name = "chapters", indexes = {
+        @Index(name = "idx_chapters_comic_number_deleted", columnList = "comic_id, chapter_number, deleted")
 })
 @EqualsAndHashCode(callSuper = true)
 @ToString(exclude = {"comic", "projectTeam"})
@@ -29,6 +30,11 @@ public class ChapterEntity extends BaseEntity {
 
     @Column(name = "title")
     private String title;
+
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "moderation_status", nullable = false, columnDefinition = "varchar(32) default 'DRAFT'")
+    private ChapterStatus moderationStatus = ChapterStatus.DRAFT;
 
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(name = "images", columnDefinition = "text[]")

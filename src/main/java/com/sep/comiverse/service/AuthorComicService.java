@@ -9,9 +9,12 @@ import com.sep.comiverse.dto.response.ComicMetricsResponse;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.ComicMetricSnapshotEntity;
 import com.sep.comiverse.entity.GenreEntity;
+import com.sep.comiverse.entity.enums.ComicPublicationStatus;
+import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IChapterRepository;
+import com.sep.comiverse.repository.IChapterPageRepository;
 import com.sep.comiverse.repository.IComicMetricSnapshotRepository;
 import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.repository.IGenreRepository;
@@ -41,6 +44,7 @@ public class AuthorComicService {
     private final IComicRepository comicRepository;
     private final IGenreRepository genreRepository;
     private final IChapterRepository chapterRepository;
+    private final IChapterPageRepository chapterPageRepository;
     private final ISubmissionRepository submissionRepository;
     private final IComicMetricSnapshotRepository metricSnapshotRepository;
 
@@ -61,9 +65,12 @@ public class AuthorComicService {
                 .title(request.getTitle().trim())
                 .slug(slug)
                 .summary(trimToNull(request.getDescription()))
+                .minimumAge(normalizeMinimumAge(request.getMinimumAge()))
                 .cover(coverImageUrl)
                 .thumbnail(coverImageUrl)
                 .status(normalizePublicationStatus(request.getPublicationStatus()))
+                .publicationStatus(normalizePublicationStatusEntity(request.getPublicationStatus()))
+                .moderationStatus(ComicModerationStatus.SUBMITTED_FOR_REVIEW)
                 .genres(genres)
                 .genreIds(genres.stream().map(GenreEntity::getId).toList())
                 .viewCount(0L)
@@ -103,23 +110,36 @@ public class AuthorComicService {
 
         ComicEntity comic = getOwnedComic(comicId, request.getAuthorId());
 
+        boolean requiresModerationReview = false;
+
         if (StringUtils.hasText(request.getSlug())) {
             String slug = normalizeSlug(request.getSlug());
             boolean duplicateSlug = comicRepository.existsBySlugAndDeletedFalse(slug) && !slug.equals(comic.getSlug());
             if (duplicateSlug) {
                 throw new CustomException(409, "Slug already exists", HttpStatus.CONFLICT);
             }
+            requiresModerationReview |= !slug.equals(comic.getSlug());
             comic.setSlug(slug);
         }
 
         if (StringUtils.hasText(request.getTitle())) {
-            comic.setTitle(request.getTitle().trim());
+            String title = request.getTitle().trim();
+            requiresModerationReview |= differentString(comic.getTitle(), title);
+            comic.setTitle(title);
         }
         if (request.getDescription() != null) {
-            comic.setSummary(trimToNull(request.getDescription()));
+            String summary = trimToNull(request.getDescription());
+            requiresModerationReview |= differentString(comic.getSummary(), summary);
+            comic.setSummary(summary);
+        }
+        if (request.getMinimumAge() != null) {
+            Integer minimumAge = normalizeMinimumAge(request.getMinimumAge());
+            requiresModerationReview |= differentInteger(comic.getMinimumAge(), minimumAge);
+            comic.setMinimumAge(minimumAge);
         }
         if (request.getCoverImageUrl() != null) {
             String coverImageUrl = trimToNull(request.getCoverImageUrl());
+            requiresModerationReview |= differentString(comic.getCover(), coverImageUrl) || differentString(comic.getThumbnail(), coverImageUrl);
             comic.setCover(coverImageUrl);
             comic.setThumbnail(coverImageUrl);
         }
@@ -130,10 +150,31 @@ public class AuthorComicService {
         }
         if (StringUtils.hasText(request.getPublicationStatus())) {
             comic.setStatus(normalizePublicationStatus(request.getPublicationStatus()));
+            comic.setPublicationStatus(normalizePublicationStatusEntity(request.getPublicationStatus()));
         }
 
-        createComicProfileReviewSubmission(comic);
+        if (requiresModerationReview) {
+            comic.setModerationStatus(ComicModerationStatus.SUBMITTED_FOR_REVIEW);
+            if (!hasPendingComicProfileSubmission(comic)) {
+                createComicProfileReviewSubmission(comic);
+            }
+        }
         return toComicResponse(comicRepository.save(comic));
+    }
+
+    @Transactional
+    public void deleteComic(UUID comicId, UUID authorId) {
+        ComicEntity comic = getOwnedComic(comicId, authorId);
+        chapterRepository.findAllByComic_IdAndDeletedFalse(comicId).forEach(chapter -> {
+            chapter.setDeleted(true);
+            chapterRepository.save(chapter);
+        });
+        chapterPageRepository.findAllByComicIdAndDeletedFalse(comicId).forEach(page -> {
+            page.setDeleted(true);
+            chapterPageRepository.save(page);
+        });
+        comic.setDeleted(true);
+        comicRepository.save(comic);
     }
 
     @Transactional(readOnly = true)
@@ -185,21 +226,23 @@ public class AuthorComicService {
     }
 
     private AuthorComicResponse toComicResponse(ComicEntity comic) {
-        com.sep.comiverse.entity.enums.ComicStatus moderationStatus = resolveComicProfileModerationStatus(comic);
+        ComicModerationStatus moderationStatus = resolveComicProfileModerationStatus(comic);
         return AuthorComicResponse.builder()
                 .id(comic.getId())
                 .authorId(comic.getAuthorId())
                 .title(comic.getTitle())
                 .slug(comic.getSlug())
                 .description(comic.getSummary())
+                .minimumAge(comic.getMinimumAge())
                 .coverImageUrl(firstNonBlank(comic.getThumbnail(), comic.getCover()))
                 .genres(toGenreNames(comic.getGenres()))
                 .publicationStatus(formatPublicationStatus(comic.getStatus()))
                 .status(moderationStatus)
+                .moderationStatus(moderationStatus)
                 .moderationNote(resolveComicProfileModerationNote(comic))
                 .chapters(countChapters(comic.getId()))
                 .views(String.valueOf(defaultLong(comic.getViewCount())))
-                .publishedAt(moderationStatus == com.sep.comiverse.entity.enums.ComicStatus.PUBLISHED ? toDate(comic.getCreatedAt()) : null)
+                .publishedAt(moderationStatus == ComicModerationStatus.PUBLISHED ? toDate(comic.getCreatedAt()) : null)
                 .createdAt(toDate(comic.getCreatedAt()))
                 .updatedAt(toDate(comic.getUpdatedAt()))
                 .build();
@@ -228,6 +271,26 @@ public class AuthorComicService {
         if (!StringUtils.hasText(request.getTitle())) {
             throw new CustomException(400, "Title is required", HttpStatus.BAD_REQUEST);
         }
+    }
+
+    private Integer normalizeMinimumAge(Integer minimumAge) {
+        if (minimumAge == null) {
+            return 13;
+        }
+        if (minimumAge < 0 || minimumAge > 21) {
+            throw new CustomException(400, "Minimum age must be between 0 and 21", HttpStatus.BAD_REQUEST);
+        }
+        return minimumAge;
+    }
+
+    private ComicPublicationStatus normalizePublicationStatusEntity(String value) {
+        ComicStatus normalized = normalizePublicationStatus(value);
+        return switch (normalized) {
+            case ONGOING -> ComicPublicationStatus.ONGOING;
+            case COMPLETED -> ComicPublicationStatus.COMPLETED;
+            case PAUSED -> ComicPublicationStatus.HIATUS;
+            case ARCHIVED -> ComicPublicationStatus.CANCEL;
+        };
     }
 
     private String normalizeSlug(String rawSlug) {
@@ -308,10 +371,13 @@ public class AuthorComicService {
                 .toList();
     }
 
-    private com.sep.comiverse.entity.enums.ComicStatus resolveComicProfileModerationStatus(ComicEntity comic) {
+    private ComicModerationStatus resolveComicProfileModerationStatus(ComicEntity comic) {
+        if (comic.getModerationStatus() != null) {
+            return comic.getModerationStatus();
+        }
         return findLatestComicProfileSubmission(comic)
                 .map(this::mapSubmissionStatusToComicStatus)
-                .orElse(com.sep.comiverse.entity.enums.ComicStatus.PUBLISHED);
+                .orElse(ComicModerationStatus.DRAFT);
     }
 
     private String resolveComicProfileModerationNote(ComicEntity comic) {
@@ -320,21 +386,38 @@ public class AuthorComicService {
                 .orElse(null);
     }
 
+    private boolean hasPendingComicProfileSubmission(ComicEntity comic) {
+        return findLatestComicProfileSubmission(comic)
+                .map(SubmissionEntity::getStatus)
+                .filter(StringUtils::hasText)
+                .map(status -> status.trim().toLowerCase(Locale.ROOT))
+                .filter("pending"::equals)
+                .isPresent();
+    }
+
     private java.util.Optional<SubmissionEntity> findLatestComicProfileSubmission(ComicEntity comic) {
         return submissionRepository.findTopByComicIdAndAuthorIdAndChapterIdIsNullAndQueueTypeIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(
                 comic.getId(), comic.getAuthorId(), "author");
     }
 
-    private com.sep.comiverse.entity.enums.ComicStatus mapSubmissionStatusToComicStatus(SubmissionEntity submission) {
+    private ComicModerationStatus mapSubmissionStatusToComicStatus(SubmissionEntity submission) {
         if (submission == null || !StringUtils.hasText(submission.getStatus())) {
-            return com.sep.comiverse.entity.enums.ComicStatus.DRAFT;
+            return ComicModerationStatus.DRAFT;
         }
         return switch (submission.getStatus().trim().toLowerCase(Locale.ROOT)) {
-            case "pending" -> com.sep.comiverse.entity.enums.ComicStatus.SUBMITTED_FOR_REVIEW;
-            case "approved" -> com.sep.comiverse.entity.enums.ComicStatus.PUBLISHED;
-            case "rejected" -> com.sep.comiverse.entity.enums.ComicStatus.REJECTED;
-            default -> com.sep.comiverse.entity.enums.ComicStatus.DRAFT;
+            case "pending" -> ComicModerationStatus.SUBMITTED_FOR_REVIEW;
+            case "approved" -> ComicModerationStatus.PUBLISHED;
+            case "rejected" -> ComicModerationStatus.REJECTED;
+            default -> ComicModerationStatus.DRAFT;
         };
+    }
+
+    private boolean differentString(String current, String next) {
+        return !java.util.Objects.equals(trimToNull(current), trimToNull(next));
+    }
+
+    private boolean differentInteger(Integer current, Integer next) {
+        return !java.util.Objects.equals(current, next);
     }
 
     private Integer countChapters(UUID comicId) {

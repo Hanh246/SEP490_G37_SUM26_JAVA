@@ -1,6 +1,6 @@
 package com.sep.comiverse.dto.response;
 
-import com.sep.comiverse.entity.enums.ComicStatus;
+import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,10 +20,12 @@ public class AuthorComicResponse {
     private String title;
     private String slug;
     private String description;
+    private Integer minimumAge;
     private String coverImageUrl;
     private List<String> genres;
     private String publicationStatus;
-    private ComicStatus status;
+    private ComicModerationStatus status;
+    private ComicModerationStatus moderationStatus;
     private String moderationNote;
     private Integer chapters;
     private String views;
@@ -31,3 +33,4 @@ public class AuthorComicResponse {
     private Date createdAt;
     private Date updatedAt;
 }
+

@@ -7,6 +7,8 @@ import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.ProjectTeamEntity;
 import com.sep.comiverse.entity.SubmissionEntity;
+import com.sep.comiverse.entity.enums.ChapterStatus;
+import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.plugin.crud.SubmissionCrudPlugin;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IComicRepository;
@@ -14,9 +16,11 @@ import com.sep.comiverse.repository.IProjectTeamRepository;
 import com.sep.comiverse.repository.ISubmissionRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
-
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +28,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/submissions")
+@PreAuthorize("hasAnyAuthority('MODERATOR', 'ADMIN')")
 public class SubmissionController extends BaseController<SubmissionEntity, SubmissionDTO, UUID, PaginationSearchDTO> {
 
     @Autowired
@@ -38,6 +43,8 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
     @Autowired
     private IChapterRepository chapterRepository;
 
+    private static final Pattern CHAPTER_NUMBER_PATTERN =
+            Pattern.compile("(?i)chapter\\s+([0-9]+(?:[,.][0-9]+)?)");
     @Autowired
     public SubmissionController(SubmissionCrudPlugin crud) {
         super(crud, SubmissionEntity.class);
@@ -78,7 +85,15 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
     private void handleAuthorApproval(SubmissionEntity submission) {
         ComicEntity comic = resolveComic(submission);
         if (comic != null) {
-            updateLatestChapterIfAuthorChapterSubmission(comic, submission);
+            if (submission.getChapterId() == null) {
+                comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+            } else {
+                chapterRepository.findById(submission.getChapterId()).ifPresent(chapter -> {
+                    chapter.setModerationStatus(ChapterStatus.PUBLISHED);
+                    chapterRepository.save(chapter);
+                });
+                updateLatestChapterIfAuthorChapterSubmission(comic, submission);
+            }
             comicRepository.save(comic);
             return;
         }
@@ -91,6 +106,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                     .summary(submission.getContent())
                     .authorId(submission.getAuthorId())
                     .status(com.sep.comiverse.constants.ComicStatus.ONGOING)
+                    .moderationStatus(ComicModerationStatus.PUBLISHED)
                     .cover(submission.getCover() != null ? submission.getCover() : "📖")
                     .thumbnail(submission.getCover())
                     .viewCount(0L)
@@ -136,6 +152,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                             .chapterNumber(chapterNumber)
                             .title(submission.getChapter() != null ? submission.getChapter() : "Chapter " + chapterNumber)
                             .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
+                            .moderationStatus(ChapterStatus.PUBLISHED)
                             .comic(comic)
                             .projectTeam(team)
                             .build();
@@ -143,7 +160,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 }
                 comic.setLatestChapterNumber(chapterNumber);
                 comic.setLastChapterUpdatedAt(Instant.now());
-                long chapterCount = chapterRepository.countByComic_IdAndDeletedFalse(comic.getId());
+                long chapterCount = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(comic.getId(), ChapterStatus.PUBLISHED);
                 comic.setChapterCount(chapterCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) chapterCount);
                 comicRepository.save(comic);
             }
@@ -180,20 +197,44 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             comic.setLatestChapterNumber(chapterNumber);
         }
         comic.setLastChapterUpdatedAt(Instant.now());
-        long chapterCount = chapterRepository.countByComic_IdAndDeletedFalse(comic.getId());
+        long chapterCount = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(comic.getId(), ChapterStatus.PUBLISHED);
         comic.setChapterCount(chapterCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) chapterCount);
     }
 
     private boolean looksLikeChapterSubmission(String chapter) {
-        return chapter != null && chapter.matches(".*\\d+.*");
+        return chapter != null && CHAPTER_NUMBER_PATTERN.matcher(chapter).find();
     }
 
     private String extractChapterNumber(String chapter) {
         if (chapter == null) {
             return null;
         }
-        String number = chapter.replaceAll("[^0-9]+", "");
-        return number.isBlank() ? null : number;
+
+        Matcher matcher = CHAPTER_NUMBER_PATTERN.matcher(chapter);
+        if (!matcher.find()) {
+            return null;
+        }
+
+        return matcher.group(1).replace(',', '.');
+    }
+
+    private void handleSubmissionRejected(SubmissionEntity submission) {
+        if (submission == null || !"author".equalsIgnoreCase(submission.getQueueType())) {
+            return;
+        }
+        if (submission.getChapterId() != null) {
+            chapterRepository.findById(submission.getChapterId()).ifPresent(chapter -> {
+                chapter.setModerationStatus(ChapterStatus.REJECTED);
+                chapterRepository.save(chapter);
+            });
+            return;
+        }
+        if (submission.getComicId() != null) {
+            comicRepository.findById(submission.getComicId()).ifPresent(comic -> {
+                comic.setModerationStatus(ComicModerationStatus.REJECTED);
+                comicRepository.save(comic);
+            });
+        }
     }
 
     private String buildSafeSlug(String title) {
@@ -223,6 +264,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         submission.setRejectionReason(reason);
 
         SubmissionEntity savedSubmission = submissionRepository.save(submission);
+        handleSubmissionRejected(submission);
 
         return ResponseEntity.ok(BaseResponse.<SubmissionDTO>builder()
                 .success(true)
