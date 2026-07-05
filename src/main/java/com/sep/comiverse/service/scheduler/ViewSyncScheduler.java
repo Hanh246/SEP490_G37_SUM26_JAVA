@@ -33,7 +33,7 @@ public class ViewSyncScheduler {
 
     private void syncComicViews(LocalDate today) {
         Set<Object> comicIds = redisTemplate.opsForHash().keys(COMIC_VIEW_HASH);
-        if (comicIds == null || comicIds.isEmpty()) return;
+        if (comicIds.isEmpty()) return;
 
         String upsertDailySql = """
             INSERT INTO comic_daily_views (comic_id, log_date, view_count)
@@ -69,7 +69,7 @@ public class ViewSyncScheduler {
 
     private void syncChapterViews() {
         Set<Object> chapterIds = redisTemplate.opsForHash().keys(CHAPTER_VIEW_HASH);
-        if (chapterIds == null || chapterIds.isEmpty()) return;
+        if (chapterIds.isEmpty()) return;
 
         String updateChapterSql = """
             UPDATE chapters 

@@ -8,6 +8,8 @@ import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.plugin.AbstractCrudPlugin;
 import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.repository.IComicRepository;
+import com.sep.comiverse.service.UserLikeService;
+import com.sep.comiverse.service.UserSaveService;
 import com.sep.comiverse.specification.ComicSpecification;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -29,26 +31,26 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
 
     private final IComicRepository comicRepository;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final UserLikeService userLikeService;
+    private final UserSaveService userSaveService;
 
 
     private static final String COMIC_CACHE_PREFIX = "comic:detail:";
 
-    // Redis Sets to track unique user interactions and prevent spamming
-    private static final String COMIC_LIKE_USERS_SET_PREFIX = "comic:like:users:";
-    private static final String COMIC_SAVE_USERS_SET_PREFIX = "comic:save:users:";
-
     // Redis Hashes for atomic multi-user counters
     private static final String COMIC_VIEW_HASH = "comic:view:counter";
-    private static final String COMIC_LIKE_HASH = "comic:like:counter";
-    private static final String COMIC_SAVE_HASH = "comic:save:counter";
 
     @Autowired
     public ComicCrudPlugin(IComicRepository repository,
                            PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry,
-                           RedisTemplate<String, Object> redisTemplate) {
+                           RedisTemplate<String, Object> redisTemplate,
+                           UserLikeService userLikeService,
+                           UserSaveService userSaveService) {
         super(repository, pluginRegistry, ComicEntity.class);
         this.comicRepository = repository;
         this.redisTemplate = redisTemplate;
+        this.userLikeService = userLikeService;
+        this.userSaveService = userSaveService;
     }
 
     public Page<ComicDTO> getTopViews(PaginationSearchDTO paginationDTO) {
@@ -68,42 +70,14 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
     }
 
     public boolean isComicLikedByUser(UUID comicId, UUID userId) {
-        if (userId == null) return false;
-
-        String comicIdStr = comicId.toString();
-        String userSetKey = COMIC_LIKE_USERS_SET_PREFIX + comicIdStr;
-        String userIdStr = userId.toString();
-
-        // 1. Check inside the temporary Redis buffer first
-        Boolean isLikedInRedis = redisTemplate.opsForSet().isMember(userSetKey, userIdStr);
-        if (Boolean.TRUE.equals(isLikedInRedis)) {
-            return true;
-        }
-
-        // 2. If not found in Redis, check the database (PostgreSQL) using a lightweight EXISTS query
-        // return userLikeRepository.existsByComicIdAndUserId(comicId, userId);
-        return false; // Temporary default return, replace with your repository call
+        return userLikeService.isComicLikedByUser(comicId, userId);
     }
 
     /**
      * Checks if a user has bookmarked/saved a comic by combining Redis temporary buffer and DB.
      */
     public boolean isComicSavedByUser(UUID comicId, UUID userId) {
-        if (userId == null) return false;
-
-        String comicIdStr = comicId.toString();
-        String userSetKey = COMIC_SAVE_USERS_SET_PREFIX + comicIdStr;
-        String userIdStr = userId.toString();
-
-        // 1. Check inside the temporary Redis buffer first
-        Boolean isSavedInRedis = redisTemplate.opsForSet().isMember(userSetKey, userIdStr);
-        if (Boolean.TRUE.equals(isSavedInRedis)) {
-            return true;
-        }
-
-        // 2. If not found in Redis, check the database (PostgreSQL)
-        // return userSaveRepository.existsByComicIdAndUserId(comicId, userId);
-        return false; // Temporary default return, replace with your repository call
+        return userSaveService.isComicSavedByUser(comicId, userId);
     }
 
     @Transactional(readOnly = true)
@@ -128,12 +102,12 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
             dto.setViewCount(dto.getViewCount() + redisViews);
         }
         //increase like
-        Integer redisLikes = (Integer) redisTemplate.opsForHash().get(COMIC_LIKE_HASH, comicIdStr);
+        Integer redisLikes = (Integer) redisTemplate.opsForHash().get(UserLikeService.COMIC_LIKE_HASH, comicIdStr);
         if (redisLikes != null) {
             dto.setLikeCount(dto.getLikeCount() + redisLikes);
         }
         //increase save
-        Integer redisSaves = (Integer) redisTemplate.opsForHash().get(COMIC_SAVE_HASH, comicIdStr);
+        Integer redisSaves = (Integer) redisTemplate.opsForHash().get(UserSaveService.COMIC_SAVE_HASH, comicIdStr);
         if (redisSaves != null) {
             dto.setSaveCount(dto.getSaveCount() + redisSaves);
         }
@@ -150,47 +124,11 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
     }
 
     public boolean toggleLikeComic(UUID comicId, UUID userId) {
-        String comicIdStr = comicId.toString();
-        String userSetKey = COMIC_LIKE_USERS_SET_PREFIX + comicIdStr;
-        String userIdStr = userId.toString();
-
-        Boolean isLiked = redisTemplate.opsForSet().isMember(userSetKey, userIdStr);
-
-        if (Boolean.FALSE.equals(isLiked)) {
-            redisTemplate.opsForSet().add(userSetKey, userIdStr);
-            redisTemplate.opsForHash().increment(COMIC_LIKE_HASH, comicIdStr, 1);
-
-            // TODO: Push message (comicId, userId, "LIKE") to Message Queue (Kafka/RabbitMQ) for deferred DB synchronization
-            return true;
-        } else {
-            redisTemplate.opsForSet().remove(userSetKey, userIdStr);
-            redisTemplate.opsForHash().increment(COMIC_LIKE_HASH, comicIdStr, -1);
-
-            // TODO: Push message (comicId, userId, "UNLIKE") to Message Queue for deferred DB synchronization
-            return false;
-        }
+        return userLikeService.toggleLikeComic(comicId, userId);
     }
 
     public boolean toggleSaveComic(UUID comicId, UUID userId) {
-        String comicIdStr = comicId.toString();
-        String userSetKey = COMIC_SAVE_USERS_SET_PREFIX + comicIdStr;
-        String userIdStr = userId.toString();
-
-        Boolean isSaved = redisTemplate.opsForSet().isMember(userSetKey, userIdStr);
-
-        if (Boolean.FALSE.equals(isSaved)) {
-            redisTemplate.opsForSet().add(userSetKey, userIdStr);
-            redisTemplate.opsForHash().increment(COMIC_SAVE_HASH, comicIdStr, 1);
-
-            // TODO: Push message (comicId, userId, "SAVE") to Message Queue for deferred DB synchronization
-            return true;
-        } else {
-            redisTemplate.opsForSet().remove(userSetKey, userIdStr);
-            redisTemplate.opsForHash().increment(COMIC_SAVE_HASH, comicIdStr, -1);
-
-            // TODO: Push message (comicId, userId, "UNSAVE") to Message Queue for deferred DB synchronization
-            return false;
-        }
+        return userSaveService.toggleSaveComic(comicId, userId);
     }
 
     public CursorResponseDTO<ComicDTO> getExploreComicsCursor(ComicExploreRequestDTO request) {
