@@ -1,8 +1,8 @@
 package com.sep.comiverse.entity;
 
 import com.sep.comiverse.constants.ComicStatus;
-import com.sep.comiverse.entity.enums.ComicPublicationStatus;
 import com.sep.comiverse.entity.enums.ComicModerationStatus;
+import com.sep.comiverse.entity.enums.ComicPublicationStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -52,7 +52,7 @@ public class ComicEntity extends BaseEntity {
 
     @Builder.Default
     @Enumerated(EnumType.STRING)
-    @Column(name = "moderation_status", nullable = false, columnDefinition = "varchar(32) default 'DRAFT'")
+    @Column(name = "moderation_status", nullable = false, length = 32)
     private ComicModerationStatus moderationStatus = ComicModerationStatus.DRAFT;
 
     @Column(name = "cover")
@@ -69,7 +69,6 @@ public class ComicEntity extends BaseEntity {
     )
     private Set<GenreEntity> genres;
 
-    // Fast query
     @Builder.Default
     @Column(name = "view_count", nullable = false, columnDefinition = "bigint default 0")
     private Long viewCount = 0L;
@@ -100,10 +99,11 @@ public class ComicEntity extends BaseEntity {
     @Builder.Default
     @Column(name = "chapter_count", nullable = false, columnDefinition = "integer default 0")
     private Integer chapterCount = 0;
-    // Recommendation
+
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(name = "genre_ids", columnDefinition = "uuid[]")
     private List<UUID> genreIds;
+
     /*
      * PostgreSQL column summary_vector is pgvector type: vector(384).
      * Do not map it as byte[] because Hibernate will insert it as bytea.
@@ -111,4 +111,11 @@ public class ComicEntity extends BaseEntity {
      */
     @Transient
     private byte[] summaryVector;
+
+    @PrePersist
+    protected void ensureModerationDefaults() {
+        if (this.moderationStatus == null) {
+            this.moderationStatus = ComicModerationStatus.DRAFT;
+        }
+    }
 }

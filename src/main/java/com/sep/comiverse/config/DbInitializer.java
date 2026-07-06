@@ -27,6 +27,7 @@ public class DbInitializer implements CommandLineRunner {
     private final ISubmissionRepository submissionRepository;
     private final IChatFlagRepository chatFlagRepository;
     private final IForumThreadRepository forumThreadRepository;
+    private final IAuthorRepository authorRepository;
 
     private final ITeamAnnouncementRepository teamAnnouncementRepository;
     private final ITeamMessageRepository teamMessageRepository;
@@ -49,6 +50,7 @@ public class DbInitializer implements CommandLineRunner {
         createRoles();
         createAdmin();
         createStaffs();
+        createAuthorProfiles();
         createGenres();
         createComics();
         createProjectTeams();
@@ -135,6 +137,25 @@ public class DbInitializer implements CommandLineRunner {
             userRepository.save(user);
             System.out.println("Reset sample user " + username + " to ACTIVE / " + password);
         }
+    }
+
+
+    private void createAuthorProfiles() {
+        userRepository.findByUsername("author1").ifPresent(authorUser -> {
+            if (!authorRepository.existsByUserIdAndDeletedFalse(authorUser.getId())) {
+                AuthorEntity author = AuthorEntity.builder()
+                        .user(authorUser)
+                        .authorType(com.sep.comiverse.entity.enums.AuthorType.INDIVIDUAL)
+                        .displayName(authorUser.getFullName() != null ? authorUser.getFullName() : authorUser.getUsername())
+                        .legalName(authorUser.getFullName())
+                        .contactEmail(authorUser.getEmail())
+                        .avatarUrl(authorUser.getAvatarUrl())
+                        .bio("Sample author profile for seeded comics.")
+                        .build();
+                authorRepository.save(author);
+                System.out.println("Created author profile for author1");
+            }
+        });
     }
 
     private void createGenres() {
