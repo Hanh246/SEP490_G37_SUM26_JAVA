@@ -71,6 +71,7 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/comics/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/chapters/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/genres/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/plans/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2
@@ -94,3 +95,4 @@ public class SecurityConfig {
         return source;
     }
 }
+

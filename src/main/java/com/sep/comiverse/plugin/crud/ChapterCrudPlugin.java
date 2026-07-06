@@ -1,11 +1,15 @@
 package com.sep.comiverse.plugin.crud;
 
 import com.sep.comiverse.dto.ChapterDTO;
+import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.plugin.AbstractCrudPlugin;
 import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.repository.IChapterRepository;
+import com.sep.comiverse.repository.IUserRepository;
+import com.sep.comiverse.service.PremiumPlanService;
+import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.plugin.core.PluginRegistry;
@@ -13,6 +17,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 
 @Component
@@ -21,25 +26,27 @@ public class ChapterCrudPlugin
 
     private final IChapterRepository chapterRepository;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final IUserRepository userRepository;
+    private final PremiumPlanService premiumPlanService;
 
     private static final String CHAPTER_CACHE_PREFIX = "chapter:detail:";
-
-    private static final String COMIC_VIEW_HASH = "comic:view:counter";
-    private static final String CHAPTER_VIEW_HASH = "chapter:view:counter";
 
     @Autowired
     public ChapterCrudPlugin(IChapterRepository repository,
                              PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry,
-                             RedisTemplate<String, Object> redisTemplate){
+                             RedisTemplate<String, Object> redisTemplate,
+                             IUserRepository userRepository,
+                             PremiumPlanService premiumPlanService){
         super(repository, pluginRegistry, ChapterEntity.class);
         this.chapterRepository = repository;
         this.redisTemplate = redisTemplate;
+        this.userRepository = userRepository;
+        this.premiumPlanService = premiumPlanService;
     }
 
     @Transactional(readOnly = true)
-    public ChapterDTO getChapterDetail(UUID chapterId, String clientIp) {
-        UUID userId = null;
-        String cacheKey = CHAPTER_CACHE_PREFIX + chapterId.toString();
+    public ChapterDTO getChapterDetail(UUID chapterId, UUID userId, String clientIp) {
+        String cacheKey = CHAPTER_CACHE_PREFIX + chapterId;
 
         ChapterDTO dto = (ChapterDTO) redisTemplate.opsForValue().get(cacheKey);
 
@@ -53,23 +60,18 @@ public class ChapterCrudPlugin
         }
 
         if (Boolean.TRUE.equals(dto.getIsPremium())) {
-            // Check if the user is authorized to read this premium chapter
-            boolean isAuthorized = checkUserPremiumAccess(userId, chapterId);
+            boolean isAuthorized = checkUserPremiumAccess(userId);
 
             if (!isAuthorized) {
-                // Secure Data Masking: Empty the images payload before returning to unauthorized users
-                dto.setImages(java.util.Collections.emptyList());
-
-                // OPTIONAL: Alternatively, you can throw a custom Security Exception here
-                // throw new AccessDeniedException("This is a premium chapter. Purchase required.");
+                dto = maskPremiumImages(dto);
             }
         }
 
         trackAndIncrementView(dto.getComicId(), chapterId, userId, clientIp);
 
-        Integer redisChapterViews = (Integer) redisTemplate.opsForHash().get(CHAPTER_VIEW_HASH, chapterId.toString());
-        if (redisChapterViews != null) {
-            dto.setViewCount(dto.getViewCount() + redisChapterViews);
+        Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString());
+        if (rawChapterViews != null) {
+            dto.setViewCount(dto.getViewCount() + rawChapterViews.intValue());
         }
 
         return dto;
@@ -84,19 +86,46 @@ public class ChapterCrudPlugin
                 .setIfAbsent(lockKey, "1", Duration.ofMinutes(10));
 
         if (Boolean.TRUE.equals(isFirstTimeIn10Mins)) {
-            redisTemplate.opsForHash().increment(COMIC_VIEW_HASH, comicId.toString(), 1);
-            redisTemplate.opsForHash().increment(CHAPTER_VIEW_HASH, chapterId.toString(), 1);
-
-            // TODO: Đẩy thêm 1 event "user_id đã đọc chapter_id" vào Kafka/Redis Queue để lưu Lịch sử đọc truyện
+            redisTemplate.opsForHash().increment(ViewSyncScheduler.COMIC_VIEW_HASH, comicId.toString(), 1);
+            redisTemplate.opsForHash().increment(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString(), 1);
+            if (userId != null) {
+                redisTemplate.opsForSet().add("reading:history:sync:queue", comicId + ":" + chapterId + ":" + userId);
+            }
         }
     }
 
-    private boolean checkUserPremiumAccess(UUID userId, UUID chapterId) {
+    private boolean checkUserPremiumAccess(UUID userId) {
         if (userId == null) {
-            return false; // Anonymous guests never have premium access
+            return false;
         }
+        return userRepository.findByIdWithRole(userId)
+                .map(premiumPlanService::hasActivePremium)
+                .orElse(false);
+    }
 
-        // TODO: Query your transactional/subscription repository to check access
-        return false; // Defaulted to false for fallback safety
+    private ChapterDTO maskPremiumImages(ChapterDTO dto) {
+        return ChapterDTO.builder()
+                .id(dto.getId())
+                .comicId(dto.getComicId())
+                .chapterNumber(dto.getChapterNumber())
+                .title(dto.getTitle())
+                .viewCount(dto.getViewCount())
+                .isPremium(dto.getIsPremium())
+                .createdAt(dto.getCreatedAt())
+                .num(dto.getNum())
+                .date(dto.getDate())
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ChapterLiteDTO> getChaptersByComicId(UUID comicId) {
+        List<ChapterLiteDTO> results = chapterRepository.findChapterMetadataByComicId(comicId);
+        for (ChapterLiteDTO dto : results) {
+            Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, dto.getId().toString());
+            if (rawChapterViews != null) {
+                dto.setViewCount(dto.getViewCount() + rawChapterViews.intValue());
+            }
+        }
+        return results;
     }
 }
