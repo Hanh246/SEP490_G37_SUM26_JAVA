@@ -8,8 +8,9 @@ import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.plugin.AbstractCrudPlugin;
 import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.repository.IComicRepository;
-import com.sep.comiverse.service.UserLikeService;
-import com.sep.comiverse.service.UserSaveService;
+import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
+import com.sep.comiverse.service.scheduler.UserInteractionSyncScheduler;
+import com.sep.comiverse.service.scheduler.LeaderboardScheduler;
 import com.sep.comiverse.specification.ComicSpecification;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
@@ -33,9 +34,6 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
 
 
     private static final String COMIC_CACHE_PREFIX = "comic:detail:";
-
-    // Redis Hashes for atomic multi-user counters
-    private static final String COMIC_VIEW_HASH = "comic:view:counter";
 
     @Autowired
     public ComicCrudPlugin(IComicRepository repository,
@@ -63,19 +61,19 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         }
 
         //increase view
-        Integer redisViews = (Integer) redisTemplate.opsForHash().get(COMIC_VIEW_HASH, comicIdStr);
-        if (redisViews != null) {
-            dto.setViewCount(dto.getViewCount() + redisViews);
+        Number rawViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.COMIC_VIEW_HASH, comicIdStr);
+        if (rawViews != null) {
+            dto.setViewCount(dto.getViewCount() + rawViews.intValue());
         }
         //increase like
-        Integer redisLikes = (Integer) redisTemplate.opsForHash().get(UserLikeService.COMIC_LIKE_HASH, comicIdStr);
-        if (redisLikes != null) {
-            dto.setLikeCount(dto.getLikeCount() + redisLikes);
+        Number rawLikes = (Number) redisTemplate.opsForHash().get(UserInteractionSyncScheduler.COMIC_LIKE_HASH, comicIdStr);
+        if (rawLikes != null) {
+            dto.setLikeCount(dto.getLikeCount() + rawLikes.intValue());
         }
         //increase save
-        Integer redisSaves = (Integer) redisTemplate.opsForHash().get(UserSaveService.COMIC_SAVE_HASH, comicIdStr);
-        if (redisSaves != null) {
-            dto.setSaveCount(dto.getSaveCount() + redisSaves);
+        Number rawSaves = (Number) redisTemplate.opsForHash().get(UserInteractionSyncScheduler.COMIC_SAVE_HASH, comicIdStr);
+        if (rawSaves != null) {
+            dto.setSaveCount(dto.getSaveCount() + rawSaves.intValue());
         }
 
         return dto;
@@ -83,7 +81,7 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
 
     @SuppressWarnings("unchecked")
     public List<ComicDTO> getCachedLeaderboard(String timeframe) {
-        String cacheKey = "comic:leaderboard:" + timeframe;
+        String cacheKey = LeaderboardScheduler.LEADERBOARD_CACHE_KEY_PREFIX + timeframe;
         List<ComicDTO> ranking = (List<ComicDTO>) redisTemplate.opsForValue().get(cacheKey);
 
         return ranking != null ? ranking : java.util.Collections.emptyList();
