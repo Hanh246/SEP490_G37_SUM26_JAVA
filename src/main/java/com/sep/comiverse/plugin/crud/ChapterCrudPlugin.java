@@ -1,6 +1,7 @@
 package com.sep.comiverse.plugin.crud;
 
 import com.sep.comiverse.dto.ChapterDTO;
+import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.plugin.AbstractCrudPlugin;
@@ -8,6 +9,7 @@ import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.service.PremiumPlanService;
+import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.plugin.core.PluginRegistry;
@@ -15,6 +17,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 
 @Component
@@ -27,9 +30,6 @@ public class ChapterCrudPlugin
     private final PremiumPlanService premiumPlanService;
 
     private static final String CHAPTER_CACHE_PREFIX = "chapter:detail:";
-
-    private static final String COMIC_VIEW_HASH = "comic:view:counter";
-    private static final String CHAPTER_VIEW_HASH = "chapter:view:counter";
 
     @Autowired
     public ChapterCrudPlugin(IChapterRepository repository,
@@ -69,9 +69,9 @@ public class ChapterCrudPlugin
 
         trackAndIncrementView(dto.getComicId(), chapterId, userId, clientIp);
 
-        Integer redisChapterViews = (Integer) redisTemplate.opsForHash().get(CHAPTER_VIEW_HASH, chapterId.toString());
-        if (redisChapterViews != null) {
-            dto.setViewCount(dto.getViewCount() + redisChapterViews);
+        Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString());
+        if (rawChapterViews != null) {
+            dto.setViewCount(dto.getViewCount() + rawChapterViews.intValue());
         }
 
         return dto;
@@ -86,8 +86,11 @@ public class ChapterCrudPlugin
                 .setIfAbsent(lockKey, "1", Duration.ofMinutes(10));
 
         if (Boolean.TRUE.equals(isFirstTimeIn10Mins)) {
-            redisTemplate.opsForHash().increment(COMIC_VIEW_HASH, comicId.toString(), 1);
-            redisTemplate.opsForHash().increment(CHAPTER_VIEW_HASH, chapterId.toString(), 1);
+            redisTemplate.opsForHash().increment(ViewSyncScheduler.COMIC_VIEW_HASH, comicId.toString(), 1);
+            redisTemplate.opsForHash().increment(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString(), 1);
+            if (userId != null) {
+                redisTemplate.opsForSet().add("reading:history:sync:queue", comicId + ":" + chapterId + ":" + userId);
+            }
         }
     }
 
@@ -109,9 +112,20 @@ public class ChapterCrudPlugin
                 .viewCount(dto.getViewCount())
                 .isPremium(dto.getIsPremium())
                 .createdAt(dto.getCreatedAt())
-                .images(java.util.Collections.emptyList())
                 .num(dto.getNum())
                 .date(dto.getDate())
                 .build();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ChapterLiteDTO> getChaptersByComicId(UUID comicId) {
+        List<ChapterLiteDTO> results = chapterRepository.findChapterMetadataByComicId(comicId);
+        for (ChapterLiteDTO dto : results) {
+            Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, dto.getId().toString());
+            if (rawChapterViews != null) {
+                dto.setViewCount(dto.getViewCount() + rawChapterViews.intValue());
+            }
+        }
+        return results;
     }
 }
