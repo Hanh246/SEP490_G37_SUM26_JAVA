@@ -9,6 +9,7 @@ import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.service.PremiumPlanService;
 import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
+import org.springframework.data.redis.core.SetOperations;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,6 +45,9 @@ public class ChapterCrudPluginTest {
 
     @Mock
     private PremiumPlanService premiumPlanService;
+
+    @Mock
+    private SetOperations<String, Object> setOperations;
 
     @Mock
     private ValueOperations<String, Object> valueOperations;
@@ -90,6 +94,7 @@ public class ChapterCrudPluginTest {
         when(valueOperations.setIfAbsent(lockKey, "1", Duration.ofMinutes(10))).thenReturn(true);
         when(redisTemplate.opsForHash()).thenReturn(hashOperations);
         when(hashOperations.get(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString())).thenReturn(10);
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
 
         ChapterDTO result = chapterCrudPlugin.getChapterDetail(chapterId, userId, clientIp);
 
@@ -100,6 +105,7 @@ public class ChapterCrudPluginTest {
 
         verify(hashOperations).increment(ViewSyncScheduler.COMIC_VIEW_HASH, comicId.toString(), 1L);
         verify(hashOperations).increment(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString(), 1L);
+        verify(setOperations).add("reading:history:sync:queue", comicId + ":" + chapterId + ":" + userId);
         verify(chapterRepository, never()).findById(any());
     }
 
@@ -163,6 +169,7 @@ public class ChapterCrudPluginTest {
         String lockKey = String.format("view:lock:%s:chapter:%s", userIdentity, chapterId);
         when(valueOperations.setIfAbsent(lockKey, "1", Duration.ofMinutes(10))).thenReturn(true);
         when(redisTemplate.opsForHash()).thenReturn(hashOperations);
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
 
         ChapterDTO result = chapterCrudPlugin.getChapterDetail(chapterId, userId, clientIp);
 

@@ -19,6 +19,34 @@ import java.util.UUID;
 public class UserLikeController {
 
     private final UserLikeService userLikeService;
+    private final com.sep.comiverse.security.JwtTokenUtil jwtTokenUtil;
+    private final com.sep.comiverse.plugin.crud.ComicCrudPlugin comicCrudPlugin;
+
+    @GetMapping("/my-likes")
+    @Operation(summary = "Get list of liked comics", description = "Retrieve list of comics liked by the logged-in user, mapped via ComicCrudPlugin to get latest Redis stats")
+    public ResponseEntity<BaseResponse<java.util.List<com.sep.comiverse.dto.ComicDTO>>> getLikedComics() {
+        UUID userId = jwtTokenUtil.getCurrentUserId();
+        if (userId == null) {
+            return ResponseEntity.ok(
+                    BaseResponse.<java.util.List<com.sep.comiverse.dto.ComicDTO>>builder()
+                            .success(true)
+                            .data(java.util.Collections.emptyList())
+                            .build()
+            );
+        }
+
+        java.util.List<UUID> likedComicIds = userLikeService.getLikedComicIds(userId);
+        java.util.List<com.sep.comiverse.dto.ComicDTO> comics = likedComicIds.stream()
+                .map(comicCrudPlugin::getComicDetail)
+                .collect(java.util.stream.Collectors.toList());
+
+        return ResponseEntity.ok(
+                BaseResponse.<java.util.List<com.sep.comiverse.dto.ComicDTO>>builder()
+                        .success(true)
+                        .data(comics)
+                        .build()
+        );
+    }
 
     @PostMapping("/toggle/{comicId}")
     @Operation(summary = "Toggle like on a comic", description = "Like or unlike a comic for the currently logged-in user")

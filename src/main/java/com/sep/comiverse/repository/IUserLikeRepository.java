@@ -10,4 +10,7 @@ import java.util.UUID;
 public interface IUserLikeRepository extends AbstractCrudRepository<UserLikeEntity, UUID> {
     boolean existsByComicIdAndUserId(UUID comicId, UUID userId);
     Optional<UserLikeEntity> findByComicIdAndUserId(UUID comicId, UUID userId);
+
+    @org.springframework.data.jpa.repository.Query("SELECT ul.comicId FROM UserLikeEntity ul WHERE ul.userId = :userId AND ul.deleted = false ORDER BY ul.updatedAt DESC")
+    java.util.List<UUID> findLikedComicIdsByUserId(@org.springframework.data.repository.query.Param("userId") UUID userId);
 }

@@ -86,6 +86,9 @@ public class ChapterCrudPlugin
         if (Boolean.TRUE.equals(isFirstTimeIn10Mins)) {
             redisTemplate.opsForHash().increment(ViewSyncScheduler.COMIC_VIEW_HASH, comicId.toString(), 1);
             redisTemplate.opsForHash().increment(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString(), 1);
+            if (userId != null) {
+                redisTemplate.opsForSet().add("reading:history:sync:queue", comicId + ":" + chapterId + ":" + userId);
+            }
         }
     }
 

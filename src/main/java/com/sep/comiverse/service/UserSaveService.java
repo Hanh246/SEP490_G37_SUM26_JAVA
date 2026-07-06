@@ -74,4 +74,8 @@ public class UserSaveService {
             return false;
         }
     }
+
+    public java.util.List<UUID> getSavedComicIds(UUID userId) {
+        return userSaveRepository.findSavedComicIdsByUserId(userId);
+    }
 }

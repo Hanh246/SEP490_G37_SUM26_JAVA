@@ -74,4 +74,8 @@ public class UserLikeService {
             return false;
         }
     }
+
+    public java.util.List<UUID> getLikedComicIds(UUID userId) {
+        return userLikeRepository.findLikedComicIdsByUserId(userId);
+    }
 }

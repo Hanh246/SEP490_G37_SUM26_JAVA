@@ -19,6 +19,34 @@ import java.util.UUID;
 public class UserSaveController {
 
     private final UserSaveService userSaveService;
+    private final com.sep.comiverse.security.JwtTokenUtil jwtTokenUtil;
+    private final com.sep.comiverse.plugin.crud.ComicCrudPlugin comicCrudPlugin;
+
+    @GetMapping("/my-saves")
+    @Operation(summary = "Get list of saved/bookmarked comics", description = "Retrieve list of comics saved/bookmarked by the logged-in user, mapped via ComicCrudPlugin to get latest Redis stats")
+    public ResponseEntity<BaseResponse<java.util.List<com.sep.comiverse.dto.ComicDTO>>> getSavedComics() {
+        UUID userId = jwtTokenUtil.getCurrentUserId();
+        if (userId == null) {
+            return ResponseEntity.ok(
+                    BaseResponse.<java.util.List<com.sep.comiverse.dto.ComicDTO>>builder()
+                            .success(true)
+                            .data(java.util.Collections.emptyList())
+                            .build()
+            );
+        }
+
+        java.util.List<UUID> savedComicIds = userSaveService.getSavedComicIds(userId);
+        java.util.List<com.sep.comiverse.dto.ComicDTO> comics = savedComicIds.stream()
+                .map(comicCrudPlugin::getComicDetail)
+                .collect(java.util.stream.Collectors.toList());
+
+        return ResponseEntity.ok(
+                BaseResponse.<java.util.List<com.sep.comiverse.dto.ComicDTO>>builder()
+                        .success(true)
+                        .data(comics)
+                        .build()
+        );
+    }
 
     @PostMapping("/toggle/{comicId}")
     @Operation(summary = "Toggle save/bookmark on a comic", description = "Bookmark or remove bookmark for the currently logged-in user")
