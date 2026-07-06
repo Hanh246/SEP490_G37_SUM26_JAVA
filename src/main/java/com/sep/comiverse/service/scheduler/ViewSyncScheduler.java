@@ -1,5 +1,6 @@
 package com.sep.comiverse.service.scheduler;
 
+import com.sep.comiverse.service.ReadingHistoryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -17,6 +18,7 @@ public class ViewSyncScheduler {
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final ReadingHistoryService readingHistoryService;
 
     public static final String COMIC_VIEW_HASH = "comic:view:counter";
     public static final String CHAPTER_VIEW_HASH = "chapter:view:counter";
@@ -29,6 +31,8 @@ public class ViewSyncScheduler {
         syncComicViews(today);
 
         syncChapterViews();
+
+        readingHistoryService.syncReadingHistoryFromRedis();
     }
 
     private void syncComicViews(LocalDate today) {

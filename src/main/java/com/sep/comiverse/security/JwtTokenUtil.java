@@ -96,4 +96,13 @@ public class JwtTokenUtil {
             throw new CustomException(401, "ILLEGAL_ARGUMENT", HttpStatus.UNAUTHORIZED);
         }
     }
+
+    public java.util.UUID getCurrentUserId() {
+        org.springframework.security.core.Authentication authentication =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof UserPrincipal principal) {
+            return principal.getId();
+        }
+        return null;
+    }
 }
