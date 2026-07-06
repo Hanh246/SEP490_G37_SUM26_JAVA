@@ -35,6 +35,11 @@ public class ViewSyncScheduler {
         readingHistoryService.syncReadingHistoryFromRedis();
     }
 
+    @Scheduled(cron = "0 0 0 * * *") // Runs daily at midnight
+    public void cleanOldReadingHistories() {
+        readingHistoryService.cleanOldHistory();
+    }
+
     private void syncComicViews(LocalDate today) {
         Set<Object> comicIds = redisTemplate.opsForHash().keys(COMIC_VIEW_HASH);
         if (comicIds.isEmpty()) return;

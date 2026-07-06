@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -36,6 +37,18 @@ public class SyncController {
     @Operation(summary = "Manually trigger ViewSyncScheduler")
     public ResponseEntity<BaseResponse<Void>> syncViews() {
         viewSyncScheduler.flushViewsToPostgres();
+        return ResponseEntity.ok(
+                BaseResponse.<Void>builder()
+                        .success(true)
+                        .message("Manually triggered view sync scheduler")
+                        .build()
+        );
+    }
+
+    @DeleteMapping("/reading-history")
+    @Operation(summary = "Manually trigger ViewSyncScheduler")
+    public ResponseEntity<BaseResponse<Void>> syncDeleteReadHistory() {
+        viewSyncScheduler.cleanOldReadingHistories();
         return ResponseEntity.ok(
                 BaseResponse.<Void>builder()
                         .success(true)

@@ -142,4 +142,33 @@ public class ReadingHistoryServiceTest {
 
         verify(setOperations).remove(syncQueueKey, queueValue);
     }
+
+    @Test
+    void testDeleteComicHistory_Unauthenticated() {
+        when(jwtTokenUtil.getCurrentUserId()).thenReturn(null);
+
+        readingHistoryService.deleteComicHistory(comicId);
+
+        verifyNoInteractions(readingHistoryRepository);
+    }
+
+    @Test
+    void testDeleteComicHistory_Success() {
+        when(jwtTokenUtil.getCurrentUserId()).thenReturn(userId);
+        String queueValue = comicId + ":" + chapterId + ":" + userId;
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(setOperations.members(syncQueueKey)).thenReturn(Set.of(queueValue, "otherComic:ch:user"));
+
+        readingHistoryService.deleteComicHistory(comicId);
+
+        verify(readingHistoryRepository).deleteByComicIdAndUserId(comicId, userId);
+        verify(setOperations).remove(syncQueueKey, queueValue);
+        verify(setOperations, never()).remove(syncQueueKey, "otherComic:ch:user");
+    }
+
+    @Test
+    void testCleanOldHistory() {
+        readingHistoryService.cleanOldHistory();
+        verify(readingHistoryRepository).deleteOldHistoryExceptLatest(any(java.time.Instant.class));
+    }
 }

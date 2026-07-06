@@ -65,4 +65,16 @@ public class ReadingHistoryController {
                         .build()
         );
     }
+
+    @DeleteMapping("/comic/{comicId}")
+    @Operation(summary = "Delete comic reading history", description = "Delete the reading history of a comic, including all its read chapters, for the logged-in user")
+    public ResponseEntity<BaseResponse<Boolean>> deleteComicHistory(@PathVariable UUID comicId) {
+        readingHistoryService.deleteComicHistory(comicId);
+        return ResponseEntity.ok(
+                BaseResponse.<Boolean>builder()
+                        .success(true)
+                        .data(true)
+                        .build()
+        );
+    }
 }

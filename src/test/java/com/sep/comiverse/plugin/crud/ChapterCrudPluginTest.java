@@ -1,6 +1,7 @@
 package com.sep.comiverse.plugin.crud;
 
 import com.sep.comiverse.dto.ChapterDTO;
+import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.plugin.IMapperPlugin;
@@ -175,5 +176,34 @@ public class ChapterCrudPluginTest {
 
         assertNotNull(result);
         assertTrue(result.getImages().isEmpty()); // Unauthorized premium, images masked
+    }
+
+    @Test
+    void testGetChaptersByComicId() {
+        ChapterLiteDTO liteDto = ChapterLiteDTO.builder()
+                .id(chapterId)
+                .comicId(comicId)
+                .chapterNumber("1")
+                .title("Ch 1")
+                .viewCount(50L)
+                .isPremium(false)
+                .createdAt(java.time.Instant.now())
+                .build();
+
+        when(chapterRepository.findChapterMetadataByComicId(comicId))
+                .thenReturn(List.of(liteDto));
+
+        // Redis view tracking mock
+        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
+        when(hashOperations.get(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString())).thenReturn(5);
+
+        List<ChapterLiteDTO> result = chapterCrudPlugin.getChaptersByComicId(comicId);
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(55L, result.get(0).getViewCount()); // 50 + 5
+        assertEquals("Ch 1", result.get(0).getTitle());
+        assertEquals("1", result.get(0).getChapterNumber());
+        assertFalse(result.get(0).getIsPremium());
     }
 }
