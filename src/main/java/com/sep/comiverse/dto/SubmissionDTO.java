@@ -13,6 +13,7 @@ public class SubmissionDTO {
     private String title;
     private String chapter;
     private String submittedBy;
+    private String submittedByEmail; // Submitter's email address
     private String queueType;
     private String timeLabel;
     private Long timestamp;

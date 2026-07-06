@@ -25,4 +25,22 @@ public class ForumThreadEntity extends BaseEntity {
 
     @Column(name = "content", columnDefinition = "TEXT")
     private String content;
+
+    @Column(name = "is_pinned")
+    private Boolean isPinned = false;
+
+    @Column(name = "is_locked")
+    private Boolean isLocked = false;
+
+    @Column(name = "is_reported")
+    private Boolean isReported = false;
+
+    @Column(name = "report_reason")
+    private String reportReason;
+
+    @Column(name = "replies")
+    private Integer replies = 0;
+
+    @Column(name = "views")
+    private Integer views = 0;
 }

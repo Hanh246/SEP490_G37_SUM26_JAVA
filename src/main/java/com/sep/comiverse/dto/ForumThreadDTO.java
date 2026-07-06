@@ -3,6 +3,7 @@ package com.sep.comiverse.dto;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
+import java.time.Instant;
 import java.util.UUID;
 
 @Data
@@ -14,4 +15,11 @@ public class ForumThreadDTO {
     private String author;
     private String category;
     private String content;
+    private Boolean isPinned;
+    private Boolean isLocked;
+    private Boolean isReported;
+    private String reportReason;
+    private Instant createdAt;
+    private Integer replies;
+    private Integer views;
 }
