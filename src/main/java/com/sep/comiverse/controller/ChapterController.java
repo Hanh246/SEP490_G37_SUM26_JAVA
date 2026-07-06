@@ -1,6 +1,7 @@
 package com.sep.comiverse.controller;
 
 import com.sep.comiverse.dto.ChapterDTO;
+import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.entity.ChapterEntity;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -42,6 +44,16 @@ public class ChapterController extends BaseController<ChapterEntity, ChapterDTO,
         return ResponseEntity.ok(BaseResponse.<ChapterDTO>builder()
                         .success(true)
                         .data(chapterCrudPlugin.getChapterDetail(id, userId, clientIp))
+                        .build());
+    }
+
+    @GetMapping("/comic/{comicId}")
+    @Operation(summary = "Get list of chapters by comic ID")
+    public ResponseEntity<BaseResponse<List<ChapterLiteDTO>>> getChaptersByComicId(
+            @PathVariable UUID comicId) {
+        return ResponseEntity.ok(BaseResponse.<java.util.List<ChapterLiteDTO>>builder()
+                        .success(true)
+                        .data(chapterCrudPlugin.getChaptersByComicId(comicId))
                         .build());
     }
 }

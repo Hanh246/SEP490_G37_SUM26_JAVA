@@ -81,4 +81,41 @@ public class ReadingHistoryService {
             redisTemplate.opsForSet().remove(READING_HISTORY_SYNC_QUEUE, entry);
         }
     }
+
+    @Transactional
+    public void deleteComicHistory(UUID comicId) {
+        UUID userId = jwtTokenUtil.getCurrentUserId();
+        if (userId == null) {
+            return;
+        }
+
+        // 1. Delete from database
+        readingHistoryRepository.deleteByComicIdAndUserId(comicId, userId);
+
+        // 2. Remove from Redis sync queue
+        Set<Object> queued = redisTemplate.opsForSet().members(READING_HISTORY_SYNC_QUEUE);
+        if (queued != null && !queued.isEmpty()) {
+            for (Object obj : queued) {
+                String entry = (String) obj;
+                String[] parts = entry.split(":");
+                if (parts.length == 3) {
+                    try {
+                        UUID entryComicId = UUID.fromString(parts[0]);
+                        UUID entryUserId = UUID.fromString(parts[2]);
+                        if (entryComicId.equals(comicId) && entryUserId.equals(userId)) {
+                            redisTemplate.opsForSet().remove(READING_HISTORY_SYNC_QUEUE, entry);
+                        }
+                    } catch (Exception e) {
+                        // ignore malformed queue entry
+                    }
+                }
+            }
+        }
+    }
+
+    @Transactional
+    public void cleanOldHistory() {
+        java.time.Instant oneMonthAgo = java.time.Instant.now().minus(30, java.time.temporal.ChronoUnit.DAYS);
+        readingHistoryRepository.deleteOldHistoryExceptLatest(oneMonthAgo);
+    }
 }

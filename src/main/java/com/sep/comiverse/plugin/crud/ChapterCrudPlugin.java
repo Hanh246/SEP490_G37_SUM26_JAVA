@@ -1,6 +1,7 @@
 package com.sep.comiverse.plugin.crud;
 
 import com.sep.comiverse.dto.ChapterDTO;
+import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.plugin.AbstractCrudPlugin;
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 
 @Component
@@ -110,9 +112,20 @@ public class ChapterCrudPlugin
                 .viewCount(dto.getViewCount())
                 .isPremium(dto.getIsPremium())
                 .createdAt(dto.getCreatedAt())
-                .images(java.util.Collections.emptyList())
                 .num(dto.getNum())
                 .date(dto.getDate())
                 .build();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ChapterLiteDTO> getChaptersByComicId(UUID comicId) {
+        List<ChapterLiteDTO> results = chapterRepository.findChapterMetadataByComicId(comicId);
+        for (ChapterLiteDTO dto : results) {
+            Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, dto.getId().toString());
+            if (rawChapterViews != null) {
+                dto.setViewCount(dto.getViewCount() + rawChapterViews.intValue());
+            }
+        }
+        return results;
     }
 }
