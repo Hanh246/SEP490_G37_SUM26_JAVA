@@ -18,8 +18,8 @@ public class ViewSyncScheduler {
     private final RedisTemplate<String, Object> redisTemplate;
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
-    private static final String COMIC_VIEW_HASH = "comic:view:counter";
-    private static final String CHAPTER_VIEW_HASH = "chapter:view:counter";
+    public static final String COMIC_VIEW_HASH = "comic:view:counter";
+    public static final String CHAPTER_VIEW_HASH = "chapter:view:counter";
 
     @Scheduled(fixedRate = 300000) // Runs every 5 minutes
     @Transactional
@@ -51,7 +51,8 @@ public class ViewSyncScheduler {
         for (Object idObj : comicIds) {
             String comicIdStr = (String) idObj;
 
-            Integer increments = (Integer) redisTemplate.opsForHash().get(COMIC_VIEW_HASH, comicIdStr);
+            Number rawVal = (Number) redisTemplate.opsForHash().get(COMIC_VIEW_HASH, comicIdStr);
+            Integer increments = (rawVal != null) ? rawVal.intValue() : null;
             if (increments == null || increments <= 0) continue;
 
             redisTemplate.opsForHash().increment(COMIC_VIEW_HASH, comicIdStr, -increments);
@@ -80,7 +81,8 @@ public class ViewSyncScheduler {
         for (Object idObj : chapterIds) {
             String chapterIdStr = (String) idObj;
 
-            Integer increments = (Integer) redisTemplate.opsForHash().get(CHAPTER_VIEW_HASH, chapterIdStr);
+            Number rawVal = (Number) redisTemplate.opsForHash().get(CHAPTER_VIEW_HASH, chapterIdStr);
+            Integer increments = (rawVal != null) ? rawVal.intValue() : null;
             if (increments == null || increments <= 0) continue;
 
             redisTemplate.opsForHash().increment(CHAPTER_VIEW_HASH, chapterIdStr, -increments);

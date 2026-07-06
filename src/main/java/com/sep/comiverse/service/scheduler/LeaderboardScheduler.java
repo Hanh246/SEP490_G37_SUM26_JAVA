@@ -22,7 +22,7 @@ public class LeaderboardScheduler {
     private final ComicCrudPlugin comicCrudPlugin;
     private final RedisTemplate<String, Object> redisTemplate;
 
-    private static final String LEADERBOARD_CACHE_KEY_PREFIX = "comic:leaderboard:";
+    public static final String LEADERBOARD_CACHE_KEY_PREFIX = "comic:leaderboard:";
 
     @Scheduled(fixedRate = 900000) // Recalculates every 15 minutes
     public void computeLeaderboards() {

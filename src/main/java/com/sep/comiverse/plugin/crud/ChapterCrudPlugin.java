@@ -8,6 +8,7 @@ import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.service.PremiumPlanService;
+import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.plugin.core.PluginRegistry;
@@ -27,9 +28,6 @@ public class ChapterCrudPlugin
     private final PremiumPlanService premiumPlanService;
 
     private static final String CHAPTER_CACHE_PREFIX = "chapter:detail:";
-
-    private static final String COMIC_VIEW_HASH = "comic:view:counter";
-    private static final String CHAPTER_VIEW_HASH = "chapter:view:counter";
 
     @Autowired
     public ChapterCrudPlugin(IChapterRepository repository,
@@ -69,9 +67,9 @@ public class ChapterCrudPlugin
 
         trackAndIncrementView(dto.getComicId(), chapterId, userId, clientIp);
 
-        Integer redisChapterViews = (Integer) redisTemplate.opsForHash().get(CHAPTER_VIEW_HASH, chapterId.toString());
-        if (redisChapterViews != null) {
-            dto.setViewCount(dto.getViewCount() + redisChapterViews);
+        Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString());
+        if (rawChapterViews != null) {
+            dto.setViewCount(dto.getViewCount() + rawChapterViews.intValue());
         }
 
         return dto;
@@ -86,8 +84,8 @@ public class ChapterCrudPlugin
                 .setIfAbsent(lockKey, "1", Duration.ofMinutes(10));
 
         if (Boolean.TRUE.equals(isFirstTimeIn10Mins)) {
-            redisTemplate.opsForHash().increment(COMIC_VIEW_HASH, comicId.toString(), 1);
-            redisTemplate.opsForHash().increment(CHAPTER_VIEW_HASH, chapterId.toString(), 1);
+            redisTemplate.opsForHash().increment(ViewSyncScheduler.COMIC_VIEW_HASH, comicId.toString(), 1);
+            redisTemplate.opsForHash().increment(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString(), 1);
         }
     }
 

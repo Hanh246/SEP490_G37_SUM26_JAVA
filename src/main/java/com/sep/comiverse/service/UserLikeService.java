@@ -1,6 +1,7 @@
 package com.sep.comiverse.service;
 
 import com.sep.comiverse.repository.IUserLikeRepository;
+import com.sep.comiverse.service.scheduler.UserInteractionSyncScheduler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -14,20 +15,17 @@ public class UserLikeService {
     private final RedisTemplate<String, Object> redisTemplate;
     private final IUserLikeRepository userLikeRepository;
 
-    public static final String COMIC_LIKE_USERS_SET_PREFIX = "comic:like:users:";
-    public static final String COMIC_LIKE_HASH = "comic:like:counter";
-    public static final String COMIC_LIKE_SYNC_ADD = "comic:like:sync:add";
-    public static final String COMIC_LIKE_SYNC_REMOVE = "comic:like:sync:remove";
+
 
     public boolean isComicLikedByUser(UUID comicId, UUID userId) {
         if (userId == null) return false;
 
         String comicIdStr = comicId.toString();
-        String userSetKey = COMIC_LIKE_USERS_SET_PREFIX + comicIdStr;
+        String userSetKey = UserInteractionSyncScheduler.COMIC_LIKE_USERS_SET_PREFIX + comicIdStr;
         String userIdStr = userId.toString();
 
         // 1. Check if it is pending removal
-        Boolean isPendingRemove = redisTemplate.opsForSet().isMember(COMIC_LIKE_SYNC_REMOVE, comicIdStr + ":" + userIdStr);
+        Boolean isPendingRemove = redisTemplate.opsForSet().isMember(UserInteractionSyncScheduler.COMIC_LIKE_SYNC_REMOVE, comicIdStr + ":" + userIdStr);
         if (Boolean.TRUE.equals(isPendingRemove)) {
             return false;
         }
@@ -39,7 +37,7 @@ public class UserLikeService {
         }
 
         // 3. Check if it is pending addition
-        Boolean isPendingAdd = redisTemplate.opsForSet().isMember(COMIC_LIKE_SYNC_ADD, comicIdStr + ":" + userIdStr);
+        Boolean isPendingAdd = redisTemplate.opsForSet().isMember(UserInteractionSyncScheduler.COMIC_LIKE_SYNC_ADD, comicIdStr + ":" + userIdStr);
         if (Boolean.TRUE.equals(isPendingAdd)) {
             return true;
         }
@@ -55,24 +53,24 @@ public class UserLikeService {
 
     public boolean toggleLikeComic(UUID comicId, UUID userId) {
         String comicIdStr = comicId.toString();
-        String userSetKey = COMIC_LIKE_USERS_SET_PREFIX + comicIdStr;
+        String userSetKey = UserInteractionSyncScheduler.COMIC_LIKE_USERS_SET_PREFIX + comicIdStr;
         String userIdStr = userId.toString();
 
         boolean isLiked = isComicLikedByUser(comicId, userId);
 
         if (!isLiked) {
             redisTemplate.opsForSet().add(userSetKey, userIdStr);
-            redisTemplate.opsForHash().increment(COMIC_LIKE_HASH, comicIdStr, 1);
+            redisTemplate.opsForHash().increment(UserInteractionSyncScheduler.COMIC_LIKE_HASH, comicIdStr, 1);
 
-            redisTemplate.opsForSet().add(COMIC_LIKE_SYNC_ADD, comicIdStr + ":" + userIdStr);
-            redisTemplate.opsForSet().remove(COMIC_LIKE_SYNC_REMOVE, comicIdStr + ":" + userIdStr);
+            redisTemplate.opsForSet().add(UserInteractionSyncScheduler.COMIC_LIKE_SYNC_ADD, comicIdStr + ":" + userIdStr);
+            redisTemplate.opsForSet().remove(UserInteractionSyncScheduler.COMIC_LIKE_SYNC_REMOVE, comicIdStr + ":" + userIdStr);
             return true;
         } else {
             redisTemplate.opsForSet().remove(userSetKey, userIdStr);
-            redisTemplate.opsForHash().increment(COMIC_LIKE_HASH, comicIdStr, -1);
+            redisTemplate.opsForHash().increment(UserInteractionSyncScheduler.COMIC_LIKE_HASH, comicIdStr, -1);
 
-            redisTemplate.opsForSet().add(COMIC_LIKE_SYNC_REMOVE, comicIdStr + ":" + userIdStr);
-            redisTemplate.opsForSet().remove(COMIC_LIKE_SYNC_ADD, comicIdStr + ":" + userIdStr);
+            redisTemplate.opsForSet().add(UserInteractionSyncScheduler.COMIC_LIKE_SYNC_REMOVE, comicIdStr + ":" + userIdStr);
+            redisTemplate.opsForSet().remove(UserInteractionSyncScheduler.COMIC_LIKE_SYNC_ADD, comicIdStr + ":" + userIdStr);
             return false;
         }
     }
