@@ -7,7 +7,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -32,7 +32,7 @@ public class ChapterDTO {
     @Builder.Default
     private Boolean isPremium = false;
 
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @JsonProperty(access = JsonProperty.Access.AUTO)
     private List<String> images;

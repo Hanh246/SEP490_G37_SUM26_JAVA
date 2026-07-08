@@ -51,8 +51,6 @@ public class JwtTokenUtil {
     private String buildToken(com.sep.comiverse.entity.UserEntity user, Instant expiration) {
         return Jwts.builder()
                 .subject(user.getId().toString())
-                .claim("email", user.getEmail())
-                .claim("fullName", user.getFullName())
                 .claim("role", user.getRole() != null ? user.getRole().getRoleName() : "READER")
                 .issuedAt(Date.from(Instant.now()))
                 .expiration(Date.from(expiration))
@@ -97,5 +95,14 @@ public class JwtTokenUtil {
             logger.error("JWT claims string is empty: {}", e.getMessage());
             throw new CustomException(401, "ILLEGAL_ARGUMENT", HttpStatus.UNAUTHORIZED);
         }
+    }
+
+    public java.util.UUID getCurrentUserId() {
+        org.springframework.security.core.Authentication authentication =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof UserPrincipal principal) {
+            return principal.getId();
+        }
+        return null;
     }
 }

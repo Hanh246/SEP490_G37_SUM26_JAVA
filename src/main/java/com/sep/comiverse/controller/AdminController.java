@@ -120,4 +120,24 @@ public class AdminController {
                         .build()
         );
     }
+
+    /**
+     * PUT /admin/users/{id}
+     * Update a user's details (fullName and role).
+     */
+    @PutMapping("/{id}")
+    @Operation(summary = "Update user details", description = "Update a user's full name and role (Admin only)")
+    public ResponseEntity<BaseResponse<AdminUserResponse>> updateUser(
+            @PathVariable UUID id,
+            @Valid @RequestBody com.sep.comiverse.dto.request.AdminUpdateUserRequest request
+    ) {
+        AdminUserResponse user = adminUserService.updateUser(id, request);
+        return ResponseEntity.ok(
+                BaseResponse.<AdminUserResponse>builder()
+                        .success(true)
+                        .message("User details updated successfully.")
+                        .data(user)
+                        .build()
+        );
+    }
 }

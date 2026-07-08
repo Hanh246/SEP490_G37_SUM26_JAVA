@@ -20,6 +20,10 @@ public class ComicDTO {
     private String slug;
     private String summary;
     private UUID authorId;
+
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String authorName;
+
     private ComicStatus status;
     private ComicModerationStatus moderationStatus;
     private String cover;
@@ -32,6 +36,7 @@ public class ComicDTO {
     private List<UUID> genreIds;
 
     private Long viewCount;
+    private Integer likeCount;
     private Integer saveCount;
     private Double ratingAverage;
     private Integer ratingCount;

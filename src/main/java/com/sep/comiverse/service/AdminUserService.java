@@ -27,6 +27,7 @@ public class AdminUserService {
     private final IUserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailUtil emailUtil;
+    private final com.sep.comiverse.repository.IRoleRepository roleRepository;
 
     /**
      * List all users with search, role filter, and status filter.
@@ -101,6 +102,28 @@ public class AdminUserService {
      */
     public AdminUserResponse getUserById(UUID userId) {
         UserEntity user = findUserOrThrow(userId);
+        return toAdminUserResponse(user);
+    }
+
+    /**
+     * Update a user's details (fullName and role).
+     */
+    @Transactional
+    public AdminUserResponse updateUser(UUID userId, com.sep.comiverse.dto.request.AdminUpdateUserRequest request) {
+        UserEntity user = findUserOrThrow(userId);
+
+        if (request.getFullName() != null && !request.getFullName().trim().isEmpty()) {
+            user.setFullName(request.getFullName().trim());
+        }
+
+        if (request.getRole() != null && !request.getRole().trim().isEmpty()) {
+            String newRoleName = request.getRole().trim().toUpperCase();
+            com.sep.comiverse.entity.RoleEntity role = roleRepository.findByRoleName(newRoleName)
+                    .orElseThrow(() -> new CustomException(400, "Role not found: " + newRoleName, HttpStatus.BAD_REQUEST));
+            user.setRole(role);
+        }
+
+        userRepository.save(user);
         return toAdminUserResponse(user);
     }
 

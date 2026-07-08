@@ -42,6 +42,7 @@ public class SecurityConfig {
     private static final String[] URL_WHITELIST = {
             "/auth/**",
             "/upload/**",
+            "/sync/**",
             "/error",
             "/v3/api-docs/**",
             "/swagger-ui/**",
@@ -66,9 +67,13 @@ public class SecurityConfig {
                 .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(entryPoint))
-                .authorizeHttpRequests(auth ->
-                        auth.requestMatchers(URL_WHITELIST).permitAll()
-                                .anyRequest().authenticated()
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(URL_WHITELIST).permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/comics/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/chapters/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/genres/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/plans/**").permitAll()
+                        .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2
                         .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
@@ -91,3 +96,4 @@ public class SecurityConfig {
         return source;
     }
 }
+

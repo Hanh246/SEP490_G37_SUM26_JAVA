@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/genre")
+@RequestMapping("/genres")
 public class GenreController
         extends BaseController<GenreEntity, GenreDTO, UUID, PaginationSearchDTO> {
 
