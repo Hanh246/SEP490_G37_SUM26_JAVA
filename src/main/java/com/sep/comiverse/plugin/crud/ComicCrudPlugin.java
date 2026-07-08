@@ -1,160 +1,214 @@
-package com.sep.comiverse.plugin.crud;
+package com.sep.comiverse.controller;
 
 import com.sep.comiverse.dto.ComicDTO;
 import com.sep.comiverse.dto.pagination.CursorResponseDTO;
+import com.sep.comiverse.dto.pagination.PaginationMetadata;
+import com.sep.comiverse.dto.pagination.PaginationResponse;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.dto.request.ComicExploreRequestDTO;
-import com.sep.comiverse.entity.ComicEntity;
-import com.sep.comiverse.plugin.AbstractCrudPlugin;
-import com.sep.comiverse.plugin.IMapperPlugin;
-import com.sep.comiverse.repository.IComicRepository;
-import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
-import com.sep.comiverse.service.scheduler.UserInteractionSyncScheduler;
-import com.sep.comiverse.service.scheduler.LeaderboardScheduler;
-import com.sep.comiverse.specification.ComicSpecification;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.jpa.domain.Specification;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.plugin.core.PluginRegistry;
-import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import com.sep.comiverse.dto.response.BaseResponse;
+import com.sep.comiverse.plugin.crud.ComicCrudPlugin;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Page;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
 
-import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
-@Component
-public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, UUID, PaginationSearchDTO> {
+@RestController
+@RequestMapping("/comics")
+@RequiredArgsConstructor
+public class ComicController {
 
-    private final IComicRepository comicRepository;
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final ComicCrudPlugin comicCrudPlugin;
 
+    @GetMapping
+    @Operation(summary = "Retrieve a paginated public collection of published comics")
+    public ResponseEntity<PaginationResponse<List<ComicDTO>>> findPublishedComics(
+            @Valid @ParameterObject PaginationSearchDTO paginationDTO
+    ) {
+        PaginationSearchDTO safePagination =
+                paginationDTO != null ? paginationDTO : new PaginationSearchDTO();
 
-    private static final String COMIC_CACHE_PREFIX = "comic:detail:";
+        Page<ComicDTO> data = comicCrudPlugin.listPublishedComics(safePagination);
 
-    @Autowired
-    public ComicCrudPlugin(IComicRepository repository,
-                           PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry,
-                           RedisTemplate<String, Object> redisTemplate) {
-        super(repository, pluginRegistry, ComicEntity.class);
-        this.comicRepository = repository;
-        this.redisTemplate = redisTemplate;
+        return ResponseEntity.ok(PaginationResponse.<List<ComicDTO>>builder()
+                .success(true)
+                .metadata(new PaginationMetadata(
+                        safePagination.getPage(),
+                        safePagination.getSize(),
+                        data.getTotalElements(),
+                        data.getTotalPages()
+                ))
+                .data(data.toList())
+                .build());
     }
 
-    @Transactional(readOnly = true)
-    public ComicDTO getComicDetail(UUID comicId) {
-        String cacheKey = COMIC_CACHE_PREFIX + comicId.toString();
-        String comicIdStr = comicId.toString();
-
-        ComicDTO dto = (ComicDTO) redisTemplate.opsForValue().get(cacheKey);
-
-        if (dto == null) {
-            ComicEntity entity = comicRepository.findById(comicId)
-                    .orElseThrow(() -> new RuntimeException("Comic not found"));
-
-            dto = plugin.toDto(entity);
-
-            redisTemplate.opsForValue().set(cacheKey, dto, Duration.ofHours(24));
-        }
-
-        //increase view
-        Number rawViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.COMIC_VIEW_HASH, comicIdStr);
-        if (rawViews != null) {
-            dto.setViewCount(dto.getViewCount() + rawViews.intValue());
-        }
-        //increase like
-        Number rawLikes = (Number) redisTemplate.opsForHash().get(UserInteractionSyncScheduler.COMIC_LIKE_HASH, comicIdStr);
-        if (rawLikes != null) {
-            dto.setLikeCount(dto.getLikeCount() + rawLikes.intValue());
-        }
-        //increase save
-        Number rawSaves = (Number) redisTemplate.opsForHash().get(UserInteractionSyncScheduler.COMIC_SAVE_HASH, comicIdStr);
-        if (rawSaves != null) {
-            dto.setSaveCount(dto.getSaveCount() + rawSaves.intValue());
-        }
-
-        return dto;
+    @GetMapping("/all")
+    @Operation(summary = "Retrieve all published comics")
+    public ResponseEntity<BaseResponse<List<ComicDTO>>> listAll() {
+        return ResponseEntity.ok(BaseResponse.<List<ComicDTO>>builder()
+                .success(true)
+                .data(comicCrudPlugin.listPublishedComics())
+                .build());
     }
 
-    @SuppressWarnings("unchecked")
-    public List<ComicDTO> getCachedLeaderboard(String timeframe) {
-        String cacheKey = LeaderboardScheduler.LEADERBOARD_CACHE_KEY_PREFIX + timeframe;
-        List<ComicDTO> ranking = (List<ComicDTO>) redisTemplate.opsForValue().get(cacheKey);
+    @GetMapping("/top-views")
+    @Operation(summary = "Retrieve a paginated collection of published comics sorted by maximum traffic views")
+    public ResponseEntity<PaginationResponse<List<ComicDTO>>> getTopViews(
+            @Valid @ParameterObject PaginationSearchDTO paginationDTO
+    ) {
+        PaginationSearchDTO safePagination =
+                paginationDTO != null ? paginationDTO : new PaginationSearchDTO();
 
-        return ranking != null ? ranking : java.util.Collections.emptyList();
+        Page<ComicDTO> data = comicCrudPlugin.getTopViews(safePagination);
+
+        return ResponseEntity.ok(PaginationResponse.<List<ComicDTO>>builder()
+                .success(true)
+                .metadata(new PaginationMetadata(
+                        safePagination.getPage(),
+                        safePagination.getSize(),
+                        data.getTotalElements(),
+                        data.getTotalPages()
+                ))
+                .data(data.toList())
+                .build());
     }
 
-    public CursorResponseDTO<ComicDTO> getExploreComicsCursor(ComicExploreRequestDTO request) {
-        String sortProperty = "createdAt";
-        boolean isTimeField = true;
+    @GetMapping("/recently-updated")
+    @Operation(summary = "Retrieve a paginated collection of published comics with recently published chapters")
+    public ResponseEntity<PaginationResponse<List<ComicDTO>>> getRecentlyUpdated(
+            @Valid @ParameterObject PaginationSearchDTO paginationDTO
+    ) {
+        PaginationSearchDTO safePagination =
+                paginationDTO != null ? paginationDTO : new PaginationSearchDTO();
 
-        String sortByStr = request.getSortBy() != null ? request.getSortBy() : "Default";
-        switch (sortByStr) {
-            case "Recently Added":
-                sortProperty = "createdAt";
-                break;
-            case "Recently Updated":
-                sortProperty = "lastChapterUpdatedAt";
-                break;
-            case "Total Views":
-                sortProperty = "viewCount";
-                isTimeField = false;
-                break;
-            case "Most Liked":
-                sortProperty = "likeCount";
-                isTimeField = false;
-                break;
-            case "Most Followed":
-                sortProperty = "saveCount";
-                isTimeField = false;
-                break;
-        }
+        Page<ComicDTO> data = comicCrudPlugin.getComicsByLatestChapters(safePagination);
 
-        Sort sort = Sort.by(Sort.Direction.DESC, sortProperty).and(Sort.by(Sort.Direction.DESC, "id"));
-        Pageable pageable = PageRequest.of(0, request.getSize() + 1, sort);
-
-        Specification<ComicEntity> spec = ComicSpecification.filterCursorComics(request, sortProperty, isTimeField);
-        List<ComicEntity> entities = comicRepository.findAll(spec, pageable).getContent();
-
-        boolean hasMore = entities.size() > request.getSize();
-        List<ComicEntity> resultEntities = hasMore ? entities.subList(0, request.getSize()) : entities;
-
-        List<ComicDTO> dtoList = resultEntities.stream().map(entity -> {
-            ComicDTO dto = new ComicDTO();
-            dto.setId(entity.getId());
-            dto.setTitle(entity.getTitle());
-            dto.setStatus(entity.getStatus());
-            dto.setCover(entity.getCover());
-            dto.setViewCount(entity.getViewCount());
-            return dto;
-        }).toList();
-
-        String nextCursor = null;
-        UUID nextReferenceId = null;
-
-        if (!dtoList.isEmpty() && hasMore) {
-            ComicEntity lastEntity = resultEntities.getLast();
-            nextReferenceId = lastEntity.getId();
-            nextCursor = isTimeField ? getTimeProperty(lastEntity, sortProperty) : getNumberProperty(lastEntity, sortProperty);
-        }
-
-        return new CursorResponseDTO<>(dtoList, nextCursor, nextReferenceId, hasMore);
+        return ResponseEntity.ok(PaginationResponse.<List<ComicDTO>>builder()
+                .success(true)
+                .metadata(new PaginationMetadata(
+                        safePagination.getPage(),
+                        safePagination.getSize(),
+                        data.getTotalElements(),
+                        data.getTotalPages()
+                ))
+                .data(data.toList())
+                .build());
     }
 
-    private String getTimeProperty(ComicEntity entity, String property) {
-        if ("lastChapterUpdatedAt".equals(property)) {
-            return entity.getLastChapterUpdatedAt() != null ? entity.getLastChapterUpdatedAt().toString() : entity.getCreatedAt().toString();
-        }
-        return entity.getCreatedAt().toString();
+    @GetMapping("/explore")
+    @Operation(summary = "Explore published catalog using optimized cursor pagination with filters and dynamic sorting")
+    public ResponseEntity<BaseResponse<CursorResponseDTO<ComicDTO>>> getExploreComics(
+            @Valid @ParameterObject ComicExploreRequestDTO request
+    ) {
+        ComicExploreRequestDTO safeRequest =
+                request != null ? request : new ComicExploreRequestDTO();
+
+        CursorResponseDTO<ComicDTO> result =
+                comicCrudPlugin.getExploreComicsCursor(safeRequest);
+
+        return ResponseEntity.ok(BaseResponse.<CursorResponseDTO<ComicDTO>>builder()
+                .success(true)
+                .data(result)
+                .build());
     }
 
-    private String getNumberProperty(ComicEntity entity, String property) {
-        if ("viewCount".equals(property)) return entity.getViewCount().toString();
-        if ("likeCount".equals(property)) return entity.getLikeCount().toString();
-        if ("saveCount".equals(property)) return entity.getSaveCount().toString();
-        return entity.getCreatedAt().toString();
+    /**
+     * Public comic detail.
+     *
+     * Quan trọng:
+     * comicCrudPlugin.getComicDetail(id) phải chỉ trả comic đã PUBLISHED.
+     * Không được trả comic PENDING / DRAFT / REJECTED ra public.
+     */
+    @GetMapping("/{id}")
+    @Operation(summary = "Get public comic detail")
+    public ResponseEntity<BaseResponse<ComicDTO>> findById(
+            @PathVariable
+            @Parameter(required = true)
+            UUID id
+    ) {
+        ComicDTO data = comicCrudPlugin.getComicDetail(id);
+
+        return ResponseEntity.ok(BaseResponse.<ComicDTO>builder()
+                .success(true)
+                .data(data)
+                .build());
+    }
+
+    /**
+     * ADMIN CRUD - tạo comic trực tiếp.
+     * Author nên tạo comic qua AuthorComicController.
+     */
+    @PostMapping
+    @PreAuthorize("hasAuthority('ADMIN')")
+    public ResponseEntity<BaseResponse<ComicDTO>> create(
+            @Valid @RequestBody ComicDTO dto
+    ) {
+        ComicDTO created = comicCrudPlugin.create(dto);
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(BaseResponse.<ComicDTO>builder()
+                        .success(true)
+                        .data(created)
+                        .build());
+    }
+
+    /**
+     * ADMIN CRUD - sửa comic trực tiếp.
+     */
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('ADMIN')")
+    public ResponseEntity<BaseResponse<ComicDTO>> update(
+            @PathVariable UUID id,
+            @RequestBody ComicDTO dto
+    ) {
+        ComicDTO updated = comicCrudPlugin.update(id, dto);
+
+        return ResponseEntity.ok(BaseResponse.<ComicDTO>builder()
+                .success(true)
+                .data(updated)
+                .build());
+    }
+
+    /**
+     * ADMIN CRUD - xóa comic trực tiếp.
+     */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('ADMIN')")
+    public ResponseEntity<BaseResponse<Void>> delete(@PathVariable UUID id) {
+        comicCrudPlugin.delete(id);
+
+        return ResponseEntity.ok(BaseResponse.<Void>builder()
+                .success(true)
+                .build());
+    }
+
+    /**
+     * ADMIN detail - dùng khi admin cần xem cả comic chưa duyệt.
+     * Tách riêng để không trùng với public GET /comics/{id}.
+     */
+    @GetMapping("/admin/{id}")
+    @PreAuthorize("hasAuthority('ADMIN')")
+    @Operation(summary = "Get comic detail for admin")
+    public ResponseEntity<BaseResponse<ComicDTO>> findByIdForAdmin(
+            @PathVariable UUID id
+    ) {
+        return comicCrudPlugin.read(id)
+                .map(dto -> ResponseEntity.ok(BaseResponse.<ComicDTO>builder()
+                        .success(true)
+                        .data(dto)
+                        .build()))
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(BaseResponse.<ComicDTO>builder()
+                                .success(false)
+                                .build()));
     }
 }

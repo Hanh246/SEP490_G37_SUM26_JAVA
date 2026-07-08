@@ -1,6 +1,7 @@
 package com.sep.comiverse.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.sep.comiverse.entity.enums.ChapterStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -22,6 +23,8 @@ public class ChapterDTO {
     private String chapterNumber;
 
     private String title;
+
+    private ChapterStatus moderationStatus;
 
     @Builder.Default
     private Long viewCount = 0L;
