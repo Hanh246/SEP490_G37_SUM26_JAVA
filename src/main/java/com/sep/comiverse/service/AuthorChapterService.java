@@ -600,18 +600,25 @@ public class AuthorChapterService {
         if (comic == null || comic.getId() == null) {
             return;
         }
-        List<ChapterEntity> chapters = chapterRepository.findAllByComic_IdAndDeletedFalse(comic.getId());
-        comic.setChapterCount(chapters.size());
-        chapters.stream()
+
+        // Public comic metadata must be based only on published chapters.
+        // Draft/preview/pending chapters remain visible in author endpoints,
+        // but they must not leak through latestChapterNumber, chapterCount, or recently-updated lists.
+        List<ChapterEntity> publishedChapters = chapterRepository
+                .findAllByComic_IdAndDeletedFalseAndModerationStatus(comic.getId(), ChapterStatus.PUBLISHED);
+
+        comic.setChapterCount(publishedChapters.size());
+        publishedChapters.stream()
                 .filter(chapter -> StringUtils.hasText(chapter.getChapterNumber()))
                 .max(Comparator.comparing(chapter -> toChapterSortNumber(chapter.getChapterNumber())))
-                .ifPresent(chapter -> {
+                .ifPresentOrElse(chapter -> {
                     comic.setLatestChapterNumber(chapter.getChapterNumber());
                     comic.setLastChapterUpdatedAt(chapter.getUpdatedAt() != null ? chapter.getUpdatedAt() : Instant.now());
+                }, () -> {
+                    comic.setLatestChapterNumber(null);
+                    comic.setLastChapterUpdatedAt(comic.getUpdatedAt() != null ? comic.getUpdatedAt() : comic.getCreatedAt());
                 });
-        if (chapters.isEmpty()) {
-            comic.setLatestChapterNumber(null);
-        }
+
         comicRepository.save(comic);
     }
 
