@@ -33,7 +33,7 @@ public interface IUserRepository extends AbstractCrudRepository<UserEntity, UUID
     @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM UserEntity u WHERE u.username = :username AND u.deleted = false")
     boolean existsByUsername(@Param("username") String username);
 
-    @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM UserEntity u WHERE u.email = :email AND u.deleted = false")
+    @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM UserEntity u WHERE LOWER(u.email) = LOWER(:email) AND u.deleted = false")
     boolean existsByEmail(@Param("email") String email);
 
     @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM UserEntity u WHERE u.phone = :phone AND u.deleted = false")

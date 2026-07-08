@@ -49,6 +49,12 @@ public class UserEntity extends BaseEntity {
     @Column(name = "reset_token_expires_at")
     private LocalDateTime resetTokenExpiresAt;
 
+    @Column(name = "email_verification_token")
+    private String emailVerificationToken;
+
+    @Column(name = "email_verification_expires_at")
+    private LocalDateTime emailVerificationExpiresAt;
+
     @Column(name = "premium_plan")
     private String premiumPlan;
 

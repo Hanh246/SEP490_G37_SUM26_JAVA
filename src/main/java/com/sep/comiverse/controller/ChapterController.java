@@ -11,7 +11,6 @@ import com.sep.comiverse.security.JwtTokenUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -24,11 +23,15 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/chapters")
-@RequiredArgsConstructor
 public class ChapterController {
 
     private final ChapterCrudPlugin chapterCrudPlugin;
     private final JwtTokenUtil jwtTokenUtil;
+    
+    public ChapterController(ChapterCrudPlugin chapterCrudPlugin, JwtTokenUtil jwtTokenUtil) {
+        this.chapterCrudPlugin = chapterCrudPlugin;
+        this.jwtTokenUtil = jwtTokenUtil;
+    }
 
     /**
      * ADMIN CRUD - tạo chapter trực tiếp.
