@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,7 +30,8 @@ public class ChapterCrudPlugin
     private final IUserRepository userRepository;
     private final PremiumPlanService premiumPlanService;
 
-    private static final String CHAPTER_CACHE_PREFIX = "chapter:detail:";
+    private static final String CHAPTER_DETAIL_CACHE_PREFIX = "chapter:detail:meta:";
+    private static final String COMIC_CHAPTERS_LIST_CACHE_PREFIX = "comic:chapters:list:";
 
     @Autowired
     public ChapterCrudPlugin(IChapterRepository repository,
@@ -46,35 +48,61 @@ public class ChapterCrudPlugin
 
     @Transactional(readOnly = true)
     public ChapterDTO getChapterDetail(UUID chapterId, UUID userId, String clientIp) {
-        String cacheKey = CHAPTER_CACHE_PREFIX + chapterId;
+        String cacheKey = CHAPTER_DETAIL_CACHE_PREFIX + chapterId;
 
-        ChapterDTO dto = (ChapterDTO) redisTemplate.opsForValue().get(cacheKey);
+        ChapterLiteDTO cacheDto = (ChapterLiteDTO) redisTemplate.opsForValue().get(cacheKey);
+        List<String> images;
 
-        if (dto == null) {
+        if (cacheDto == null) {
             ChapterEntity entity = chapterRepository.findById(chapterId)
                     .orElseThrow(() -> new RuntimeException("Chapter not found"));
 
-            dto = plugin.toDto(entity);
+            cacheDto = ChapterLiteDTO.builder()
+                    .id(entity.getId())
+                    .comicId(entity.getComic().getId())
+                    .chapterNumber(entity.getChapterNumber())
+                    .title(entity.getTitle())
+                    .viewCount(entity.getViewCount())
+                    .isPremium(entity.getIsPremium())
+                    .createdAt(entity.getCreatedAt())
+                    .build();
 
-            redisTemplate.opsForValue().set(cacheKey, dto, Duration.ofDays(3));
-        }
+            redisTemplate.opsForValue().set(cacheKey, cacheDto, Duration.ofDays(3));
+            images = entity.getImages();
+        }else {
+            List<String> rawImages = chapterRepository.findImagesByChapterId(chapterId);
 
-        if (Boolean.TRUE.equals(dto.getIsPremium())) {
-            boolean isAuthorized = checkUserPremiumAccess(userId);
-
-            if (!isAuthorized) {
-                dto = maskPremiumImages(dto);
+            if (rawImages != null && rawImages.size() == 1 && rawImages.getFirst().contains(",")) {
+                images = java.util.Arrays.asList(rawImages.getFirst().split(","));
+            } else {
+                images = rawImages != null ? rawImages : Collections.emptyList();
             }
         }
 
-        trackAndIncrementView(dto.getComicId(), chapterId, userId, clientIp);
+        ChapterDTO responseDto = ChapterDTO.builder()
+                .id(cacheDto.getId())
+                .comicId(cacheDto.getComicId())
+                .chapterNumber(cacheDto.getChapterNumber())
+                .title(cacheDto.getTitle())
+                .viewCount(cacheDto.getViewCount())
+                .isPremium(cacheDto.getIsPremium())
+                .createdAt(cacheDto.getCreatedAt())
+                .build();
+
+        if (Boolean.TRUE.equals(responseDto.getIsPremium()) && !checkUserPremiumAccess(userId)) {
+            responseDto.setImages(Collections.emptyList());
+        }else {
+            responseDto.setImages(images);
+        }
+
+        trackAndIncrementView(responseDto.getComicId(), chapterId, userId, clientIp);
 
         Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString());
         if (rawChapterViews != null) {
-            dto.setViewCount(dto.getViewCount() + rawChapterViews.intValue());
+            responseDto.setViewCount(responseDto.getViewCount() + rawChapterViews.intValue());
         }
 
-        return dto;
+        return responseDto;
     }
 
     private void trackAndIncrementView(UUID comicId, UUID chapterId, UUID userId, String clientIp) {
@@ -117,15 +145,37 @@ public class ChapterCrudPlugin
                 .build();
     }
 
+    @SuppressWarnings("unchecked")
     @Transactional(readOnly = true)
     public List<ChapterLiteDTO> getChaptersByComicId(UUID comicId) {
-        List<ChapterLiteDTO> results = chapterRepository.findChapterMetadataByComicId(comicId);
-        for (ChapterLiteDTO dto : results) {
-            Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, dto.getId().toString());
-            if (rawChapterViews != null) {
-                dto.setViewCount(dto.getViewCount() + rawChapterViews.intValue());
+        String cacheKey = COMIC_CHAPTERS_LIST_CACHE_PREFIX + comicId.toString();
+
+        List<ChapterLiteDTO> cachedResults = (List<ChapterLiteDTO>) redisTemplate.opsForValue().get(cacheKey);
+        if (cachedResults == null) {
+            cachedResults = chapterRepository.findChapterMetadataByComicId(comicId);
+
+            if (cachedResults != null && !cachedResults.isEmpty()) {
+                redisTemplate.opsForValue().set(cacheKey, cachedResults, Duration.ofDays(7));
+            } else {
+                return Collections.emptyList();
             }
         }
-        return results;
+        return cachedResults.stream().map(dto -> {
+            ChapterLiteDTO copy = ChapterLiteDTO.builder()
+                    .id(dto.getId())
+                    .comicId(dto.getComicId())
+                    .chapterNumber(dto.getChapterNumber())
+                    .title(dto.getTitle())
+                    .viewCount(dto.getViewCount())
+                    .isPremium(dto.getIsPremium())
+                    .createdAt(dto.getCreatedAt())
+                    .build();
+
+            Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, copy.getId().toString());
+            if (rawChapterViews != null) {
+                copy.setViewCount(copy.getViewCount() + rawChapterViews.intValue());
+            }
+            return copy;
+        }).toList();
     }
 }
