@@ -6,12 +6,10 @@ import com.sep.comiverse.dto.response.ChapterPageResponse;
 import com.sep.comiverse.dto.response.ChapterPreviewResponse;
 import com.sep.comiverse.dto.response.SubmitChapterReviewResponse;
 import com.sep.comiverse.entity.ChapterEntity;
-import com.sep.comiverse.entity.ChapterPageEntity;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
 import com.sep.comiverse.exception.CustomException;
-import com.sep.comiverse.repository.IChapterPageRepository;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.repository.ISubmissionRepository;
@@ -29,13 +27,14 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.text.Collator;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
-import java.util.List;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -53,13 +52,12 @@ public class AuthorChapterService {
     private static final Pattern NATURAL_PART_PATTERN = Pattern.compile("\\d+|\\D+");
     private static final Pattern CHAPTER_ZIP_NAME_PATTERN =
             Pattern.compile("(?i)^chapter\\s+([1-9][0-9]*(?:[,.][0-9]+)?)\\.cbz$");
-
     private static final Pattern CHAPTER_NUMBER_PATTERN =
             Pattern.compile("^[1-9][0-9]*(?:[,.][0-9]+)?$");
+
     private final AuthorComicService authorComicService;
     private final IComicRepository comicRepository;
     private final IChapterRepository chapterRepository;
-    private final IChapterPageRepository chapterPageRepository;
     private final ISubmissionRepository submissionRepository;
     private final CloudinaryStorageService cloudinaryStorageService;
 
@@ -80,52 +78,35 @@ public class AuthorChapterService {
         List<ImageCandidate> images = extractAndValidateImages(zipFile);
         images.sort(imageNaturalComparator());
 
-        ChapterEntity chapter = ChapterEntity.builder()
-                .comic(comic)
-                .chapterNumber(chapterNumber)
-                .title(trimToNull(request.getTitle()))
-                .moderationStatus(ChapterStatus.PREVIEW_READY)
-                .images(new ArrayList<>())
-                .build();
-        ChapterEntity savedChapter = chapterRepository.save(chapter);
-
-        List<ChapterPageEntity> pages = new ArrayList<>();
         List<String> imageUrls = new ArrayList<>();
+        String targetFolder = "comiverse/chapters/" + comicId + "/chapter-" + chapterNumber;
         for (int index = 0; index < images.size(); index++) {
             ImageCandidate image = images.get(index);
-            String targetFolder = "comiverse/chapters/" + comicId + "/chapter-" + chapterNumber;
             CloudinaryUploadResult upload = cloudinaryStorageService.uploadImage(
                     image.bytes(),
                     buildOrderedFileName(index + 1, image.originalFileName()),
                     targetFolder
             );
-
-            ChapterPageEntity page = ChapterPageEntity.builder()
-                    .comicId(comic.getId())
-                    .chapterId(savedChapter.getId())
-                    .pageNumber(index + 1)
-                    .imageUrl(upload.getSecureUrl())
-                    .cloudinaryPublicId(upload.getPublicId())
-                    .originalFileName(image.originalFileName())
-                    .fileSizeBytes(upload.getBytes() != null ? upload.getBytes() : (long) image.bytes().length)
-                    .width(upload.getWidth() != null ? upload.getWidth() : image.dimension().width())
-                    .height(upload.getHeight() != null ? upload.getHeight() : image.dimension().height())
-                    .build();
-            pages.add(chapterPageRepository.save(page));
             imageUrls.add(upload.getSecureUrl());
         }
 
-        savedChapter.setImages(imageUrls);
-        savedChapter = chapterRepository.save(savedChapter);
+        ChapterEntity chapter = ChapterEntity.builder()
+                .comic(comic)
+                .chapterNumber(chapterNumber)
+                .title(trimToNull(request.getTitle()))
+                .moderationStatus(ChapterStatus.PREVIEW_READY)
+                .images(imageUrls)
+                .build();
+        ChapterEntity savedChapter = chapterRepository.save(chapter);
+        refreshComicChapterMetadata(comic);
 
-        return toPreviewResponse(savedChapter, pages);
+        return toPreviewResponse(savedChapter);
     }
 
     @Transactional(readOnly = true)
     public ChapterPreviewResponse previewChapter(UUID comicId, UUID chapterId, UUID authorId) {
         ChapterEntity chapter = getOwnedChapter(comicId, chapterId, authorId);
-        List<ChapterPageEntity> pages = chapterPageRepository.findAllByChapterIdAndDeletedFalseOrderByPageNumberAsc(chapterId);
-        return toPreviewResponse(chapter, pages);
+        return toPreviewResponse(chapter);
     }
 
     @Transactional(readOnly = true)
@@ -133,20 +114,16 @@ public class AuthorChapterService {
         authorComicService.getOwnedComic(comicId, authorId);
         PaginationSearchDTO safePagination = pagination != null ? pagination : new PaginationSearchDTO();
         return chapterRepository.findAllByComic_IdAndComic_AuthorIdAndDeletedFalse(comicId, authorId, safePagination.toPageRequest())
-                .map(chapter -> toPreviewResponse(
-                        chapter,
-                        chapterPageRepository.findAllByChapterIdAndDeletedFalseOrderByPageNumberAsc(chapter.getId())
-                ));
+                .map(this::toPreviewResponse);
     }
 
     @Transactional
     public SubmitChapterReviewResponse submitForReview(UUID comicId, UUID chapterId, UUID authorId) {
         ComicEntity comic = authorComicService.getOwnedComic(comicId, authorId);
         ChapterEntity chapter = getOwnedChapter(comicId, chapterId, authorId);
-        List<ChapterPageEntity> pages = chapterPageRepository.findAllByChapterIdAndDeletedFalseOrderByPageNumberAsc(chapterId);
 
-        if (pages.isEmpty() && (chapter.getImages() == null || chapter.getImages().isEmpty())) {
-            throw new CustomException(400, "Chapter must have at least one page before review submission", HttpStatus.BAD_REQUEST);
+        if (!hasImages(chapter)) {
+            throw new CustomException(400, "Chapter must have at least one image before review submission", HttpStatus.BAD_REQUEST);
         }
 
         submissionRepository.findTopByChapterIdAndAuthorIdAndQueueTypeIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(
@@ -177,7 +154,7 @@ public class AuthorChapterService {
                 .flags(0)
                 .status("pending")
                 .cover(firstNonBlank(comic.getThumbnail(), comic.getCover()))
-                .content("Chapter " + chapter.getChapterNumber() + " has " + resolvePageCount(chapter, pages) + " image pages waiting for moderation review.")
+                .content("Chapter " + chapter.getChapterNumber() + " has " + resolvePageCount(chapter) + " image pages waiting for moderation review.")
                 .build();
         submissionRepository.save(submission);
         chapter.setModerationStatus(ChapterStatus.SUBMITTED_FOR_REVIEW);
@@ -224,13 +201,13 @@ public class AuthorChapterService {
                     createChapterReviewSubmission(chapter.getComic(), chapter, authorId);
                 }
             } else {
-                chapter.setModerationStatus(ChapterStatus.PREVIEW_READY);
+                chapter.setModerationStatus(hasImages(chapter) ? ChapterStatus.PREVIEW_READY : ChapterStatus.DRAFT);
             }
         }
 
         ChapterEntity savedChapter = chapterRepository.save(chapter);
-        List<ChapterPageEntity> pages = chapterPageRepository.findAllByChapterIdAndDeletedFalseOrderByPageNumberAsc(chapterId);
-        return toPreviewResponse(savedChapter, pages);
+        refreshComicChapterMetadata(savedChapter.getComic());
+        return toPreviewResponse(savedChapter);
     }
 
     @Transactional
@@ -239,15 +216,7 @@ public class AuthorChapterService {
         ChapterEntity chapter = getOwnedChapter(comicId, chapterId, authorId);
         chapter.setDeleted(true);
         chapterRepository.save(chapter);
-
-        chapterPageRepository.findAllByChapterIdAndDeletedFalseOrderByPageNumberAsc(chapterId).forEach(page -> {
-            page.setDeleted(true);
-            chapterPageRepository.save(page);
-        });
-
-        long chapterCount = chapterRepository.countByComic_IdAndDeletedFalse(comic.getId());
-        comic.setChapterCount(chapterCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) chapterCount);
-        comicRepository.save(comic);
+        refreshComicChapterMetadata(comic);
     }
 
     private boolean hasPendingChapterSubmission(UUID chapterId, UUID authorId) {
@@ -261,7 +230,6 @@ public class AuthorChapterService {
     }
 
     private SubmissionEntity createChapterReviewSubmission(ComicEntity comic, ChapterEntity chapter, UUID authorId) {
-        List<ChapterPageEntity> pages = chapterPageRepository.findAllByChapterIdAndDeletedFalseOrderByPageNumberAsc(chapter.getId());
         Date now = new Date();
         SubmissionEntity submission = SubmissionEntity.builder()
                 .comicId(comic.getId())
@@ -278,7 +246,7 @@ public class AuthorChapterService {
                 .flags(0)
                 .status("pending")
                 .cover(firstNonBlank(comic.getThumbnail(), comic.getCover()))
-                .content("Chapter " + chapter.getChapterNumber() + " has " + resolvePageCount(chapter, pages) + " image pages waiting for moderation review.")
+                .content("Chapter " + chapter.getChapterNumber() + " has " + resolvePageCount(chapter) + " image pages waiting for moderation review.")
                 .build();
         return submissionRepository.save(submission);
     }
@@ -495,15 +463,15 @@ public class AuthorChapterService {
         return parts;
     }
 
-    private ChapterPreviewResponse toPreviewResponse(ChapterEntity chapter, List<ChapterPageEntity> storedPages) {
-        List<ChapterPageResponse> pageResponses = buildPageResponses(chapter, storedPages);
+    private ChapterPreviewResponse toPreviewResponse(ChapterEntity chapter) {
+        List<ChapterPageResponse> pageResponses = buildPageResponses(chapter);
         return ChapterPreviewResponse.builder()
                 .id(chapter.getId())
                 .comicId(chapter.getComic() == null ? null : chapter.getComic().getId())
                 .authorId(chapter.getComic() == null ? null : chapter.getComic().getAuthorId())
                 .chapterNumber(chapter.getChapterNumber())
                 .title(chapter.getTitle())
-                .status(resolveChapterStatus(chapter, storedPages))
+                .status(resolveChapterStatus(chapter))
                 .pageCount(pageResponses.size())
                 .createdAt(toDate(chapter.getCreatedAt()))
                 .updatedAt(toDate(chapter.getUpdatedAt()))
@@ -511,10 +479,7 @@ public class AuthorChapterService {
                 .build();
     }
 
-    private List<ChapterPageResponse> buildPageResponses(ChapterEntity chapter, List<ChapterPageEntity> storedPages) {
-        if (storedPages != null && !storedPages.isEmpty()) {
-            return storedPages.stream().map(this::toPageResponse).toList();
-        }
+    private List<ChapterPageResponse> buildPageResponses(ChapterEntity chapter) {
         if (chapter.getImages() == null || chapter.getImages().isEmpty()) {
             return List.of();
         }
@@ -528,17 +493,6 @@ public class AuthorChapterService {
         return responses;
     }
 
-    private ChapterPageResponse toPageResponse(ChapterPageEntity page) {
-        return ChapterPageResponse.builder()
-                .id(page.getId())
-                .pageNumber(page.getPageNumber())
-                .imageUrl(page.getImageUrl())
-                .originalFileName(page.getOriginalFileName())
-                .fileSizeBytes(page.getFileSizeBytes())
-                .width(page.getWidth())
-                .height(page.getHeight())
-                .build();
-    }
     private String resolveChapterNumber(ChapterUploadRequest request, MultipartFile zipFile) {
         String fileName = getBaseName(normalizeEntryName(zipFile.getOriginalFilename()));
         String numberFromFileName = parseChapterNumberFromFileName(fileName);
@@ -607,7 +561,7 @@ public class AuthorChapterService {
         return parts.toArray(new String[0]);
     }
 
-    private ChapterStatus resolveChapterStatus(ChapterEntity chapter, List<ChapterPageEntity> storedPages) {
+    private ChapterStatus resolveChapterStatus(ChapterEntity chapter) {
         if (chapter.getModerationStatus() != null) {
             return chapter.getModerationStatus();
         }
@@ -617,9 +571,9 @@ public class AuthorChapterService {
             return submissionRepository.findTopByChapterIdAndAuthorIdAndQueueTypeIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(
                             chapterId, authorId, "author")
                     .map(this::mapSubmissionStatusToChapterStatus)
-                    .orElseGet(() -> hasPages(chapter, storedPages) ? ChapterStatus.PREVIEW_READY : ChapterStatus.DRAFT);
+                    .orElseGet(() -> hasImages(chapter) ? ChapterStatus.PREVIEW_READY : ChapterStatus.DRAFT);
         }
-        return hasPages(chapter, storedPages) ? ChapterStatus.PREVIEW_READY : ChapterStatus.DRAFT;
+        return hasImages(chapter) ? ChapterStatus.PREVIEW_READY : ChapterStatus.DRAFT;
     }
 
     private ChapterStatus mapSubmissionStatusToChapterStatus(SubmissionEntity submission) {
@@ -634,15 +588,39 @@ public class AuthorChapterService {
         };
     }
 
-    private boolean hasPages(ChapterEntity chapter, List<ChapterPageEntity> storedPages) {
-        return (storedPages != null && !storedPages.isEmpty()) || (chapter.getImages() != null && !chapter.getImages().isEmpty());
+    private boolean hasImages(ChapterEntity chapter) {
+        return chapter.getImages() != null && !chapter.getImages().isEmpty();
     }
 
-    private int resolvePageCount(ChapterEntity chapter, List<ChapterPageEntity> storedPages) {
-        if (storedPages != null && !storedPages.isEmpty()) {
-            return storedPages.size();
-        }
+    private int resolvePageCount(ChapterEntity chapter) {
         return chapter.getImages() == null ? 0 : chapter.getImages().size();
+    }
+
+    private void refreshComicChapterMetadata(ComicEntity comic) {
+        if (comic == null || comic.getId() == null) {
+            return;
+        }
+        List<ChapterEntity> chapters = chapterRepository.findAllByComic_IdAndDeletedFalse(comic.getId());
+        comic.setChapterCount(chapters.size());
+        chapters.stream()
+                .filter(chapter -> StringUtils.hasText(chapter.getChapterNumber()))
+                .max(Comparator.comparing(chapter -> toChapterSortNumber(chapter.getChapterNumber())))
+                .ifPresent(chapter -> {
+                    comic.setLatestChapterNumber(chapter.getChapterNumber());
+                    comic.setLastChapterUpdatedAt(chapter.getUpdatedAt() != null ? chapter.getUpdatedAt() : Instant.now());
+                });
+        if (chapters.isEmpty()) {
+            comic.setLatestChapterNumber(null);
+        }
+        comicRepository.save(comic);
+    }
+
+    private BigDecimal toChapterSortNumber(String chapterNumber) {
+        try {
+            return new BigDecimal(chapterNumber.replace(',', '.'));
+        } catch (RuntimeException ex) {
+            return BigDecimal.ZERO;
+        }
     }
 
     private String buildOrderedFileName(int pageNumber, String originalFileName) {

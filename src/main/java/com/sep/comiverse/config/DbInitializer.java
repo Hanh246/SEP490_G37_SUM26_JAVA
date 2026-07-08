@@ -34,7 +34,6 @@ public class DbInitializer implements CommandLineRunner {
     private final ITeamTaskRepository teamTaskRepository;
     private final ITeamJoinRequestRepository teamJoinRequestRepository;
     private final IChapterRepository chapterRepository;
-    private final IChapterPageRepository chapterPageRepository;
     private final IComicMetricSnapshotRepository metricSnapshotRepository;
 
     @Override
@@ -46,6 +45,8 @@ public class DbInitializer implements CommandLineRunner {
         jdbcTemplate.execute("UPDATE comics SET status = 'PAUSED' WHERE status = 'Paused' OR status = 'paused'");
         jdbcTemplate.execute("UPDATE comics SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
         jdbcTemplate.execute("UPDATE chapters SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
+        migrateLegacyChapterPagesIntoChapterImages();
+        jdbcTemplate.execute("UPDATE chapters SET images = ARRAY[]::text[] WHERE images IS NULL");
 
         createRoles();
         createAdmin();
@@ -54,11 +55,30 @@ public class DbInitializer implements CommandLineRunner {
         createGenres();
         createComics();
         createProjectTeams();
-        createAuthorChapterPages();
         createAuthorMetricSnapshots();
         createSubmissions();
         createChatFlags();
         createForumThreads();
+    }
+
+    private void migrateLegacyChapterPagesIntoChapterImages() {
+        jdbcTemplate.execute("""
+                DO $$
+                BEGIN
+                    IF to_regclass('public.chapter_pages') IS NOT NULL THEN
+                        UPDATE chapters c
+                        SET images = COALESCE(p.urls, ARRAY[]::text[])
+                        FROM (
+                            SELECT chapter_id, array_agg(image_url ORDER BY page_number) AS urls
+                            FROM chapter_pages
+                            WHERE deleted = false OR deleted IS NULL
+                            GROUP BY chapter_id
+                        ) p
+                        WHERE c.id = p.chapter_id
+                          AND (c.images IS NULL OR cardinality(c.images) = 0);
+                    END IF;
+                END $$;
+                """);
     }
 
     private void createRoles() {
@@ -546,28 +566,6 @@ public class DbInitializer implements CommandLineRunner {
 
             System.out.println("✅ Sample project teams and workspace details initialized in DB.");
         }
-    }
-
-    private void createAuthorChapterPages() {
-        for (ChapterEntity chapter : chapterRepository.findAll()) {
-            if (chapter.getComic() == null || chapter.getImages() == null || chapter.getImages().isEmpty()) {
-                continue;
-            }
-            if (!chapterPageRepository.findAllByChapterIdAndDeletedFalseOrderByPageNumberAsc(chapter.getId()).isEmpty()) {
-                continue;
-            }
-            for (int index = 0; index < chapter.getImages().size(); index++) {
-                chapterPageRepository.save(ChapterPageEntity.builder()
-                        .comicId(chapter.getComic().getId())
-                        .chapterId(chapter.getId())
-                        .pageNumber(index + 1)
-                        .imageUrl(chapter.getImages().get(index))
-                        .originalFileName(String.format("sample-page-%03d.jpg", index + 1))
-                        .fileSizeBytes(0L)
-                        .build());
-            }
-        }
-        System.out.println("✅ Author chapter page previews initialized in DB.");
     }
 
     private void createAuthorMetricSnapshots() {

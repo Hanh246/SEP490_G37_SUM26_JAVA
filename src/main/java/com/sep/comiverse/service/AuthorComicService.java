@@ -14,7 +14,6 @@ import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IChapterRepository;
-import com.sep.comiverse.repository.IChapterPageRepository;
 import com.sep.comiverse.repository.IComicMetricSnapshotRepository;
 import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.repository.IGenreRepository;
@@ -44,7 +43,6 @@ public class AuthorComicService {
     private final IComicRepository comicRepository;
     private final IGenreRepository genreRepository;
     private final IChapterRepository chapterRepository;
-    private final IChapterPageRepository chapterPageRepository;
     private final ISubmissionRepository submissionRepository;
     private final IComicMetricSnapshotRepository metricSnapshotRepository;
 
@@ -168,10 +166,6 @@ public class AuthorComicService {
         chapterRepository.findAllByComic_IdAndDeletedFalse(comicId).forEach(chapter -> {
             chapter.setDeleted(true);
             chapterRepository.save(chapter);
-        });
-        chapterPageRepository.findAllByComicIdAndDeletedFalse(comicId).forEach(page -> {
-            page.setDeleted(true);
-            chapterPageRepository.save(page);
         });
         comic.setDeleted(true);
         comicRepository.save(comic);

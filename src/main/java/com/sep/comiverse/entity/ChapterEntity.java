@@ -6,6 +6,7 @@ import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Data
@@ -14,7 +15,8 @@ import java.util.List;
 @AllArgsConstructor
 @Builder
 @Table(name = "chapters", indexes = {
-        @Index(name = "idx_chapters_comic_number_deleted", columnList = "comic_id, chapter_number, deleted")
+        @Index(name = "idx_chapters_comic_number_deleted", columnList = "comic_id, chapter_number, deleted"),
+        @Index(name = "idx_chapters_moderation_deleted", columnList = "moderation_status, deleted")
 })
 @EqualsAndHashCode(callSuper = true)
 @ToString(exclude = {"comic", "projectTeam"})
@@ -36,9 +38,14 @@ public class ChapterEntity extends BaseEntity {
     @Column(name = "moderation_status", nullable = false, length = 32)
     private ChapterStatus moderationStatus = ChapterStatus.DRAFT;
 
+    /**
+     * PostgreSQL text[] column storing chapter image URLs in reading order.
+     * This replaces the old chapter_pages table.
+     */
+    @Builder.Default
     @JdbcTypeCode(SqlTypes.ARRAY)
-    @Column(name = "images", columnDefinition = "text[]")
-    private List<String> images;
+    @Column(name = "images", columnDefinition = "text[]", nullable = false)
+    private List<String> images = new ArrayList<>();
 
     @Builder.Default
     @Column(name = "view_count", nullable = false, columnDefinition = "bigint default 0")
@@ -51,4 +58,19 @@ public class ChapterEntity extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "project_team_id")
     private ProjectTeamEntity projectTeam;
+
+    protected void ensureDefaults() {
+        if (moderationStatus == null) {
+            moderationStatus = ChapterStatus.DRAFT;
+        }
+        if (images == null) {
+            images = new ArrayList<>();
+        }
+        if (viewCount == null) {
+            viewCount = 0L;
+        }
+        if (isPremium == null) {
+            isPremium = false;
+        }
+    }
 }
