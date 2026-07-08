@@ -1,5 +1,6 @@
 package com.sep.comiverse.service.scheduler;
 
+import com.fasterxml.uuid.Generators;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -55,7 +56,7 @@ public class UserInteractionSyncScheduler {
                 if (parts.length == 2) {
                     String comicId = parts[0];
                     String userId = parts[1];
-                    UUID id = com.fasterxml.uuid.Generators.timeBasedEpochGenerator().generate();
+                    UUID id = Generators.timeBasedEpochGenerator().generate();
                     jdbcTemplate.update(insertLikeSql, Map.of(
                         "id", id.toString(),
                         "userId", userId,
@@ -136,7 +137,7 @@ public class UserInteractionSyncScheduler {
                 if (parts.length == 2) {
                     String comicId = parts[0];
                     String userId = parts[1];
-                    UUID id = com.fasterxml.uuid.Generators.timeBasedEpochGenerator().generate();
+                    UUID id = Generators.timeBasedEpochGenerator().generate();
                     jdbcTemplate.update(insertSaveSql, Map.of(
                         "id", id.toString(),
                         "userId", userId,

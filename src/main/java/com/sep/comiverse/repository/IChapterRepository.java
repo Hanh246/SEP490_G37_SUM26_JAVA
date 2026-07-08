@@ -20,4 +20,12 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
         ORDER BY c.chapterNumber ASC
         """)
     List<ChapterLiteDTO> findChapterMetadataByComicId(@Param("comicId") UUID comicId);
+
+    @Query("""
+            SELECT c.images
+            FROM ChapterEntity c
+            WHERE c.id = :chapterId
+                    AND c.deleted = false
+            """)
+    List<String> findImagesByChapterId(@Param("chapterId") UUID chapterId);
 }
