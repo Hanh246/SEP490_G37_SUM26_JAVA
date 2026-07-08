@@ -18,6 +18,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.plugin.core.PluginRegistry;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
 
 import java.util.List;
 import java.util.UUID;
@@ -34,6 +36,7 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         this.comicRepository = repository;
     }
 
+    @Transactional(readOnly = true)
     public List<ComicDTO> listPublishedComics() {
         return comicRepository.findAllByDeletedFalseAndModerationStatus(ComicModerationStatus.PUBLISHED)
                 .stream()
@@ -41,12 +44,14 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public Page<ComicDTO> listPublishedComics(PaginationSearchDTO paginationDTO) {
         Pageable pageable = paginationDTO.toPageRequest();
         return comicRepository.findPublishedComics(ComicModerationStatus.PUBLISHED, paginationDTO.getSearch(), pageable)
                 .map(plugin::toDto);
     }
 
+    @Transactional(readOnly = true)
     public Page<ComicDTO> getTopViews(PaginationSearchDTO paginationDTO) {
         Pageable pageable = paginationDTO.toPageRequest();
 
@@ -58,6 +63,7 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         return comicPage.map(plugin::toDto);
     }
 
+    @Transactional(readOnly = true)
     public Page<ComicDTO> getComicsByLatestChapters(PaginationSearchDTO paginationDTO) {
         Pageable pageable = paginationDTO.toPageRequest();
 
@@ -66,6 +72,19 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         return comicPage.map(plugin::toDto);
     }
 
+    /**
+     * Public comic detail. Only returns PUBLISHED comics.
+     */
+    @Transactional(readOnly = true)
+    public ComicDTO getComicDetail(UUID comicId) {
+        ComicEntity entity = comicRepository
+                .findByIdAndDeletedFalseAndModerationStatus(comicId, ComicModerationStatus.PUBLISHED)
+                .orElseThrow(() -> new RuntimeException("Comic not found or not published"));
+
+        return plugin.toDto(entity);
+    }
+
+    @Transactional(readOnly = true)
     public CursorResponseDTO<ComicDTO> getExploreComicsCursor(ComicExploreRequestDTO request) {
         String sortProperty = "createdAt";
         boolean isTimeField = true;

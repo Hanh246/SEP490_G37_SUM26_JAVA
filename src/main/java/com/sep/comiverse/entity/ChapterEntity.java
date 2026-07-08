@@ -18,7 +18,7 @@ import java.util.List;
         @Index(name = "idx_chapters_comic_number_deleted", columnList = "comic_id, chapter_number, deleted"),
         @Index(name = "idx_chapters_moderation_deleted", columnList = "moderation_status, deleted")
 })
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode(callSuper = true, exclude = {"comic", "projectTeam"})
 @ToString(exclude = {"comic", "projectTeam"})
 public class ChapterEntity extends BaseEntity {
 
@@ -59,6 +59,8 @@ public class ChapterEntity extends BaseEntity {
     @JoinColumn(name = "project_team_id")
     private ProjectTeamEntity projectTeam;
 
+    @PrePersist
+    @PreUpdate
     protected void ensureDefaults() {
         if (moderationStatus == null) {
             moderationStatus = ChapterStatus.DRAFT;
