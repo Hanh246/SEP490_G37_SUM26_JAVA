@@ -2,6 +2,7 @@ package com.sep.comiverse.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.sep.comiverse.constants.ComicStatus;
+import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -24,6 +25,7 @@ public class ComicDTO {
     private String authorName;
 
     private ComicStatus status;
+    private ComicModerationStatus moderationStatus;
     private String cover;
     private String thumbnail;
 

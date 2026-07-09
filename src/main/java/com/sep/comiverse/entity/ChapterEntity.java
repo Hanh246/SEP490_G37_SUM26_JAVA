@@ -1,10 +1,12 @@
 package com.sep.comiverse.entity;
 
+import com.sep.comiverse.entity.enums.ChapterStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Data
@@ -12,10 +14,11 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Table(name = "chapters", uniqueConstraints = {
-        @UniqueConstraint(columnNames = {"comic_id", "chapter_number"})
+@Table(name = "chapters", indexes = {
+        @Index(name = "idx_chapters_comic_number_deleted", columnList = "comic_id, chapter_number, deleted"),
+        @Index(name = "idx_chapters_moderation_deleted", columnList = "moderation_status, deleted")
 })
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode(callSuper = true, exclude = {"comic", "projectTeam"})
 @ToString(exclude = {"comic", "projectTeam"})
 public class ChapterEntity extends BaseEntity {
 
@@ -23,15 +26,26 @@ public class ChapterEntity extends BaseEntity {
     @JoinColumn(name = "comic_id")
     private ComicEntity comic;
 
-    @Column(name = "chapter_number", nullable = false, columnDefinition = "varchar(255) default '1'")
-    private String chapterNumber;
+    @Builder.Default
+    @Column(name = "chapter_number", nullable = false)
+    private String chapterNumber = "1";
 
     @Column(name = "title")
     private String title;
 
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "moderation_status", nullable = false, length = 32)
+    private ChapterStatus moderationStatus = ChapterStatus.DRAFT;
+
+    /**
+     * PostgreSQL text[] column storing chapter image URLs in reading order.
+     * This replaces the old chapter_pages table.
+     */
+    @Builder.Default
     @JdbcTypeCode(SqlTypes.ARRAY)
-    @Column(name = "images", columnDefinition = "text[]")
-    private List<String> images;
+    @Column(name = "images", columnDefinition = "text[]", nullable = false)
+    private List<String> images = new ArrayList<>();
 
     @Builder.Default
     @Column(name = "view_count", nullable = false, columnDefinition = "bigint default 0")
@@ -44,4 +58,21 @@ public class ChapterEntity extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "project_team_id")
     private ProjectTeamEntity projectTeam;
+
+    @PrePersist
+    @PreUpdate
+    protected void ensureDefaults() {
+        if (moderationStatus == null) {
+            moderationStatus = ChapterStatus.DRAFT;
+        }
+        if (images == null) {
+            images = new ArrayList<>();
+        }
+        if (viewCount == null) {
+            viewCount = 0L;
+        }
+        if (isPremium == null) {
+            isPremium = false;
+        }
+    }
 }

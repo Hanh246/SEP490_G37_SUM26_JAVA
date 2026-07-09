@@ -1,5 +1,6 @@
 package com.sep.comiverse.service.scheduler;
 
+import com.fasterxml.uuid.Generators;
 import com.sep.comiverse.service.ReadingHistoryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -11,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -45,10 +47,10 @@ public class ViewSyncScheduler {
         if (comicIds.isEmpty()) return;
 
         String upsertDailySql = """
-            INSERT INTO comic_daily_views (comic_id, log_date, view_count)
-            VALUES (CAST(:comicId AS uuid), :logDate, :viewCount)
+            INSERT INTO comic_daily_views (id, comic_id, log_date, view_count, deleted, create_at, update_at)
+            VALUES (CAST(:id AS uuid), CAST(:comicId AS uuid), :logDate, :viewCount, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (comic_id, log_date)
-            DO UPDATE SET view_count = comic_daily_views.view_count + EXCLUDED.view_count
+            DO UPDATE SET view_count = comic_daily_views.view_count + EXCLUDED.view_count, update_at = CURRENT_TIMESTAMP
         """;
 
         String updateGlobalSql = """
@@ -66,7 +68,10 @@ public class ViewSyncScheduler {
 
             redisTemplate.opsForHash().increment(COMIC_VIEW_HASH, comicIdStr, -increments);
 
+            UUID id = Generators.timeBasedEpochGenerator().generate();
+
             Map<String, Object> params = Map.of(
+                    "id", id.toString(),
                     "comicId", comicIdStr,
                     "logDate", today,
                     "viewCount", increments

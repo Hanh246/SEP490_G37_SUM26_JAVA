@@ -7,7 +7,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import com.sep.comiverse.entity.*;
 import com.sep.comiverse.repository.*;
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Component
 @RequiredArgsConstructor
@@ -24,11 +27,14 @@ public class DbInitializer implements CommandLineRunner {
     private final ISubmissionRepository submissionRepository;
     private final IChatFlagRepository chatFlagRepository;
     private final IForumThreadRepository forumThreadRepository;
+    private final IAuthorRepository authorRepository;
 
     private final ITeamAnnouncementRepository teamAnnouncementRepository;
     private final ITeamMessageRepository teamMessageRepository;
     private final ITeamTaskRepository teamTaskRepository;
     private final ITeamJoinRequestRepository teamJoinRequestRepository;
+    private final IChapterRepository chapterRepository;
+    private final IComicMetricSnapshotRepository metricSnapshotRepository;
 
     @Override
     @Transactional
@@ -37,16 +43,56 @@ public class DbInitializer implements CommandLineRunner {
         jdbcTemplate.execute("UPDATE comics SET status = 'ONGOING' WHERE status = 'Ongoing' OR status = 'ongoing'");
         jdbcTemplate.execute("UPDATE comics SET status = 'COMPLETED' WHERE status = 'Completed' OR status = 'completed'");
         jdbcTemplate.execute("UPDATE comics SET status = 'PAUSED' WHERE status = 'Paused' OR status = 'paused'");
+        jdbcTemplate.execute("UPDATE comics SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
+        jdbcTemplate.execute("UPDATE chapters SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
+        migrateLegacyChapterPagesIntoChapterImages();
+        splitCommaJoinedChapterImageArrays();
+        jdbcTemplate.execute("UPDATE chapters SET images = ARRAY[]::text[] WHERE images IS NULL");
 
         createRoles();
         createAdmin();
         createStaffs();
+        createAuthorProfiles();
         createGenres();
         createComics();
         createProjectTeams();
+        createAuthorMetricSnapshots();
         createSubmissions();
         createChatFlags();
         createForumThreads();
+    }
+
+    private void migrateLegacyChapterPagesIntoChapterImages() {
+        jdbcTemplate.execute("""
+                DO $$
+                BEGIN
+                    IF to_regclass('public.chapter_pages') IS NOT NULL THEN
+                        UPDATE chapters c
+                        SET images = COALESCE(p.urls, ARRAY[]::text[])
+                        FROM (
+                            SELECT chapter_id, array_agg(image_url ORDER BY page_number) AS urls
+                            FROM chapter_pages
+                            WHERE deleted = false OR deleted IS NULL
+                            GROUP BY chapter_id
+                        ) p
+                        WHERE c.id = p.chapter_id
+                          AND (c.images IS NULL OR cardinality(c.images) = 0);
+                    END IF;
+                END $$;
+                """);
+    }
+
+    private void splitCommaJoinedChapterImageArrays() {
+        jdbcTemplate.execute("""
+                UPDATE chapters
+                SET images = string_to_array(
+                    replace(replace(images[1], ',https://', '|https://'), ',http://', '|http://'),
+                    '|'
+                )
+                WHERE images IS NOT NULL
+                  AND cardinality(images) = 1
+                  AND (images[1] LIKE '%,https://%' OR images[1] LIKE '%,http://%');
+                """);
     }
 
     private void createRoles() {
@@ -127,6 +173,25 @@ public class DbInitializer implements CommandLineRunner {
         }
     }
 
+
+    private void createAuthorProfiles() {
+        userRepository.findByUsername("author1").ifPresent(authorUser -> {
+            if (!authorRepository.existsByUserIdAndDeletedFalse(authorUser.getId())) {
+                AuthorEntity author = AuthorEntity.builder()
+                        .user(authorUser)
+                        .authorType(com.sep.comiverse.entity.enums.AuthorType.INDIVIDUAL)
+                        .displayName(authorUser.getFullName() != null ? authorUser.getFullName() : authorUser.getUsername())
+                        .legalName(authorUser.getFullName())
+                        .contactEmail(authorUser.getEmail())
+                        .avatarUrl(authorUser.getAvatarUrl())
+                        .bio("Sample author profile for seeded comics.")
+                        .build();
+                authorRepository.save(author);
+                System.out.println("Created author profile for author1");
+            }
+        });
+    }
+
     private void createGenres() {
         String[] genreNames = {"Action", "Adventure", "Fantasy", "Romance", "Mystery", "Cultivation", "Drama", "Comedy"};
         for (String name : genreNames) {
@@ -142,62 +207,107 @@ public class DbInitializer implements CommandLineRunner {
 
     private void createComics() {
         if (comicRepository.findAll().isEmpty()) {
-            UserEntity author = userRepository.findByUsername("author1").orElse(null);
-            java.util.UUID authorId = author != null ? author.getId() : null;
+            UserEntity author = userRepository.findByUsername("author1")
+                    .orElseThrow(() -> new RuntimeException("author1 not found"));
+            java.util.UUID authorId = author.getId();
 
-            // Fetch genres from DB
             java.util.List<GenreEntity> allGenres = genreRepository.findAll();
-            java.util.Set<GenreEntity> genres1 = allGenres.stream()
-                    .filter(g -> g.getName().equalsIgnoreCase("Action") || g.getName().equalsIgnoreCase("Fantasy"))
-                    .collect(java.util.stream.Collectors.toSet());
-            java.util.Set<GenreEntity> genres2 = allGenres.stream()
-                    .filter(g -> g.getName().equalsIgnoreCase("Adventure") || g.getName().equalsIgnoreCase("Mystery"))
-                    .collect(java.util.stream.Collectors.toSet());
-            java.util.Set<GenreEntity> genres3 = allGenres.stream()
-                    .filter(g -> g.getName().equalsIgnoreCase("Fantasy") || g.getName().equalsIgnoreCase("Drama"))
-                    .collect(java.util.stream.Collectors.toSet());
-            java.util.Set<GenreEntity> genres4 = allGenres.stream()
-                    .filter(g -> g.getName().equalsIgnoreCase("Cultivation") || g.getName().equalsIgnoreCase("Action"))
-                    .collect(java.util.stream.Collectors.toSet());
+            java.util.Set<GenreEntity> genres1 = pickGenres(allGenres, "Action", "Fantasy");
+            java.util.Set<GenreEntity> genres2 = pickGenres(allGenres, "Adventure", "Mystery");
+            java.util.Set<GenreEntity> genres3 = pickGenres(allGenres, "Fantasy", "Drama");
+            java.util.Set<GenreEntity> genres4 = pickGenres(allGenres, "Cultivation", "Action");
 
             comicRepository.save(ComicEntity.builder()
                     .title("Invincible Sword God")
                     .slug("invincible-sword-god")
+                    .summary("A legendary sword cultivator reincarnates and rebuilds his power from the lowest rank.")
                     .authorId(authorId)
                     .status(com.sep.comiverse.constants.ComicStatus.ONGOING)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
                     .genres(genres1)
+                    .genreIds(toGenreIds(genres1))
                     .cover("⚔️")
+                    .thumbnail("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg")
+                    .viewCount(125000L)
+                    .saveCount(4300)
+                    .likeCount(9800)
+                    .ratingAverage(4.6)
+                    .ratingCount(1280)
+                    .latestChapterNumber("45")
                     .build());
 
             comicRepository.save(ComicEntity.builder()
                     .title("Spirit Recovery")
                     .slug("spirit-recovery")
+                    .summary("An urban student discovers that spiritual energy is returning to the modern world.")
                     .authorId(authorId)
                     .status(com.sep.comiverse.constants.ComicStatus.ONGOING)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
                     .genres(genres2)
+                    .genreIds(toGenreIds(genres2))
                     .cover("🔮")
+                    .thumbnail("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg")
+                    .viewCount(89000L)
+                    .saveCount(2100)
+                    .likeCount(6200)
+                    .ratingAverage(4.3)
+                    .ratingCount(870)
+                    .latestChapterNumber("32")
                     .build());
 
             comicRepository.save(ComicEntity.builder()
                     .title("Demon King Reborn")
                     .slug("demon-king-reborn")
+                    .summary("The fallen Demon Monarch wakes up in a rival kingdom and plans a second rise.")
                     .authorId(authorId)
                     .status(com.sep.comiverse.constants.ComicStatus.PAUSED)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
                     .genres(genres3)
+                    .genreIds(toGenreIds(genres3))
                     .cover("👑")
+                    .thumbnail("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg")
+                    .viewCount(54000L)
+                    .saveCount(1200)
+                    .likeCount(3900)
+                    .ratingAverage(4.1)
+                    .ratingCount(540)
+                    .latestChapterNumber("18")
                     .build());
 
             comicRepository.save(ComicEntity.builder()
                     .title("Heavenly Dao")
                     .slug("heavenly-dao")
+                    .summary("A young cultivator studies the rules of heaven and challenges the order of the realms.")
                     .authorId(authorId)
                     .status(com.sep.comiverse.constants.ComicStatus.COMPLETED)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
                     .genres(genres4)
+                    .genreIds(toGenreIds(genres4))
                     .cover("☯️")
+                    .thumbnail("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg")
+                    .viewCount(210000L)
+                    .saveCount(7600)
+                    .likeCount(14500)
+                    .ratingAverage(4.8)
+                    .ratingCount(2100)
+                    .latestChapterNumber("60")
                     .build());
 
-            System.out.println("✅ Sample comics initialized in DB.");
+            System.out.println("✅ Sample author comics initialized in DB.");
         }
+    }
+
+    private Set<GenreEntity> pickGenres(List<GenreEntity> allGenres, String... names) {
+        java.util.Set<String> selectedNames = java.util.Arrays.stream(names)
+                .map(String::toLowerCase)
+                .collect(java.util.stream.Collectors.toSet());
+        return allGenres.stream()
+                .filter(g -> g.getName() != null && selectedNames.contains(g.getName().toLowerCase()))
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
+    private List<java.util.UUID> toGenreIds(Set<GenreEntity> genres) {
+        return genres.stream().map(GenreEntity::getId).toList();
     }
 
     private void createProjectTeams() {
@@ -232,6 +342,7 @@ public class DbInitializer implements CommandLineRunner {
                     .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
                     .comic(comic1)
                     .projectTeam(team1)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED)
                     .build());
             team1.getChaptersList().add(ChapterEntity.builder()
                     .chapterNumber("44")
@@ -239,6 +350,7 @@ public class DbInitializer implements CommandLineRunner {
                     .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
                     .comic(comic1)
                     .projectTeam(team1)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED)
                     .build());
             team1.getChaptersList().add(ChapterEntity.builder()
                     .chapterNumber("43")
@@ -246,6 +358,7 @@ public class DbInitializer implements CommandLineRunner {
                     .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
                     .comic(comic1)
                     .projectTeam(team1)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED)
                     .build());
             team1 = projectTeamRepository.save(team1);
 
@@ -408,6 +521,7 @@ public class DbInitializer implements CommandLineRunner {
                     .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
                     .comic(comic2)
                     .projectTeam(team2)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED)
                     .build());
             team2.getChaptersList().add(ChapterEntity.builder()
                     .chapterNumber("31")
@@ -415,6 +529,7 @@ public class DbInitializer implements CommandLineRunner {
                     .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
                     .comic(comic2)
                     .projectTeam(team2)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED)
                     .build());
             team2.getChaptersList().add(ChapterEntity.builder()
                     .chapterNumber("30")
@@ -422,6 +537,7 @@ public class DbInitializer implements CommandLineRunner {
                     .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
                     .comic(comic2)
                     .projectTeam(team2)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED)
                     .build());
             projectTeamRepository.save(team2);
 
@@ -450,6 +566,7 @@ public class DbInitializer implements CommandLineRunner {
                     .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
                     .comic(comic3)
                     .projectTeam(team3)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED)
                     .build());
             team3.getChaptersList().add(ChapterEntity.builder()
                     .chapterNumber("17")
@@ -457,10 +574,31 @@ public class DbInitializer implements CommandLineRunner {
                     .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
                     .comic(comic3)
                     .projectTeam(team3)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED)
                     .build());
             projectTeamRepository.save(team3);
 
             System.out.println("✅ Sample project teams and workspace details initialized in DB.");
+        }
+    }
+
+    private void createAuthorMetricSnapshots() {
+        if (metricSnapshotRepository.findAll().isEmpty()) {
+            for (ComicEntity comic : comicRepository.findAll()) {
+                if (comic.getAuthorId() == null) {
+                    continue;
+                }
+                metricSnapshotRepository.save(ComicMetricSnapshotEntity.builder()
+                        .comicId(comic.getId())
+                        .authorId(comic.getAuthorId())
+                        .viewCount(comic.getViewCount() == null ? 0L : comic.getViewCount())
+                        .followCount(comic.getSaveCount() == null ? 0L : comic.getSaveCount().longValue())
+                        .favoriteCount(comic.getSaveCount() == null ? 0L : comic.getSaveCount().longValue())
+                        .likeCount(comic.getLikeCount() == null ? 0L : comic.getLikeCount().longValue())
+                        .estimatedRevenue(BigDecimal.valueOf((comic.getViewCount() == null ? 0L : comic.getViewCount()) * 0.01))
+                        .build());
+            }
+            System.out.println("✅ Sample author metric snapshots initialized in DB.");
         }
     }
 
@@ -511,34 +649,43 @@ public class DbInitializer implements CommandLineRunner {
                     .content("Chapter 19: Whispers of Treason\n\nLord Kael sat on the iron throne...")
                     .build());
 
+            UserEntity author = userRepository.findByUsername("author1").orElse(null);
+            ComicEntity heavenlyDao = comicRepository.findByTitle("Heavenly Dao").orElse(null);
+            ComicEntity spiritRecovery = comicRepository.findByTitle("Spirit Recovery").orElse(null);
+            java.util.UUID authorId = author == null ? null : author.getId();
+
             submissionRepository.save(SubmissionEntity.builder()
-                    .title("Martial Emperor")
-                    .chapter("Chapter 110")
-                    .submittedBy("Author: SwordMaster")
+                    .comicId(heavenlyDao == null ? null : heavenlyDao.getId())
+                    .authorId(authorId)
+                    .title("Heavenly Dao")
+                    .chapter("Chapter 61")
+                    .submittedBy("Author: author1")
                     .queueType("author")
                     .timeLabel("1 hour ago")
                     .timestamp(System.currentTimeMillis() - 60 * 60 * 1000)
-                    .words(4200)
+                    .words(0)
                     .priority("High")
                     .flags(0)
                     .status("pending")
-                    .cover("☯️")
-                    .content("Chapter 110: Grand Cultivation Stage\n\nThe sky split open, revealing a celestial gate...")
+                    .cover(heavenlyDao == null ? "☯️" : heavenlyDao.getCover())
+                    .content("Chapter 61 image release is waiting for moderator review.")
                     .build());
 
             submissionRepository.save(SubmissionEntity.builder()
-                    .title("Rebirth of the Urban Immortal")
-                    .chapter("Chapter 14")
-                    .submittedBy("Author: CultivatorFan")
+                    .comicId(spiritRecovery == null ? null : spiritRecovery.getId())
+                    .authorId(authorId)
+                    .title("Spirit Recovery")
+                    .chapter("Chapter 34")
+                    .submittedBy("Author: author1")
                     .queueType("author")
                     .timeLabel("3 hours ago")
                     .timestamp(System.currentTimeMillis() - 3 * 60 * 60 * 1000)
-                    .words(3100)
+                    .words(0)
                     .priority("Medium")
                     .flags(0)
                     .status("pending")
-                    .cover("🏢")
-                    .content("Chapter 14: Confronting the Young Master\n\nIn the luxury VIP room...")
+                    .cover(spiritRecovery == null ? "🔮" : spiritRecovery.getCover())
+                    .content("Chapter 34 image release is waiting for moderator review.")
                     .build());
 
             System.out.println("✅ Sample submissions initialized in DB.");
@@ -549,8 +696,8 @@ public class DbInitializer implements CommandLineRunner {
         if (chatFlagRepository.findAll().isEmpty()) {
             chatFlagRepository.save(ChatFlagEntity.builder()
                     .user("toxic_fan_99")
-                    .message("\"This translation is pure garbage, go jump off a cliff!\"")
-                    .reason("Extreme Toxicity / Harassment")
+                    .message("\"This translation is unacceptable and the comment attacks other users.\"")
+                    .reason("Toxicity / Harassment")
                     .status("flagged")
                     .build());
 

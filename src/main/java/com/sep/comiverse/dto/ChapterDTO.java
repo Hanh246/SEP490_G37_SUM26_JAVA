@@ -1,12 +1,13 @@
 package com.sep.comiverse.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.sep.comiverse.entity.enums.ChapterStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,13 +24,15 @@ public class ChapterDTO {
 
     private String title;
 
+    private ChapterStatus moderationStatus;
+
     @Builder.Default
     private Long viewCount = 0L;
 
     @Builder.Default
     private Boolean isPremium = false;
 
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @JsonProperty(access = JsonProperty.Access.AUTO)
     private List<String> images;
