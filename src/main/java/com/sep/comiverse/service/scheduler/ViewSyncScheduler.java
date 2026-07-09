@@ -47,10 +47,10 @@ public class ViewSyncScheduler {
         if (comicIds.isEmpty()) return;
 
         String upsertDailySql = """
-            INSERT INTO comic_daily_views (id, comic_id, log_date, view_count)
-            VALUES (CAST(:comicId AS uuid), :logDate, :viewCount)
+            INSERT INTO comic_daily_views (id, comic_id, log_date, view_count, deleted, create_at, update_at)
+            VALUES (CAST(:id AS uuid), CAST(:comicId AS uuid), :logDate, :viewCount, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (comic_id, log_date)
-            DO UPDATE SET view_count = comic_daily_views.view_count + EXCLUDED.view_count
+            DO UPDATE SET view_count = comic_daily_views.view_count + EXCLUDED.view_count, update_at = CURRENT_TIMESTAMP
         """;
 
         String updateGlobalSql = """
