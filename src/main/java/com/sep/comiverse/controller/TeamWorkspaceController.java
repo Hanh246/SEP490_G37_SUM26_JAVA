@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -81,6 +82,22 @@ public class TeamWorkspaceController {
             }
             return ResponseEntity.ok(taskRepository.save(task));
         }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/tasks/{id}")
+    public ResponseEntity<Object> getTaskById(@PathVariable UUID id) {
+        var taskOpt = taskRepository.findById(id);
+
+        if (taskOpt.isPresent()) {
+            // Nếu tìm thấy, trả về trực tiếp Entity (Spring sẽ tự chuyển sang JSON)
+            return ResponseEntity.ok(taskOpt.get());
+        } else {
+            // Nếu không, trả về Map lỗi
+            return ResponseEntity.status(404).body(Map.of(
+                    "success", false,
+                    "message", "Task not found"
+            ));
+        }
     }
 
     // ── JOIN REQUESTS ────────────────────────────────
