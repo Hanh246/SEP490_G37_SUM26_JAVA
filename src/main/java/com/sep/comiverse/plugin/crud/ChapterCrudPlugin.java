@@ -178,4 +178,21 @@ public class ChapterCrudPlugin
             return copy;
         }).toList();
     }
+
+    /**
+     * Compatibility guard for bad legacy data like images = ARRAY['url1,url2,url3'].
+     * New uploads save each URL as one element in PostgreSQL text[].
+     */
+    private List<String> normalizeImageList(List<String> rawImages) {
+        if (rawImages == null || rawImages.isEmpty()) {
+            return Collections.emptyList();
+        }
+        if (rawImages.size() == 1 && rawImages.get(0) != null && rawImages.get(0).contains(",http")) {
+            return Arrays.stream(rawImages.get(0).split(",(?=https?://)"))
+                    .map(String::trim)
+                    .filter(value -> !value.isBlank())
+                    .toList();
+        }
+        return rawImages;
+    }
 }

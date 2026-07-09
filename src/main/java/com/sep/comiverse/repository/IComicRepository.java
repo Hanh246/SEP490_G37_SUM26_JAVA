@@ -102,4 +102,21 @@ public interface IComicRepository extends AbstractCrudRepository<ComicEntity, UU
                     """,
             nativeQuery = true)
     Page<ComicEntity> findComicsByLatestChapters(Pageable pageable);
+
+    @Query("SELECT c FROM ComicEntity c WHERE c.summaryVector IS NULL AND c.deleted = false")
+    List<ComicEntity> findComicsMissingVector();
+
+    @Query(value = "SELECT * FROM comics " +
+                   "WHERE id != :currentComicId AND deleted = false AND moderation_status = 'PUBLISHED' " +
+                   "AND summary_vector IS NOT NULL " +
+                   "ORDER BY summary_vector <=> (SELECT summary_vector FROM comics WHERE id = :currentComicId) " +
+                   "LIMIT :limit", nativeQuery = true)
+    List<ComicEntity> findSimilarComics(@Param("currentComicId") UUID currentComicId, @Param("limit") int limit);
+
+    @Query(value = "SELECT c.* FROM comics c " +
+                   "WHERE c.deleted = false AND c.moderation_status = 'PUBLISHED' " +
+                   "AND c.summary_vector IS NOT NULL " +
+                   "ORDER BY c.summary_vector <=> (SELECT user_vector FROM users WHERE id = :userId) " +
+                   "LIMIT :limit", nativeQuery = true)
+    List<ComicEntity> findRecommendedComicsForUser(@Param("userId") UUID userId, @Param("limit") int limit);
 }

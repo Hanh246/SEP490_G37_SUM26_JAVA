@@ -38,4 +38,13 @@ public interface IUserRepository extends AbstractCrudRepository<UserEntity, UUID
 
     @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM UserEntity u WHERE u.phone = :phone AND u.deleted = false")
     boolean existsByPhone(@Param("phone") String phone);
+
+    @Query(value = "SELECT DISTINCT u.id FROM users u " +
+                   "WHERE u.deleted = false " +
+                   "AND (" +
+                   "  EXISTS (SELECT 1 FROM user_likes l WHERE l.user_id = u.id AND l.deleted = false) OR " +
+                   "  EXISTS (SELECT 1 FROM user_saves s WHERE s.user_id = u.id AND s.deleted = false) OR " +
+                   "  EXISTS (SELECT 1 FROM reading_histories r WHERE r.user_id = u.id AND r.deleted = false)" +
+                   ")", nativeQuery = true)
+    java.util.List<java.util.UUID> findUserIdsWithInteractions();
 }

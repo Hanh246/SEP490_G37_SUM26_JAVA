@@ -104,13 +104,9 @@ public class ComicEntity extends BaseEntity {
     @Column(name = "genre_ids", columnDefinition = "uuid[]")
     private List<UUID> genreIds;
 
-    /*
-     * PostgreSQL column summary_vector is pgvector type: vector(384).
-     * Do not map it as byte[] because Hibernate will insert it as bytea.
-     * Current Author upload flow does not need to write this field.
-     */
-    @Transient
-    private byte[] summaryVector;
+    @Convert(converter = com.sep.comiverse.entity.converter.VectorConverter.class)
+    @Column(name = "summary_vector", columnDefinition = "vector(768)")
+    private float[] summaryVector;
 
     @PrePersist
     protected void ensureModerationDefaults() {

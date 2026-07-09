@@ -61,5 +61,9 @@ public class UserEntity extends BaseEntity {
 
     @Column(name = "date_of_birth")
     private LocalDate dateOfBirth;
+
+    @Convert(converter = com.sep.comiverse.entity.converter.VectorConverter.class)
+    @Column(name = "user_vector", columnDefinition = "vector(768)")
+    private float[] userVector;
 }
 

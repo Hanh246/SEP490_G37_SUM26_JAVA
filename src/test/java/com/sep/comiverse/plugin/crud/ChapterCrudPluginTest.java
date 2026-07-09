@@ -3,14 +3,15 @@ package com.sep.comiverse.plugin.crud;
 import com.sep.comiverse.dto.ChapterDTO;
 import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.entity.ChapterEntity;
+import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.UserEntity;
+import com.sep.comiverse.entity.enums.ChapterStatus;
 import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.plugin.IMapperPluginDetail;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.service.PremiumPlanService;
 import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
-import org.springframework.data.redis.core.SetOperations;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.plugin.core.PluginRegistry;
 
@@ -65,7 +67,6 @@ public class ChapterCrudPluginTest {
     private final UUID comicId = UUID.randomUUID();
     private final UUID userId = UUID.randomUUID();
     private final String clientIp = "127.0.0.1";
-    private final String cacheKey = "chapter:detail:" + chapterId;
 
     @BeforeEach
     void setUp() {
@@ -77,19 +78,23 @@ public class ChapterCrudPluginTest {
 
     @Test
     void testGetChapterDetail_CacheHit_FreeChapter() {
-        ChapterDTO cachedDto = ChapterDTO.builder()
-                .id(chapterId)
-                .comicId(comicId)
-                .title("Free Chapter")
-                .viewCount(100L)
-                .isPremium(false)
-                .images(List.of("img1.png", "img2.png"))
-                .build();
+        ComicEntity comic = new ComicEntity();
+        comic.setId(comicId);
+
+        ChapterEntity entity = new ChapterEntity();
+        entity.setId(chapterId);
+        entity.setComic(comic);
+        entity.setChapterNumber("1");
+        entity.setTitle("Free Chapter");
+        entity.setViewCount(100L);
+        entity.setIsPremium(false);
+        entity.setModerationStatus(ChapterStatus.PUBLISHED);
+        entity.setImages(List.of("img1.png", "img2.png"));
+
+        when(chapterRepository.findByIdAndDeletedFalseAndModerationStatus(chapterId, ChapterStatus.PUBLISHED))
+                .thenReturn(Optional.of(entity));
 
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get(cacheKey)).thenReturn(cachedDto);
-
-        // View tracking mocks
         String userIdentity = "user:" + userId;
         String lockKey = String.format("view:lock:%s:chapter:%s", userIdentity, chapterId);
         when(valueOperations.setIfAbsent(lockKey, "1", Duration.ofMinutes(10))).thenReturn(true);
@@ -107,32 +112,32 @@ public class ChapterCrudPluginTest {
         verify(hashOperations).increment(ViewSyncScheduler.COMIC_VIEW_HASH, comicId.toString(), 1L);
         verify(hashOperations).increment(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString(), 1L);
         verify(setOperations).add("reading:history:sync:queue", comicId + ":" + chapterId + ":" + userId);
-        verify(chapterRepository, never()).findById(any());
     }
 
     @Test
     void testGetChapterDetail_CacheMiss_PremiumChapter_Authorized() {
-        ChapterEntity entity = new ChapterEntity();
-        ChapterDTO loadedDto = ChapterDTO.builder()
-                .id(chapterId)
-                .comicId(comicId)
-                .title("Premium Chapter")
-                .viewCount(200L)
-                .isPremium(true)
-                .images(List.of("img1.png", "img2.png"))
-                .build();
+        ComicEntity comic = new ComicEntity();
+        comic.setId(comicId);
 
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get(cacheKey)).thenReturn(null);
-        when(chapterRepository.findById(chapterId)).thenReturn(Optional.of(entity));
-        when(mapperPlugin.toDto(entity)).thenReturn(loadedDto);
+        ChapterEntity entity = new ChapterEntity();
+        entity.setId(chapterId);
+        entity.setComic(comic);
+        entity.setChapterNumber("2");
+        entity.setTitle("Premium Chapter");
+        entity.setViewCount(200L);
+        entity.setIsPremium(true);
+        entity.setModerationStatus(ChapterStatus.PUBLISHED);
+        entity.setImages(List.of("img1.png", "img2.png"));
+
+        when(chapterRepository.findByIdAndDeletedFalseAndModerationStatus(chapterId, ChapterStatus.PUBLISHED))
+                .thenReturn(Optional.of(entity));
 
         // Mock authorization
         UserEntity user = new UserEntity();
         when(userRepository.findByIdWithRole(userId)).thenReturn(Optional.of(user));
         when(premiumPlanService.hasActivePremium(user)).thenReturn(true);
 
-        // View tracking mocks (mocking no increment this time, lock is already set)
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         String userIdentity = "user:" + userId;
         String lockKey = String.format("view:lock:%s:chapter:%s", userIdentity, chapterId);
         when(valueOperations.setIfAbsent(lockKey, "1", Duration.ofMinutes(10))).thenReturn(false);
@@ -143,29 +148,33 @@ public class ChapterCrudPluginTest {
         ChapterDTO result = chapterCrudPlugin.getChapterDetail(chapterId, userId, clientIp);
 
         assertNotNull(result);
+        assertEquals("Premium Chapter", result.getTitle());
         assertEquals(2, result.getImages().size()); // Authorized premium, images not masked
-        verify(valueOperations).set(eq(cacheKey), eq(loadedDto), eq(Duration.ofDays(3)));
         verify(hashOperations, never()).increment(any(), any(), anyLong());
     }
 
     @Test
     void testGetChapterDetail_PremiumChapter_Unauthorized() {
-        ChapterDTO cachedDto = ChapterDTO.builder()
-                .id(chapterId)
-                .comicId(comicId)
-                .title("Premium Chapter")
-                .viewCount(200L)
-                .isPremium(true)
-                .images(List.of("img1.png", "img2.png"))
-                .build();
+        ComicEntity comic = new ComicEntity();
+        comic.setId(comicId);
 
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get(cacheKey)).thenReturn(cachedDto);
+        ChapterEntity entity = new ChapterEntity();
+        entity.setId(chapterId);
+        entity.setComic(comic);
+        entity.setChapterNumber("2");
+        entity.setTitle("Premium Chapter");
+        entity.setViewCount(200L);
+        entity.setIsPremium(true);
+        entity.setModerationStatus(ChapterStatus.PUBLISHED);
+        entity.setImages(List.of("img1.png", "img2.png"));
+
+        when(chapterRepository.findByIdAndDeletedFalseAndModerationStatus(chapterId, ChapterStatus.PUBLISHED))
+                .thenReturn(Optional.of(entity));
 
         // Mock unauthorized
         when(userRepository.findByIdWithRole(userId)).thenReturn(Optional.empty());
 
-        // View tracking mocks
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         String userIdentity = "user:" + userId;
         String lockKey = String.format("view:lock:%s:chapter:%s", userIdentity, chapterId);
         when(valueOperations.setIfAbsent(lockKey, "1", Duration.ofMinutes(10))).thenReturn(true);
@@ -190,7 +199,7 @@ public class ChapterCrudPluginTest {
                 .createdAt(java.time.Instant.now())
                 .build();
 
-        when(chapterRepository.findChapterMetadataByComicId(comicId))
+        when(chapterRepository.findChapterMetadataByComicIdAndStatus(comicId, ChapterStatus.PUBLISHED))
                 .thenReturn(List.of(liteDto));
 
         // Redis view tracking mock

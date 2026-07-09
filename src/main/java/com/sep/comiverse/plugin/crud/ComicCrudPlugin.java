@@ -116,7 +116,7 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         UUID nextReferenceId = null;
 
         if (!dtoList.isEmpty() && hasMore) {
-            ComicEntity lastEntity = resultEntities.getLast();
+            ComicEntity lastEntity = resultEntities.get(resultEntities.size() - 1);
             nextReferenceId = lastEntity.getId();
             nextCursor = isTimeField ? getTimeProperty(lastEntity, sortProperty) : getNumberProperty(lastEntity, sortProperty);
         }
