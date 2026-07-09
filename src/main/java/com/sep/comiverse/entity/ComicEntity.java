@@ -84,7 +84,7 @@ public class ComicEntity extends BaseEntity {
     @Column(name = "genre_ids", columnDefinition = "uuid[]")
     private List<UUID> genreIds;
 
-    @Column(name = "summary_vector", columnDefinition = "vector(384)")
+    @Column(name = "summary_vector", columnDefinition = "vector(384)", insertable = false, updatable = false)
     @JdbcTypeCode(SqlTypes.OTHER)
     private float[] summaryVector;
 }

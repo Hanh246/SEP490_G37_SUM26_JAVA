@@ -15,6 +15,16 @@ public interface IComicRepository extends AbstractCrudRepository<ComicEntity, UU
 
     Optional<ComicEntity> findByTitle(String title);
 
+    Optional<ComicEntity> findBySlug(String slug);
+
+    Optional<ComicEntity> findByTitleIgnoreCase(String title);
+
+    java.util.List<ComicEntity> findAllByTitle(String title);
+
+    java.util.List<ComicEntity> findAllBySlug(String slug);
+
+    java.util.List<ComicEntity> findAllByTitleIgnoreCase(String title);
+
     Page<ComicEntity> findByOrderByViewCountDesc(Pageable pageable);
 
     @Query(value = """
