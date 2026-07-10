@@ -67,11 +67,6 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
             Pageable pageable
     );
 
-    List<ChapterEntity> findAllByComic_IdAndDeletedFalseAndModerationStatus(
-            UUID comicId,
-            ChapterStatus moderationStatus
-    );
-
     long countByComic_IdAndDeletedFalse(UUID comicId);
 
     long countByComic_IdAndModerationStatusAndDeletedFalse(

@@ -46,7 +46,6 @@ public class DbInitializer implements CommandLineRunner {
         jdbcTemplate.execute("UPDATE comics SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
         jdbcTemplate.execute("UPDATE chapters SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
         migrateLegacyChapterPagesIntoChapterImages();
-        splitCommaJoinedChapterImageArrays();
         jdbcTemplate.execute("UPDATE chapters SET images = ARRAY[]::text[] WHERE images IS NULL");
 
         createRoles();
@@ -79,19 +78,6 @@ public class DbInitializer implements CommandLineRunner {
                           AND (c.images IS NULL OR cardinality(c.images) = 0);
                     END IF;
                 END $$;
-                """);
-    }
-
-    private void splitCommaJoinedChapterImageArrays() {
-        jdbcTemplate.execute("""
-                UPDATE chapters
-                SET images = string_to_array(
-                    replace(replace(images[1], ',https://', '|https://'), ',http://', '|http://'),
-                    '|'
-                )
-                WHERE images IS NOT NULL
-                  AND cardinality(images) = 1
-                  AND (images[1] LIKE '%,https://%' OR images[1] LIKE '%,http://%');
                 """);
     }
 

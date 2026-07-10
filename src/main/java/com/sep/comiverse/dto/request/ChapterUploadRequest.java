@@ -1,5 +1,6 @@
 package com.sep.comiverse.dto.request;
 
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -13,6 +14,7 @@ public class ChapterUploadRequest {
 
     private UUID authorId;
 
+    @NotBlank(message = "Chapter number is required")
     private String chapterNumber;
 
     private String title;

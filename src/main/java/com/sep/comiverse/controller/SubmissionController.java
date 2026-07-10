@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.time.Instant;
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -190,29 +189,16 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         if (comic == null || submission == null) {
             return;
         }
-
-        List<ChapterEntity> publishedChapters = chapterRepository
-                .findAllByComic_IdAndDeletedFalseAndModerationStatus(comic.getId(), ChapterStatus.PUBLISHED);
-
-        comic.setChapterCount(publishedChapters.size());
-        publishedChapters.stream()
-                .filter(chapter -> chapter.getChapterNumber() != null && !chapter.getChapterNumber().isBlank())
-                .max(java.util.Comparator.comparing(chapter -> toChapterSortNumber(chapter.getChapterNumber())))
-                .ifPresentOrElse(chapter -> {
-                    comic.setLatestChapterNumber(chapter.getChapterNumber());
-                    comic.setLastChapterUpdatedAt(chapter.getUpdatedAt() != null ? chapter.getUpdatedAt() : Instant.now());
-                }, () -> {
-                    comic.setLatestChapterNumber(null);
-                    comic.setLastChapterUpdatedAt(Instant.now());
-                });
-    }
-
-    private BigDecimal toChapterSortNumber(String chapterNumber) {
-        try {
-            return new BigDecimal(chapterNumber.replace(',', '.'));
-        } catch (RuntimeException ex) {
-            return BigDecimal.ZERO;
+        if (submission.getChapterId() == null && !looksLikeChapterSubmission(submission.getChapter())) {
+            return;
         }
+        String chapterNumber = extractChapterNumber(submission.getChapter());
+        if (chapterNumber != null) {
+            comic.setLatestChapterNumber(chapterNumber);
+        }
+        comic.setLastChapterUpdatedAt(Instant.now());
+        long chapterCount = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(comic.getId(), ChapterStatus.PUBLISHED);
+        comic.setChapterCount(chapterCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) chapterCount);
     }
 
     private boolean looksLikeChapterSubmission(String chapter) {
