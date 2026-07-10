@@ -6,6 +6,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import com.sep.comiverse.entity.enums.ChapterStatus;
+
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -20,6 +22,9 @@ public class TeamWorkspaceController {
     private final ITeamMessageRepository messageRepository;
     private final ITeamTaskRepository taskRepository;
     private final ITeamJoinRequestRepository joinRequestRepository;
+    private final IProjectTeamRepository projectTeamRepository;
+    private final IComicRepository comicRepository;
+    private final IChapterRepository chapterRepository;
 
     // ── ANNOUNCEMENTS ────────────────────────────────
     @GetMapping("/{teamId}/announcements")
@@ -42,6 +47,62 @@ public class TeamWorkspaceController {
             ann.setLikes(ann.getLikes() + 1);
             return ResponseEntity.ok(announcementRepository.save(ann));
         }).orElse(ResponseEntity.notFound().build());
+    }
+
+    // ── CHAPTER BACKLOG ──────────────────────────────
+    @GetMapping("/{teamId}/chapter-backlog")
+    public ResponseEntity<List<Map<String, Object>>> getChapterBacklog(@PathVariable UUID teamId) {
+        ProjectTeamEntity team = projectTeamRepository.findById(teamId)
+                .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Project team not found"));
+
+        String comicName = team.getComicName();
+        if (comicName == null || comicName.trim().isEmpty()) {
+            return ResponseEntity.ok(java.util.Collections.emptyList());
+        }
+
+        // Find the comic entity by name (case-insensitive)
+        List<ComicEntity> comics = comicRepository.findAllByTitle(comicName);
+        if (comics.isEmpty()) {
+            comics = comicRepository.findAllByTitleIgnoreCase(comicName);
+        }
+        if (comics.isEmpty()) {
+            return ResponseEntity.ok(java.util.Collections.emptyList());
+        }
+
+        ComicEntity comic = comics.get(0);
+
+        // Get all approved (published) chapters for this comic
+        List<ChapterEntity> publishedChapters = chapterRepository.findAllByComic_IdAndDeletedFalseAndModerationStatus(
+                comic.getId(),
+                com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED
+        );
+
+        // Get all tasks for this project team
+        List<TeamTaskEntity> teamTasks = taskRepository.findByProjectTeamId(teamId);
+
+        // Find which chapter IDs already have a task associated with this team
+        java.util.Set<UUID> taskChapterIds = teamTasks.stream()
+                .map(TeamTaskEntity::getChapterId)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+
+        // Filter out chapters that already have a task
+        List<ChapterEntity> backlogChapters = publishedChapters.stream()
+                .filter(c -> !taskChapterIds.contains(c.getId()))
+                .toList();
+
+        List<Map<String, Object>> result = backlogChapters.stream().map(c -> {
+            Map<String, Object> map = new java.util.HashMap<>();
+            map.put("chapterId", c.getId());
+            map.put("chapterNumber", c.getChapterNumber());
+            map.put("title", c.getTitle());
+            map.put("comicName", comic.getTitle());
+            map.put("pages", c.getImages() != null ? c.getImages().size() : 0);
+            map.put("approvedAt", c.getCreatedAt());
+            return map;
+        }).toList();
+
+        return ResponseEntity.ok(result);
     }
 
     // ── MESSAGES (CHAT) ──────────────────────────────
