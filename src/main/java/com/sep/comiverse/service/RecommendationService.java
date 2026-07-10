@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.ResponseEntity;
+import com.sep.comiverse.dto.pagination.CursorResponseDTO;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
@@ -41,14 +42,15 @@ public class RecommendationService {
             return null;
         }
 
-        String url = "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=" + apiKey;
+        String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=" + apiKey;
 
         // Construct request payload
         Map<String, Object> part = Map.of("text", summary);
-        Map<String, Object> content = Map.of("parts", List.of(part));
+        Map<String, Object> contents = Map.of("parts", List.of(part));
         Map<String, Object> payload = Map.of(
-                "model", "models/text-embedding-004",
-                "content", content
+                "model", "models/gemini-embedding-001",
+                "content", contents,
+                "outputDimensionality", 768
         );
 
         try {
@@ -116,6 +118,7 @@ public class RecommendationService {
         if (comicIds.isEmpty()) {
             log.info("User {} has no interactions. user_vector set to null.", userId);
             user.setUserVector(null);
+            user.setVectorUpdatedAt(java.time.Instant.now());
             userRepository.save(user);
             return null;
         }
@@ -145,6 +148,7 @@ public class RecommendationService {
         }
 
         user.setUserVector(avgVector);
+        user.setVectorUpdatedAt(java.time.Instant.now());
         userRepository.save(user);
         log.info("Successfully updated user_vector for user: {}", userId);
         return avgVector;
@@ -198,5 +202,83 @@ public class RecommendationService {
             ).getContent();
         }
         return comicRepository.findRecommendedComicsForUser(userId, limit);
+    }
+
+    @Transactional(readOnly = true)
+    public CursorResponseDTO<UUID> getRecommendedComicIdsCursor(UUID userId, String cursor, UUID referenceId, int size) {
+        int limit = size + 1;
+        List<UUID> ids;
+        boolean isVectorSearch = false;
+        UserEntity user = null;
+
+        if (userId != null) {
+            user = userRepository.findById(userId).orElse(null);
+            if (user != null && user.getUserVector() != null) {
+                isVectorSearch = true;
+            }
+        }
+
+        if (isVectorSearch) {
+            Double cursorDistance = null;
+            if (cursor != null && !cursor.trim().isEmpty()) {
+                try {
+                    cursorDistance = Double.parseDouble(cursor.trim());
+                } catch (NumberFormatException e) {
+                    log.warn("Failed to parse cursor distance: {}", cursor);
+                }
+            }
+            ids = comicRepository.findRecommendedComicIdsForUserCursor(userId, cursorDistance, referenceId, limit);
+        } else {
+            Long cursorVal = null;
+            if (cursor != null && !cursor.trim().isEmpty()) {
+                try {
+                    cursorVal = Long.parseLong(cursor.trim());
+                } catch (NumberFormatException e) {
+                    log.warn("Failed to parse cursor view count: {}", cursor);
+                }
+            }
+            ids = comicRepository.findPopularComicIdsCursor(cursorVal, referenceId, limit);
+        }
+
+        boolean hasMore = ids.size() > size;
+        List<UUID> resultIds = hasMore ? ids.subList(0, size) : ids;
+
+        String nextCursor = null;
+        UUID nextReferenceId = null;
+
+        if (!resultIds.isEmpty() && hasMore) {
+            UUID lastId = resultIds.get(resultIds.size() - 1);
+            nextReferenceId = lastId;
+            ComicEntity lastComic = comicRepository.findById(lastId).orElse(null);
+            if (lastComic != null) {
+                if (isVectorSearch && user != null) {
+                    double dist = calculateCosineDistance(user.getUserVector(), lastComic.getSummaryVector());
+                    nextCursor = String.valueOf(dist);
+                } else {
+                    nextCursor = String.valueOf(lastComic.getViewCount());
+                }
+            }
+        }
+
+        return new CursorResponseDTO<>(resultIds, nextCursor, nextReferenceId, hasMore);
+    }
+
+    private double calculateCosineDistance(float[] v1, float[] v2) {
+        if (v1 == null || v2 == null || v1.length != v2.length) {
+            return 1.0;
+        }
+        double dotProduct = 0.0;
+        double normA = 0.0;
+        double normB = 0.0;
+        for (int i = 0; i < v1.length; i++) {
+            dotProduct += v1[i] * v2[i];
+            normA += v1[i] * v1[i];
+            normB += v2[i] * v2[i];
+        }
+        if (normA == 0.0 || normB == 0.0) {
+            return 1.0;
+        }
+        double similarity = dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+        return 1.0 - similarity;
     }
 }

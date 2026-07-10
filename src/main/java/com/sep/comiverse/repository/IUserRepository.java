@@ -4,6 +4,8 @@ import com.sep.comiverse.entity.UserEntity;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -42,9 +44,11 @@ public interface IUserRepository extends AbstractCrudRepository<UserEntity, UUID
     @Query(value = "SELECT DISTINCT u.id FROM users u " +
                    "WHERE u.deleted = false " +
                    "AND (" +
-                   "  EXISTS (SELECT 1 FROM user_likes l WHERE l.user_id = u.id AND l.deleted = false) OR " +
-                   "  EXISTS (SELECT 1 FROM user_saves s WHERE s.user_id = u.id AND s.deleted = false) OR " +
-                   "  EXISTS (SELECT 1 FROM reading_histories r WHERE r.user_id = u.id AND r.deleted = false)" +
+                   "  u.user_vector IS NULL OR " +
+                   "  u.vector_updated_at IS NULL OR " +
+                   "  EXISTS (SELECT 1 FROM user_likes l WHERE l.user_id = u.id AND l.update_at > u.vector_updated_at) OR " +
+                   "  EXISTS (SELECT 1 FROM user_saves s WHERE s.user_id = u.id AND s.update_at > u.vector_updated_at) OR " +
+                   "  EXISTS (SELECT 1 FROM reading_histories r WHERE r.user_id = u.id AND r.update_at > u.vector_updated_at)" +
                    ")", nativeQuery = true)
-    java.util.List<java.util.UUID> findUserIdsWithInteractions();
+    List<UUID> findUserIdsWithPendingVectorUpdate();
 }

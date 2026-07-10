@@ -46,7 +46,7 @@ public class RecommendationScheduler {
     @Scheduled(cron = "${recommendation.scheduler.user-vector-cron:0 30 * * * *}")
     public void processUserPreferences() {
         log.info("Starting background job to recalculate user preference vectors.");
-        List<UUID> userIds = userRepository.findUserIdsWithInteractions();
+        List<UUID> userIds = userRepository.findUserIdsWithPendingVectorUpdate();
         if (userIds == null || userIds.isEmpty()) {
             log.info("No active users with interactions found for vector recalculation.");
             return;

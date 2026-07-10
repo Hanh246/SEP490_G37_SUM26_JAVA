@@ -24,11 +24,11 @@ public class DataSourcePostProcessor implements BeanPostProcessor {
 
                 // 2. Create helper functions for casting string/text to vector using pgvector's native explicit cast
                 stmt.execute("CREATE OR REPLACE FUNCTION cast_varchar_to_vector(varchar) RETURNS vector AS $$\n" +
-                             "    SELECT $1::vector;\n" +
+                             "    SELECT (replace(replace($1, '[', '{'), ']', '}')::real[])::vector;\n" +
                              "$$ LANGUAGE sql IMMUTABLE STRICT;");
 
                 stmt.execute("CREATE OR REPLACE FUNCTION cast_text_to_vector(text) RETURNS vector AS $$\n" +
-                             "    SELECT $1::vector;\n" +
+                             "    SELECT (replace(replace($1, '[', '{'), ']', '}')::real[])::vector;\n" +
                              "$$ LANGUAGE sql IMMUTABLE STRICT;");
 
                 // 3. Create implicit casts if they do not exist
