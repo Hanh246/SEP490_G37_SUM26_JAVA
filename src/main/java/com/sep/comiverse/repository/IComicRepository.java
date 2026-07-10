@@ -78,4 +78,28 @@ public interface IComicRepository extends AbstractCrudRepository<ComicEntity, UU
             @Param("search") String search,
             Pageable pageable
     );
+    Optional<ComicEntity> findBySlug(String slug);
+
+    Optional<ComicEntity> findByTitleIgnoreCase(String title);
+
+    java.util.List<ComicEntity> findAllByTitle(String title);
+
+    java.util.List<ComicEntity> findAllBySlug(String slug);
+
+    java.util.List<ComicEntity> findAllByTitleIgnoreCase(String title);
+
+    Page<ComicEntity> findByOrderByViewCountDesc(Pageable pageable);
+
+    @Query(value = """
+            SELECT c.* FROM comics c
+            INNER JOIN chapters ch ON c.id = ch.comic_id
+            GROUP BY c.id
+            ORDER BY MAX(ch.created_at) DESC
+            """,
+            countQuery = """
+                    SELECT COUNT(DISTINCT c.id) FROM comics c
+                    INNER JOIN chapters ch ON c.id = ch.comic_id
+                    """,
+            nativeQuery = true)
+    Page<ComicEntity> findComicsByLatestChapters(Pageable pageable);
 }

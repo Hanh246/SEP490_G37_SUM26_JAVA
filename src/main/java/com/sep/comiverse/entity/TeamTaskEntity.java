@@ -2,10 +2,13 @@ package com.sep.comiverse.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.springframework.transaction.annotation.Transactional;
+
 import java.util.UUID;
 
 @Data
 @Entity
+@Transactional
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -19,11 +22,15 @@ public class TeamTaskEntity {
     @Column(name = "project_team_id", nullable = false)
     private UUID projectTeamId;
 
+    @Column(name = "chapter_id")
+    private UUID chapterId;
+
     @Column(name = "title")
     private String title;
 
     @Column(name = "column_name")
-    private String columnName; // backlog, in_progress, under_review, completed, paused
+    private String columnName;
+
 
     @Column(name = "progress")
     private Integer progress;
