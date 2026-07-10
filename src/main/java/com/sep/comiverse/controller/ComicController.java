@@ -90,6 +90,18 @@ public class ComicController {
                 .build());
     }
 
+    @GetMapping("/leaderboard")
+    @Operation(summary = "Retrieve cached leaderboard by timeframe")
+    public ResponseEntity<BaseResponse<List<ComicDTO>>> getLeaderboard(
+            @RequestParam(defaultValue = "day") String timeframe
+    ) {
+        List<ComicDTO> data = comicCrudPlugin.getCachedLeaderboard(timeframe);
+        return ResponseEntity.ok(BaseResponse.<List<ComicDTO>>builder()
+                .success(true)
+                .data(data)
+                .build());
+    }
+
     @GetMapping("/all")
     @Operation(summary = "Retrieve all published comics")
     public ResponseEntity<BaseResponse<List<ComicDTO>>> listAll() {
