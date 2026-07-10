@@ -9,10 +9,7 @@ import com.sep.comiverse.dto.request.ComicExploreRequestDTO;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.plugin.crud.ComicCrudPlugin;
 import com.sep.comiverse.security.JwtTokenUtil;
-import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.RecommendationService;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import java.util.Objects;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
@@ -25,6 +22,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @RestController
@@ -101,50 +99,6 @@ public class ComicController {
                 .build());
     }
 
-    @GetMapping("/top-views")
-    @Operation(summary = "Retrieve a paginated collection of published comics sorted by maximum traffic views")
-    public ResponseEntity<PaginationResponse<List<ComicDTO>>> getTopViews(
-            @Valid @ParameterObject PaginationSearchDTO paginationDTO
-    ) {
-        PaginationSearchDTO safePagination =
-                paginationDTO != null ? paginationDTO : new PaginationSearchDTO();
-
-        Page<ComicDTO> data = comicCrudPlugin.getTopViews(safePagination);
-
-        return ResponseEntity.ok(PaginationResponse.<List<ComicDTO>>builder()
-                .success(true)
-                .metadata(new PaginationMetadata(
-                        safePagination.getPage(),
-                        safePagination.getSize(),
-                        data.getTotalElements(),
-                        data.getTotalPages()
-                ))
-                .data(data.toList())
-                .build());
-    }
-
-    @GetMapping("/recently-updated")
-    @Operation(summary = "Retrieve a paginated collection of published comics with recently published chapters")
-    public ResponseEntity<PaginationResponse<List<ComicDTO>>> getRecentlyUpdated(
-            @Valid @ParameterObject PaginationSearchDTO paginationDTO
-    ) {
-        PaginationSearchDTO safePagination =
-                paginationDTO != null ? paginationDTO : new PaginationSearchDTO();
-
-        Page<ComicDTO> data = comicCrudPlugin.getComicsByLatestChapters(safePagination);
-
-        return ResponseEntity.ok(PaginationResponse.<List<ComicDTO>>builder()
-                .success(true)
-                .metadata(new PaginationMetadata(
-                        safePagination.getPage(),
-                        safePagination.getSize(),
-                        data.getTotalElements(),
-                        data.getTotalPages()
-                ))
-                .data(data.toList())
-                .build());
-    }
-
     @GetMapping("/explore")
     @Operation(summary = "Explore published catalog using optimized cursor pagination with filters and dynamic sorting")
     public ResponseEntity<BaseResponse<CursorResponseDTO<ComicDTO>>> getExploreComics(
@@ -162,13 +116,6 @@ public class ComicController {
                 .build());
     }
 
-    /**
-     * Public comic detail.
-     *
-     * Quan trọng:
-     * comicCrudPlugin.getComicDetail(id) phải chỉ trả comic đã PUBLISHED.
-     * Không được trả comic PENDING / DRAFT / REJECTED ra public.
-     */
     @GetMapping("/{id}")
     @Operation(summary = "Get public comic detail")
     public ResponseEntity<BaseResponse<ComicDTO>> findById(
@@ -184,10 +131,6 @@ public class ComicController {
                 .build());
     }
 
-    /**
-     * ADMIN CRUD - tạo comic trực tiếp.
-     * Author nên tạo comic qua AuthorComicController.
-     */
     @PostMapping
     @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<BaseResponse<ComicDTO>> create(
@@ -202,9 +145,6 @@ public class ComicController {
                         .build());
     }
 
-    /**
-     * ADMIN CRUD - sửa comic trực tiếp.
-     */
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<BaseResponse<ComicDTO>> update(
@@ -242,14 +182,19 @@ public class ComicController {
     public ResponseEntity<BaseResponse<ComicDTO>> findByIdForAdmin(
             @PathVariable UUID id
     ) {
-        return comicCrudPlugin.read(id)
-                .map(dto -> ResponseEntity.ok(BaseResponse.<ComicDTO>builder()
-                        .success(true)
-                        .data(dto)
-                        .build()))
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(BaseResponse.<ComicDTO>builder()
-                                .success(false)
-                                .build()));
+        var comicOptional = comicCrudPlugin.read(id);
+
+        if (comicOptional.isPresent()) {
+            BaseResponse<ComicDTO> response = BaseResponse.<ComicDTO>builder()
+                    .success(true)
+                    .data(comicOptional.get())
+                    .build();
+            return ResponseEntity.ok(response);
+        }
+
+        BaseResponse<ComicDTO> errorResponse = BaseResponse.<ComicDTO>builder()
+                .success(false)
+                .build();
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
     }
 }

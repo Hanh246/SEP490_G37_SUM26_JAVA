@@ -10,10 +10,7 @@ import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
 import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.plugin.crud.SubmissionCrudPlugin;
-import com.sep.comiverse.repository.IChapterRepository;
-import com.sep.comiverse.repository.IComicRepository;
-import com.sep.comiverse.repository.IProjectTeamRepository;
-import com.sep.comiverse.repository.ISubmissionRepository;
+import com.sep.comiverse.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -42,6 +39,9 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
     @Autowired
     private IChapterRepository chapterRepository;
+
+    @Autowired
+    private IUserRepository userRepository;
 
     private static final Pattern CHAPTER_NUMBER_PATTERN =
             Pattern.compile("(?i)chapter\\s+([0-9]+(?:[,.][0-9]+)?)");
@@ -86,20 +86,6 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
     }
 
     private void handleAuthorApproval(SubmissionEntity submission) {
-        ComicEntity comic = resolveComic(submission);
-        if (comic != null) {
-            if (submission.getChapterId() == null) {
-                comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
-            } else {
-                chapterRepository.findById(submission.getChapterId()).ifPresent(chapter -> {
-                    chapter.setModerationStatus(ChapterStatus.PUBLISHED);
-                    chapterRepository.save(chapter);
-                });
-                updateLatestChapterIfAuthorChapterSubmission(comic, submission);
-            }
-            comicRepository.save(comic);
-            return;
-        }
         // Process side effects of approval
         if ("author".equalsIgnoreCase(submission.getQueueType())) {
             // Approving an author submission creates/updates a comic
@@ -122,7 +108,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 com.sep.comiverse.entity.UserEntity authorUser = userRepository.findAll().stream()
                         .filter(u -> searchName != null && (
                                 (u.getFullName() != null && u.getFullName().equalsIgnoreCase(searchName)) ||
-                                (u.getUsername() != null && u.getUsername().equalsIgnoreCase(searchName))
+                                        (u.getUsername() != null && u.getUsername().equalsIgnoreCase(searchName))
                         ))
                         .findFirst()
                         .orElse(null);
@@ -170,26 +156,27 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             String teamName = submission.getSubmittedBy();
             String comicTitle = submission.getTitle();
 
-        // Backward-compatible path for old author submissions that were created before the comic row existed.
-        if (submission.getChapterId() == null && submission.getComicId() == null) {
-            ComicEntity newComic = ComicEntity.builder()
-                    .title(submission.getTitle())
-                    .slug(buildSafeSlug(submission.getTitle()))
-                    .summary(submission.getContent())
-                    .authorId(submission.getAuthorId())
-                    .status(com.sep.comiverse.constants.ComicStatus.ONGOING)
-                    .moderationStatus(ComicModerationStatus.PUBLISHED)
-                    .cover(submission.getCover() != null ? submission.getCover() : "📖")
-                    .thumbnail(submission.getCover())
-                    .viewCount(0L)
-                    .saveCount(0)
-                    .likeCount(0)
-                    .ratingAverage(0.0)
-                    .ratingCount(0)
-                    .chapterCount(0)
-                    .lastChapterUpdatedAt(Instant.now())
-                    .build();
-            comicRepository.save(newComic);
+            // Backward-compatible path for old author submissions that were created before the comic row existed.
+            if (submission.getChapterId() == null && submission.getComicId() == null) {
+                ComicEntity newComic = ComicEntity.builder()
+                        .title(submission.getTitle())
+                        .slug(buildSafeSlug(submission.getTitle()))
+                        .summary(submission.getContent())
+                        .authorId(submission.getAuthorId())
+                        .status(com.sep.comiverse.constants.ComicStatus.ONGOING)
+                        .moderationStatus(ComicModerationStatus.PUBLISHED)
+                        .cover(submission.getCover() != null ? submission.getCover() : "📖")
+                        .thumbnail(submission.getCover())
+                        .viewCount(0L)
+                        .saveCount(0)
+                        .likeCount(0)
+                        .ratingAverage(0.0)
+                        .ratingCount(0)
+                        .chapterCount(0)
+                        .lastChapterUpdatedAt(Instant.now())
+                        .build();
+                comicRepository.save(newComic);
+            }
         }
     }
 
@@ -208,14 +195,6 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                     .findFirst()
                     .orElse(null);
         }
-
-        ComicEntity comic = comicRepository.findByTitle(comicTitle).orElse(null);
-            if (team == null) {
-                team = projectTeamRepository.findAll().stream()
-                        .filter(t -> t.getComicName().equalsIgnoreCase(comicTitle))
-                        .findFirst()
-                        .orElse(null);
-            }
 
             ComicEntity comic = comicRepository.findAllByTitle(comicTitle).stream().findFirst()
                     .or(() -> comicRepository.findAllByTitleIgnoreCase(comicTitle).stream().findFirst())
