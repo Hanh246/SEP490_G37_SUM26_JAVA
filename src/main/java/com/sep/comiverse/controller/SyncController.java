@@ -1,6 +1,7 @@
 package com.sep.comiverse.controller;
 
 import com.sep.comiverse.dto.response.BaseResponse;
+import com.sep.comiverse.service.scheduler.RecommendationScheduler;
 import com.sep.comiverse.service.scheduler.UserInteractionSyncScheduler;
 import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
 import io.swagger.v3.oas.annotations.Operation;
@@ -20,6 +21,7 @@ public class SyncController {
 
     private final UserInteractionSyncScheduler userInteractionSyncScheduler;
     private final ViewSyncScheduler viewSyncScheduler;
+    private final RecommendationScheduler recommendationScheduler;
 
     @PostMapping("/interactions")
     @Operation(summary = "Manually trigger UserInteractionSyncScheduler")
@@ -53,6 +55,30 @@ public class SyncController {
                 BaseResponse.<Void>builder()
                         .success(true)
                         .message("Manually triggered view sync scheduler")
+                        .build()
+        );
+    }
+
+    @PostMapping("/comic-vectors")
+    @Operation(summary = "Manually trigger RecommendationScheduler for Comic vectors")
+    public ResponseEntity<BaseResponse<Void>> syncComicVectors() {
+        recommendationScheduler.processNewComicsEmbeddings();
+        return ResponseEntity.ok(
+                BaseResponse.<Void>builder()
+                        .success(true)
+                        .message("Manually triggered comic vector generation scheduler")
+                        .build()
+        );
+    }
+
+    @PostMapping("/user-vectors")
+    @Operation(summary = "Manually trigger RecommendationScheduler for User vectors")
+    public ResponseEntity<BaseResponse<Void>> syncUserVectors() {
+        recommendationScheduler.processUserPreferences();
+        return ResponseEntity.ok(
+                BaseResponse.<Void>builder()
+                        .success(true)
+                        .message("Manually triggered user preference vector generation scheduler")
                         .build()
         );
     }

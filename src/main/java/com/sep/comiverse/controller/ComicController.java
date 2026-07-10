@@ -8,6 +8,11 @@ import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.dto.request.ComicExploreRequestDTO;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.plugin.crud.ComicCrudPlugin;
+import com.sep.comiverse.security.JwtTokenUtil;
+import com.sep.comiverse.security.UserPrincipal;
+import com.sep.comiverse.service.RecommendationService;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import java.util.Objects;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
@@ -28,6 +33,8 @@ import java.util.UUID;
 public class ComicController {
 
     private final ComicCrudPlugin comicCrudPlugin;
+    private final RecommendationService recommendationService;
+    private final JwtTokenUtil jwtTokenUtil;
 
     @GetMapping
     @Operation(summary = "Retrieve a paginated public collection of published comics")
@@ -48,6 +55,40 @@ public class ComicController {
                         data.getTotalPages()
                 ))
                 .data(data.toList())
+                .build());
+    }
+
+    @GetMapping("/recommendations")
+    @Operation(summary = "Get recommended comics using vector similarity with cursor pagination")
+    public ResponseEntity<BaseResponse<CursorResponseDTO<ComicDTO>>> getRecommendations(
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) UUID referenceId,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        UUID userId = jwtTokenUtil.getCurrentUserId();
+        CursorResponseDTO<UUID> idCursor = recommendationService.getRecommendedComicIdsCursor(userId, cursor, referenceId, size);
+
+        List<ComicDTO> data = idCursor.getData().stream()
+                .map(id -> {
+                    try {
+                        return comicCrudPlugin.getComicDetail(id);
+                    } catch (Exception e) {
+                        return null;
+                    }
+                })
+                .filter(Objects::nonNull)
+                .toList();
+
+        CursorResponseDTO<ComicDTO> response = new CursorResponseDTO<>(
+                data,
+                idCursor.getNextCursor(),
+                idCursor.getNextReferenceId(),
+                idCursor.isHasMore()
+        );
+
+        return ResponseEntity.ok(BaseResponse.<CursorResponseDTO<ComicDTO>>builder()
+                .success(true)
+                .data(response)
                 .build());
     }
 
