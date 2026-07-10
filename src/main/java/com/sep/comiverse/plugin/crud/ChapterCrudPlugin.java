@@ -4,6 +4,7 @@ import com.sep.comiverse.dto.ChapterDTO;
 import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.entity.ChapterEntity;
+import com.sep.comiverse.entity.enums.ChapterStatus;
 import com.sep.comiverse.plugin.AbstractCrudPlugin;
 import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.repository.IChapterRepository;
@@ -70,7 +71,7 @@ public class ChapterCrudPlugin
             redisTemplate.opsForValue().set(cacheKey, cacheDto, Duration.ofDays(3));
             images = entity.getImages();
         }else {
-            List<String> rawImages = chapterRepository.findImagesByChapterId(chapterId);
+            List<String> rawImages = chapterRepository.findImagesByChapterIdAndStatus(chapterId);
 
             if (rawImages != null && rawImages.size() == 1 && rawImages.getFirst().contains(",")) {
                 images = java.util.Arrays.asList(rawImages.getFirst().split(","));
@@ -152,7 +153,7 @@ public class ChapterCrudPlugin
 
         List<ChapterLiteDTO> cachedResults = (List<ChapterLiteDTO>) redisTemplate.opsForValue().get(cacheKey);
         if (cachedResults == null) {
-            cachedResults = chapterRepository.findChapterMetadataByComicId(comicId);
+            cachedResults = chapterRepository.findChapterMetadataByComicId(comicId, ChapterStatus.PUBLISHED);
 
             if (cachedResults != null && !cachedResults.isEmpty()) {
                 redisTemplate.opsForValue().set(cacheKey, cachedResults, Duration.ofDays(7));
@@ -177,22 +178,5 @@ public class ChapterCrudPlugin
             }
             return copy;
         }).toList();
-    }
-
-    /**
-     * Compatibility guard for bad legacy data like images = ARRAY['url1,url2,url3'].
-     * New uploads save each URL as one element in PostgreSQL text[].
-     */
-    private List<String> normalizeImageList(List<String> rawImages) {
-        if (rawImages == null || rawImages.isEmpty()) {
-            return Collections.emptyList();
-        }
-        if (rawImages.size() == 1 && rawImages.get(0) != null && rawImages.get(0).contains(",http")) {
-            return Arrays.stream(rawImages.get(0).split(",(?=https?://)"))
-                    .map(String::trim)
-                    .filter(value -> !value.isBlank())
-                    .toList();
-        }
-        return rawImages;
     }
 }

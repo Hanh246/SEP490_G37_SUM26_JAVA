@@ -115,7 +115,3 @@ public class ComicEntity extends BaseEntity {
         }
     }
 }
-    @Column(name = "summary_vector", columnDefinition = "vector(384)", insertable = false, updatable = false)
-    @JdbcTypeCode(SqlTypes.OTHER)
-    private float[] summaryVector;
-}

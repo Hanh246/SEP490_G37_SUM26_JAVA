@@ -99,6 +99,18 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
             @Param("moderationStatus") ChapterStatus moderationStatus
     );
 
+    @Query("""
+        SELECT new com.sep.comiverse.dto.ChapterLiteDTO
+                (c.id, c.comic.id, c.chapterNumber, c.title, c.viewCount, c.isPremium, c.createdAt)
+        FROM ChapterEntity c
+        WHERE c.comic.id = :comicId
+                AND c.deleted = false
+                AND c.moderationStatus = :moderationStatus
+        ORDER BY c.chapterNumber ASC
+        """)
+    List<ChapterLiteDTO> findChapterMetadataByComicId(@Param("comicId") UUID comicId,
+                                                      @Param("moderationStatus") ChapterStatus moderationStatus);
+
     /**
      * Public images.
      * Chỉ lấy ảnh của chapter đã PUBLISHED.
@@ -112,10 +124,8 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
         FROM ChapterEntity c
         WHERE c.id = :chapterId
           AND c.deleted = false
-          AND c.moderationStatus = :moderationStatus
         """)
-    Optional<List<String>> findImagesByChapterIdAndStatus(
-            @Param("chapterId") UUID chapterId,
-            @Param("moderationStatus") ChapterStatus moderationStatus
+    List<String> findImagesByChapterIdAndStatus(
+            @Param("chapterId") UUID chapterId
     );
 }
