@@ -108,7 +108,7 @@ public class ComicEntity extends BaseEntity {
     @Column(name = "summary_vector", columnDefinition = "vector(768)")
     private float[] summaryVector;
 
-    @PrePersist
+   @PrePersist
     protected void ensureModerationDefaults() {
         if (this.moderationStatus == null) {
             this.moderationStatus = ComicModerationStatus.DRAFT;
