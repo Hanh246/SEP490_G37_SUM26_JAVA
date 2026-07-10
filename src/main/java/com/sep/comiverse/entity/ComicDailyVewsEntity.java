@@ -3,6 +3,7 @@ package com.sep.comiverse.entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.*;
 
 import java.time.LocalDate;
@@ -13,7 +14,9 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Table(name = "comic_daily_views")
+@Table(name = "comic_daily_views", uniqueConstraints = {
+        @UniqueConstraint(columnNames = {"comic_id", "log_date"})
+})
 @EqualsAndHashCode(callSuper = true)
 public class ComicDailyVewsEntity extends BaseEntity {
 

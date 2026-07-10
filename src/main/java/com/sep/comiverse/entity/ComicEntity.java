@@ -1,6 +1,8 @@
 package com.sep.comiverse.entity;
 
 import com.sep.comiverse.constants.ComicStatus;
+import com.sep.comiverse.entity.enums.ComicModerationStatus;
+import com.sep.comiverse.entity.enums.ComicPublicationStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -11,12 +13,16 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-@Data
+@Getter
+@Setter
 @Entity
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Table(name = "comics")
+@Table(name = "comics", indexes = {
+        @Index(name = "idx_comics_slug_deleted", columnList = "slug, deleted"),
+        @Index(name = "idx_comics_moderation_deleted", columnList = "moderation_status, deleted")
+})
 @EqualsAndHashCode(callSuper = true, exclude = "genres")
 @ToString(exclude = "genres")
 public class ComicEntity extends BaseEntity {
@@ -24,11 +30,14 @@ public class ComicEntity extends BaseEntity {
     @Column(name = "title", nullable = false)
     private String title;
 
-    @Column(name = "slug", unique = true)
+    @Column(name = "slug")
     private String slug;
 
     @Column(name = "summary", columnDefinition = "TEXT")
     private String summary;
+
+    @Column(name = "minimum_age")
+    private Integer minimumAge;
 
     @Column(name = "author_id")
     private UUID authorId;
@@ -37,8 +46,17 @@ public class ComicEntity extends BaseEntity {
     @Column(name = "status", nullable = false)
     private ComicStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "publication_status")
+    private ComicPublicationStatus publicationStatus;
+
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "moderation_status", nullable = false, length = 32)
+    private ComicModerationStatus moderationStatus = ComicModerationStatus.DRAFT;
+
     @Column(name = "cover")
-    private String cover; // Cover emoji or image path (e.g. "⚔️")
+    private String cover;
 
     @Column(name = "thumbnail")
     private String thumbnail;
@@ -51,7 +69,6 @@ public class ComicEntity extends BaseEntity {
     )
     private Set<GenreEntity> genres;
 
-    //fast query
     @Builder.Default
     @Column(name = "view_count", nullable = false, columnDefinition = "bigint default 0")
     private Long viewCount = 0L;
@@ -79,12 +96,22 @@ public class ComicEntity extends BaseEntity {
     @Column(name = "latest_chapter_update_at")
     private Instant lastChapterUpdatedAt = Instant.now();
 
-    //Recommendation
+    @Builder.Default
+    @Column(name = "chapter_count", nullable = false, columnDefinition = "integer default 0")
+    private Integer chapterCount = 0;
+
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(name = "genre_ids", columnDefinition = "uuid[]")
     private List<UUID> genreIds;
 
-    @Column(name = "summary_vector", columnDefinition = "vector(384)")
-    @JdbcTypeCode(SqlTypes.OTHER)
+    @Convert(converter = com.sep.comiverse.entity.converter.VectorConverter.class)
+    @Column(name = "summary_vector", columnDefinition = "vector(768)")
     private float[] summaryVector;
+
+   @PrePersist
+    protected void ensureModerationDefaults() {
+        if (this.moderationStatus == null) {
+            this.moderationStatus = ComicModerationStatus.DRAFT;
+        }
+    }
 }

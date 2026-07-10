@@ -2,51 +2,113 @@ package com.sep.comiverse.controller;
 
 import com.sep.comiverse.dto.ComicDTO;
 import com.sep.comiverse.dto.pagination.CursorResponseDTO;
+import com.sep.comiverse.dto.pagination.PaginationMetadata;
+import com.sep.comiverse.dto.pagination.PaginationResponse;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.dto.request.ComicExploreRequestDTO;
 import com.sep.comiverse.dto.response.BaseResponse;
-import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.plugin.crud.ComicCrudPlugin;
+import com.sep.comiverse.security.JwtTokenUtil;
+import com.sep.comiverse.service.RecommendationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/comics")
-public class ComicController extends BaseController<ComicEntity, ComicDTO, UUID, PaginationSearchDTO> {
+@RequiredArgsConstructor
+public class ComicController {
 
     private final ComicCrudPlugin comicCrudPlugin;
+    private final RecommendationService recommendationService;
+    private final JwtTokenUtil jwtTokenUtil;
 
-    @Autowired
-    public ComicController(ComicCrudPlugin crud) {
-        super(crud, ComicEntity.class);
-        this.comicCrudPlugin = crud;
+    @GetMapping
+    @Operation(summary = "Retrieve a paginated public collection of published comics")
+    public ResponseEntity<PaginationResponse<List<ComicDTO>>> findPublishedComics(
+            @Valid @ParameterObject PaginationSearchDTO paginationDTO
+    ) {
+        PaginationSearchDTO safePagination =
+                paginationDTO != null ? paginationDTO : new PaginationSearchDTO();
+
+        Page<ComicDTO> data = comicCrudPlugin.listPublishedComics(safePagination);
+
+        return ResponseEntity.ok(PaginationResponse.<List<ComicDTO>>builder()
+                .success(true)
+                .metadata(new PaginationMetadata(
+                        safePagination.getPage(),
+                        safePagination.getSize(),
+                        data.getTotalElements(),
+                        data.getTotalPages()
+                ))
+                .data(data.toList())
+                .build());
+    }
+
+    @GetMapping("/recommendations")
+    @Operation(summary = "Get recommended comics using vector similarity with cursor pagination")
+    public ResponseEntity<BaseResponse<CursorResponseDTO<ComicDTO>>> getRecommendations(
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) UUID referenceId,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        UUID userId = jwtTokenUtil.getCurrentUserId();
+        CursorResponseDTO<UUID> idCursor = recommendationService.getRecommendedComicIdsCursor(userId, cursor, referenceId, size);
+
+        List<ComicDTO> data = idCursor.getData().stream()
+                .map(id -> {
+                    try {
+                        return comicCrudPlugin.getComicDetail(id);
+                    } catch (Exception e) {
+                        return null;
+                    }
+                })
+                .filter(Objects::nonNull)
+                .toList();
+
+        CursorResponseDTO<ComicDTO> response = new CursorResponseDTO<>(
+                data,
+                idCursor.getNextCursor(),
+                idCursor.getNextReferenceId(),
+                idCursor.isHasMore()
+        );
+
+        return ResponseEntity.ok(BaseResponse.<CursorResponseDTO<ComicDTO>>builder()
+                .success(true)
+                .data(response)
+                .build());
     }
 
     @GetMapping("/all")
+    @Operation(summary = "Retrieve all published comics")
     public ResponseEntity<BaseResponse<List<ComicDTO>>> listAll() {
         return ResponseEntity.ok(BaseResponse.<List<ComicDTO>>builder()
                 .success(true)
-                .data(crudPlugin.listAll())
+                .data(comicCrudPlugin.listPublishedComics())
                 .build());
     }
 
     @GetMapping("/explore")
-    @Operation(summary = "Explore catalog using highly optimized cursor pagination with filters and dynamic sorting")
+    @Operation(summary = "Explore published catalog using optimized cursor pagination with filters and dynamic sorting")
     public ResponseEntity<BaseResponse<CursorResponseDTO<ComicDTO>>> getExploreComics(
-            @Valid @ParameterObject ComicExploreRequestDTO request) {
+            @Valid @ParameterObject ComicExploreRequestDTO request
+    ) {
+        ComicExploreRequestDTO safeRequest =
+                request != null ? request : new ComicExploreRequestDTO();
 
-        CursorResponseDTO<ComicDTO> result = comicCrudPlugin.getExploreComicsCursor(request);
+        CursorResponseDTO<ComicDTO> result =
+                comicCrudPlugin.getExploreComicsCursor(safeRequest);
 
         return ResponseEntity.ok(BaseResponse.<CursorResponseDTO<ComicDTO>>builder()
                 .success(true)
@@ -54,17 +116,85 @@ public class ComicController extends BaseController<ComicEntity, ComicDTO, UUID,
                 .build());
     }
 
-    @Override
     @GetMapping("/{id}")
-    @Operation(summary = "get comic detail")
+    @Operation(summary = "Get public comic detail")
     public ResponseEntity<BaseResponse<ComicDTO>> findById(
             @PathVariable
             @Parameter(required = true)
-            UUID id) {
-        var data = comicCrudPlugin.getComicDetail(id);
+            UUID id
+    ) {
+        ComicDTO data = comicCrudPlugin.getComicDetail(id);
+
         return ResponseEntity.ok(BaseResponse.<ComicDTO>builder()
                 .success(true)
                 .data(data)
                 .build());
+    }
+
+    @PostMapping
+    @PreAuthorize("hasAuthority('ADMIN')")
+    public ResponseEntity<BaseResponse<ComicDTO>> create(
+            @Valid @RequestBody ComicDTO dto
+    ) {
+        ComicDTO created = comicCrudPlugin.create(dto);
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(BaseResponse.<ComicDTO>builder()
+                        .success(true)
+                        .data(created)
+                        .build());
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('ADMIN')")
+    public ResponseEntity<BaseResponse<ComicDTO>> update(
+            @PathVariable UUID id,
+            @RequestBody ComicDTO dto
+    ) {
+        ComicDTO updated = comicCrudPlugin.update(id, dto);
+
+        return ResponseEntity.ok(BaseResponse.<ComicDTO>builder()
+                .success(true)
+                .data(updated)
+                .build());
+    }
+
+    /**
+     * ADMIN CRUD - xóa comic trực tiếp.
+     */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('ADMIN')")
+    public ResponseEntity<BaseResponse<Void>> delete(@PathVariable UUID id) {
+        comicCrudPlugin.delete(id);
+
+        return ResponseEntity.ok(BaseResponse.<Void>builder()
+                .success(true)
+                .build());
+    }
+
+    /**
+     * ADMIN detail - dùng khi admin cần xem cả comic chưa duyệt.
+     * Tách riêng để không trùng với public GET /comics/{id}.
+     */
+    @GetMapping("/admin/{id}")
+    @PreAuthorize("hasAuthority('ADMIN')")
+    @Operation(summary = "Get comic detail for admin")
+    public ResponseEntity<BaseResponse<ComicDTO>> findByIdForAdmin(
+            @PathVariable UUID id
+    ) {
+        var comicOptional = comicCrudPlugin.read(id);
+
+        if (comicOptional.isPresent()) {
+            BaseResponse<ComicDTO> response = BaseResponse.<ComicDTO>builder()
+                    .success(true)
+                    .data(comicOptional.get())
+                    .build();
+            return ResponseEntity.ok(response);
+        }
+
+        BaseResponse<ComicDTO> errorResponse = BaseResponse.<ComicDTO>builder()
+                .success(false)
+                .build();
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
     }
 }

@@ -5,14 +5,16 @@ import com.sep.comiverse.dto.pagination.CursorResponseDTO;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.dto.request.ComicExploreRequestDTO;
 import com.sep.comiverse.entity.ComicEntity;
+import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.plugin.AbstractCrudPlugin;
 import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.repository.IComicRepository;
-import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
-import com.sep.comiverse.service.scheduler.UserInteractionSyncScheduler;
 import com.sep.comiverse.service.scheduler.LeaderboardScheduler;
+import com.sep.comiverse.service.scheduler.UserInteractionSyncScheduler;
+import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
 import com.sep.comiverse.specification.ComicSpecification;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -142,6 +144,19 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         }
 
         return new CursorResponseDTO<>(dtoList, nextCursor, nextReferenceId, hasMore);
+    }
+
+    public List<ComicDTO> listPublishedComics() {
+        return comicRepository.findAllByDeletedFalseAndModerationStatus(ComicModerationStatus.PUBLISHED)
+                .stream()
+                .map(plugin::toDto)
+                .toList();
+    }
+
+    public Page<ComicDTO> listPublishedComics(PaginationSearchDTO paginationDTO) {
+        Pageable pageable = paginationDTO.toPageRequest();
+        return comicRepository.findPublishedComics(ComicModerationStatus.PUBLISHED, paginationDTO.getSearch(), pageable)
+                .map(plugin::toDto);
     }
 
     private String getTimeProperty(ComicEntity entity, String property) {
