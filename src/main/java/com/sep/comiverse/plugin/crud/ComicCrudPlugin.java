@@ -33,17 +33,19 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
 
     private final IComicRepository comicRepository;
     private final RedisTemplate<String, Object> redisTemplate;
-
+    private final LeaderboardScheduler leaderboardScheduler;
 
     private static final String COMIC_CACHE_PREFIX = "comic:detail:";
 
     @Autowired
     public ComicCrudPlugin(IComicRepository repository,
                            PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry,
-                           RedisTemplate<String, Object> redisTemplate) {
+                           RedisTemplate<String, Object> redisTemplate,
+                           @org.springframework.context.annotation.Lazy LeaderboardScheduler leaderboardScheduler) {
         super(repository, pluginRegistry, ComicEntity.class);
         this.comicRepository = repository;
         this.redisTemplate = redisTemplate;
+        this.leaderboardScheduler = leaderboardScheduler;
     }
 
     @Transactional(readOnly = true)
@@ -51,7 +53,12 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         String cacheKey = COMIC_CACHE_PREFIX + comicId.toString();
         String comicIdStr = comicId.toString();
 
-        ComicDTO dto = (ComicDTO) redisTemplate.opsForValue().get(cacheKey);
+        ComicDTO dto = null;
+        try {
+            dto = (ComicDTO) redisTemplate.opsForValue().get(cacheKey);
+        } catch (Exception e) {
+            // Fallback if Redis is down
+        }
 
         if (dto == null) {
             ComicEntity entity = comicRepository.findById(comicId)
@@ -59,23 +66,41 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
 
             dto = plugin.toDto(entity);
 
-            redisTemplate.opsForValue().set(cacheKey, dto, Duration.ofHours(24));
+            try {
+                redisTemplate.opsForValue().set(cacheKey, dto, Duration.ofHours(24));
+            } catch (Exception e) {
+                // Ignore Redis set errors
+            }
         }
 
         //increase view
-        Number rawViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.COMIC_VIEW_HASH, comicIdStr);
-        if (rawViews != null) {
-            dto.setViewCount(dto.getViewCount() + rawViews.intValue());
+        try {
+            Number rawViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.COMIC_VIEW_HASH, comicIdStr);
+            if (rawViews != null) {
+                dto.setViewCount(dto.getViewCount() + rawViews.intValue());
+            }
+        } catch (Exception e) {
+            // Ignore Redis hash errors
         }
+
         //increase like
-        Number rawLikes = (Number) redisTemplate.opsForHash().get(UserInteractionSyncScheduler.COMIC_LIKE_HASH, comicIdStr);
-        if (rawLikes != null) {
-            dto.setLikeCount(dto.getLikeCount() + rawLikes.intValue());
+        try {
+            Number rawLikes = (Number) redisTemplate.opsForHash().get(UserInteractionSyncScheduler.COMIC_LIKE_HASH, comicIdStr);
+            if (rawLikes != null) {
+                dto.setLikeCount(dto.getLikeCount() + rawLikes.intValue());
+            }
+        } catch (Exception e) {
+            // Ignore Redis hash errors
         }
+
         //increase save
-        Number rawSaves = (Number) redisTemplate.opsForHash().get(UserInteractionSyncScheduler.COMIC_SAVE_HASH, comicIdStr);
-        if (rawSaves != null) {
-            dto.setSaveCount(dto.getSaveCount() + rawSaves.intValue());
+        try {
+            Number rawSaves = (Number) redisTemplate.opsForHash().get(UserInteractionSyncScheduler.COMIC_SAVE_HASH, comicIdStr);
+            if (rawSaves != null) {
+                dto.setSaveCount(dto.getSaveCount() + rawSaves.intValue());
+            }
+        } catch (Exception e) {
+            // Ignore Redis hash errors
         }
 
         return dto;
@@ -86,7 +111,25 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         String cacheKey = LeaderboardScheduler.LEADERBOARD_CACHE_KEY_PREFIX + timeframe;
         List<ComicDTO> ranking = (List<ComicDTO>) redisTemplate.opsForValue().get(cacheKey);
 
+        if (ranking == null) {
+            try {
+                leaderboardScheduler.computeLeaderboards();
+                ranking = (List<ComicDTO>) redisTemplate.opsForValue().get(cacheKey);
+            } catch (Exception e) {
+                // If scheduler or redis fails, fallback gracefully
+            }
+        }
+
         return ranking != null ? ranking : java.util.Collections.emptyList();
+    }
+
+    public void evictComicCache(UUID comicId) {
+        String cacheKey = COMIC_CACHE_PREFIX + comicId.toString();
+        try {
+            redisTemplate.delete(cacheKey);
+        } catch (Exception e) {
+            // Ignore/log error
+        }
     }
 
     public CursorResponseDTO<ComicDTO> getExploreComicsCursor(ComicExploreRequestDTO request) {

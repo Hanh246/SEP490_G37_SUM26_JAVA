@@ -5,13 +5,19 @@ import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.plugin.IMapperPluginDetail;
 import com.sep.comiverse.repository.IComicRepository;
+import com.sep.comiverse.service.scheduler.LeaderboardScheduler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.HashOperations;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.plugin.core.PluginRegistry;
 
+import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -30,6 +36,18 @@ public class ComicCrudPluginTest {
     @Mock
     private IMapperPluginDetail<ComicEntity, ComicDTO, UUID> mapperPlugin;
 
+    @Mock
+    private RedisTemplate<String, Object> redisTemplate;
+
+    @Mock
+    private ValueOperations<String, Object> valueOperations;
+
+    @Mock
+    private HashOperations<String, Object, Object> hashOperations;
+
+    @Mock
+    private LeaderboardScheduler leaderboardScheduler;
+
     private ComicCrudPlugin comicCrudPlugin;
 
     private final UUID comicId = UUID.randomUUID();
@@ -37,18 +55,11 @@ public class ComicCrudPluginTest {
     @BeforeEach
     void setUp() {
         when(pluginRegistry.getPluginFor(ComicEntity.class)).thenReturn(Optional.of(mapperPlugin));
-        comicCrudPlugin = new ComicCrudPlugin(comicRepository, pluginRegistry);
+        comicCrudPlugin = new ComicCrudPlugin(comicRepository, pluginRegistry, redisTemplate, leaderboardScheduler);
     }
 
     @Test
     void testGetComicDetail_CacheHit() {
-        ComicEntity comic = new ComicEntity();
-        comic.setId(comicId);
-        comic.setTitle("Cached Comic");
-        comic.setViewCount(100L);
-        comic.setLikeCount(50);
-        comic.setSaveCount(10);
-
         ComicDTO cachedDto = new ComicDTO();
         cachedDto.setId(comicId);
         cachedDto.setTitle("Cached Comic");
@@ -56,15 +67,19 @@ public class ComicCrudPluginTest {
         cachedDto.setLikeCount(50);
         cachedDto.setSaveCount(10);
 
-        when(comicRepository.findByIdAndDeletedFalseAndModerationStatus(comicId, com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED))
-                .thenReturn(Optional.of(comic));
-        when(mapperPlugin.toDto(comic)).thenReturn(cachedDto);
+        String cacheKey = "comic:detail:" + comicId.toString();
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(cacheKey)).thenReturn(cachedDto);
+        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
+        when(hashOperations.get(anyString(), anyString())).thenReturn(null);
 
         ComicDTO result = comicCrudPlugin.getComicDetail(comicId);
 
         assertNotNull(result);
         assertEquals("Cached Comic", result.getTitle());
         assertEquals(100L, result.getViewCount());
+        verify(comicRepository, never()).findById(any());
     }
 
     @Test
@@ -83,14 +98,56 @@ public class ComicCrudPluginTest {
         loadedDto.setLikeCount(80);
         loadedDto.setSaveCount(15);
 
-        when(comicRepository.findByIdAndDeletedFalseAndModerationStatus(comicId, com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED))
-                .thenReturn(Optional.of(comic));
+        String cacheKey = "comic:detail:" + comicId.toString();
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(cacheKey)).thenReturn(null);
+        when(comicRepository.findById(comicId)).thenReturn(Optional.of(comic));
         when(mapperPlugin.toDto(comic)).thenReturn(loadedDto);
+        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
+        when(hashOperations.get(anyString(), anyString())).thenReturn(null);
 
         ComicDTO result = comicCrudPlugin.getComicDetail(comicId);
 
         assertNotNull(result);
         assertEquals("DB Comic", result.getTitle());
         assertEquals(200L, result.getViewCount());
+        verify(valueOperations).set(eq(cacheKey), eq(loadedDto), any(Duration.class));
+    }
+
+    @Test
+    void testGetCachedLeaderboard_CacheHit() {
+        String timeframe = "day";
+        String cacheKey = "comic:leaderboard:" + timeframe;
+        ComicDTO comic = new ComicDTO();
+        comic.setId(comicId);
+        List<ComicDTO> list = List.of(comic);
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(cacheKey)).thenReturn(list);
+
+        List<ComicDTO> result = comicCrudPlugin.getCachedLeaderboard(timeframe);
+
+        assertEquals(1, result.size());
+        assertEquals(comicId, result.get(0).getId());
+        verify(leaderboardScheduler, never()).computeLeaderboards();
+    }
+
+    @Test
+    void testGetCachedLeaderboard_CacheMiss_Retries() {
+        String timeframe = "day";
+        String cacheKey = "comic:leaderboard:" + timeframe;
+        ComicDTO comic = new ComicDTO();
+        comic.setId(comicId);
+        List<ComicDTO> list = List.of(comic);
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(cacheKey)).thenReturn(null).thenReturn(list);
+
+        List<ComicDTO> result = comicCrudPlugin.getCachedLeaderboard(timeframe);
+
+        assertEquals(1, result.size());
+        assertEquals(comicId, result.get(0).getId());
+        verify(leaderboardScheduler, times(1)).computeLeaderboards();
     }
 }
