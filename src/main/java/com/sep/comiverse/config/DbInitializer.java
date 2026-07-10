@@ -60,6 +60,24 @@ public class DbInitializer implements CommandLineRunner {
         createSubmissions();
         createChatFlags();
         createForumThreads();
+
+        // Self-healing check: restore empty leaderNames to 'trantest56787' for orphaned teams
+        try {
+            List<ProjectTeamEntity> emptyLeaderTeams = projectTeamRepository.findAll().stream()
+                    .filter(t -> t.getLeaderName() == null || t.getLeaderName().isBlank() || "No Leader".equalsIgnoreCase(t.getLeaderName()))
+                    .toList();
+            for (ProjectTeamEntity team : emptyLeaderTeams) {
+                if (team.getTitle() != null && (team.getTitle().equals("trantest56787") || team.getTitle().equals("TransTest123455") || team.getTitle().contains("trantest"))) {
+                    team.setLeaderName(team.getTitle());
+                } else {
+                    team.setLeaderName("trantest56787");
+                }
+                team.setLeaderInitials("TL");
+                projectTeamRepository.save(team);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private void migrateLegacyChapterPagesIntoChapterImages() {
