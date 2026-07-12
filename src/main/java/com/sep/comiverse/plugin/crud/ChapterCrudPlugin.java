@@ -151,22 +151,12 @@ public class ChapterCrudPlugin
     public List<ChapterLiteDTO> getChaptersByComicId(UUID comicId) {
         String cacheKey = COMIC_CHAPTERS_LIST_CACHE_PREFIX + comicId.toString();
 
-        List<ChapterLiteDTO> cachedResults = null;
-        try {
-            cachedResults = (List<ChapterLiteDTO>) redisTemplate.opsForValue().get(cacheKey);
-        } catch (Exception e) {
-            // Fallback to database on Redis read failure
-        }
-
+        List<ChapterLiteDTO> cachedResults = (List<ChapterLiteDTO>) redisTemplate.opsForValue().get(cacheKey);
         if (cachedResults == null) {
             cachedResults = chapterRepository.findChapterMetadataByComicId(comicId, ChapterStatus.PUBLISHED);
 
             if (cachedResults != null && !cachedResults.isEmpty()) {
-                try {
-                    redisTemplate.opsForValue().set(cacheKey, cachedResults, Duration.ofHours(1));
-                } catch (Exception e) {
-                    // Ignore Redis write errors
-                }
+                redisTemplate.opsForValue().set(cacheKey, cachedResults, Duration.ofDays(7));
             } else {
                 return Collections.emptyList();
             }
@@ -182,14 +172,10 @@ public class ChapterCrudPlugin
                     .createdAt(dto.getCreatedAt())
                     .build();
 
-            try {
                 Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, copy.getId().toString());
                 if (rawChapterViews != null) {
                     copy.setViewCount(copy.getViewCount() + rawChapterViews.intValue());
                 }
-            } catch (Exception e) {
-                // Fallback: ignore Redis hash query issues and use database view counts
-            }
             return copy;
         }).toList();
     }
