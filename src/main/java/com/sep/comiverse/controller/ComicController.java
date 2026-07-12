@@ -28,6 +28,7 @@ import java.util.UUID;
 public class ComicController {
 
     private final ComicCrudPlugin comicCrudPlugin;
+    private final com.sep.comiverse.service.AuditLogService auditLogService;
 
     @GetMapping
     @Operation(summary = "Retrieve a paginated public collection of published comics")
@@ -165,12 +166,13 @@ public class ComicController {
      * ADMIN CRUD - sửa comic trực tiếp.
      */
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('MODERATOR')")
     public ResponseEntity<BaseResponse<ComicDTO>> update(
             @PathVariable UUID id,
             @RequestBody ComicDTO dto
     ) {
         ComicDTO updated = comicCrudPlugin.update(id, dto);
+        auditLogService.log("COMIC_MANAGEMENT", "Updated comic metadata: " + updated.getTitle());
 
         return ResponseEntity.ok(BaseResponse.<ComicDTO>builder()
                 .success(true)
@@ -179,12 +181,19 @@ public class ComicController {
     }
 
     /**
-     * ADMIN CRUD - xóa comic trực tiếp.
+     * ADMIN/MODERATOR CRUD - xóa comic trực tiếp.
      */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'MODERATOR')")
     public ResponseEntity<BaseResponse<Void>> delete(@PathVariable UUID id) {
+        String title = "Unknown Title";
+        try {
+            title = comicCrudPlugin.read(id).map(ComicDTO::getTitle).orElse("Unknown Title");
+        } catch (Exception e) {
+            // ignore
+        }
         comicCrudPlugin.delete(id);
+        auditLogService.log("COMIC_MANAGEMENT", "Archived comic profile: " + title);
 
         return ResponseEntity.ok(BaseResponse.<Void>builder()
                 .success(true)

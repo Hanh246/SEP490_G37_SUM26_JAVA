@@ -24,6 +24,9 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
     private final ITeamTaskRepository teamTaskRepository;
 
     @Autowired
+    private com.sep.comiverse.service.AuditLogService auditLogService;
+
+    @Autowired
     public ProjectTeamCrudPlugin(IProjectTeamRepository repository,
                                  PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry,
                                  ISubmissionRepository submissionRepository,
@@ -36,8 +39,9 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
     @Override
     @org.springframework.transaction.annotation.Transactional
     public ProjectTeamDTO create(ProjectTeamDTO dto) throws RuntimeException {
-        // Create project team using base CRUD logic
-        return super.create(dto);
+        ProjectTeamDTO created = super.create(dto);
+        auditLogService.log("PROJECT_TEAMS", "Created project team: " + created.getTitle() + " for comic: " + created.getComicName());
+        return created;
     }
 
     @Override
@@ -81,5 +85,20 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
             }
         }
         return super.update(id, dto);
+    }
+
+    @Override
+    @org.springframework.transaction.annotation.Transactional
+    public void delete(UUID id) throws RuntimeException {
+        String teamTitle = "Unknown Team";
+        try {
+            var existing = repository.findById(id).orElse(null);
+            if (existing != null) {
+                teamTitle = existing.getTitle();
+            }
+        } catch (Exception e) {}
+        
+        super.delete(id);
+        auditLogService.log("PROJECT_TEAMS", "Removed project team: " + teamTitle);
     }
 }

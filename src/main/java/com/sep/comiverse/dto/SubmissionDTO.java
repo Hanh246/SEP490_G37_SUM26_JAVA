@@ -4,6 +4,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import java.util.UUID;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -26,5 +27,8 @@ public class SubmissionDTO {
     private String status;
     private String cover;
     private String content;
+    private List<String> genres;
     private String rejectionReason;
+    private UUID moderatorId;
+    private String moderatorName;
 }

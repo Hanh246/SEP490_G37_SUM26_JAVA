@@ -19,6 +19,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import com.sep.comiverse.security.UserPrincipal;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.time.Instant;
@@ -34,6 +36,9 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
     @Autowired
     private ISubmissionRepository submissionRepository;
+
+    @Autowired
+    private com.sep.comiverse.service.AuditLogService auditLogService;
 
     @Autowired
     private IComicRepository comicRepository;
@@ -64,15 +69,25 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
     @PutMapping("/{id}/approve")
     @Transactional
-    public ResponseEntity<BaseResponse<SubmissionDTO>> approve(@PathVariable UUID id) {
+    public ResponseEntity<BaseResponse<SubmissionDTO>> approve(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
         SubmissionEntity submission = submissionRepository.findById(id)
                 .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Submission with id " + id + " not found"));
 
         boolean alreadyApproved = "approved".equalsIgnoreCase(submission.getStatus());
         submission.setStatus("approved");
+        if (principal != null) {
+            submission.setModeratorId(principal.getId());
+        }
         SubmissionEntity savedSubmission = submissionRepository.save(submission);
 
         if (!alreadyApproved) {
+            String targetDesc = (submission.getChapter() != null && !submission.getChapter().isBlank()) 
+                    ? "chapter " + submission.getChapter() 
+                    : "Comic profile";
+            auditLogService.log("REVIEW_QUEUE", "Approved " + targetDesc + " of " + submission.getTitle());
             if ("author".equalsIgnoreCase(submission.getQueueType())) {
                 handleAuthorApproval(submission);
             } else if ("translator".equalsIgnoreCase(submission.getQueueType())) {
@@ -91,6 +106,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         if (comic != null) {
             if (submission.getChapterId() == null) {
                 comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+                comic.setLastChapterUpdatedAt(Instant.now());
             } else {
                 chapterRepository.findById(submission.getChapterId()).ifPresent(chapter -> {
                     chapter.setModerationStatus(ChapterStatus.PUBLISHED);
@@ -206,7 +222,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 .max(java.util.Comparator.comparing(chapter -> toChapterSortNumber(chapter.getChapterNumber())))
                 .ifPresentOrElse(chapter -> {
                     comic.setLatestChapterNumber(chapter.getChapterNumber());
-                    comic.setLastChapterUpdatedAt(chapter.getUpdatedAt() != null ? chapter.getUpdatedAt() : Instant.now());
+                    comic.setLastChapterUpdatedAt(Instant.now());
                 }, () -> {
                     comic.setLatestChapterNumber(null);
                     comic.setLastChapterUpdatedAt(Instant.now());
@@ -274,7 +290,8 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
     @Transactional
     public ResponseEntity<BaseResponse<SubmissionDTO>> reject(
             @PathVariable UUID id,
-            @RequestBody Map<String, String> body
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal UserPrincipal principal
     ) {
         SubmissionEntity submission = submissionRepository.findById(id)
                 .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Submission with id " + id + " not found"));
@@ -282,8 +299,13 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         String reason = body != null ? body.getOrDefault("reason", "No reason provided.") : "No reason provided.";
         submission.setStatus("rejected");
         submission.setRejectionReason(reason);
+        if (principal != null) {
+            submission.setModeratorId(principal.getId());
+        }
 
         SubmissionEntity savedSubmission = submissionRepository.save(submission);
+        String targetDesc = "author".equalsIgnoreCase(submission.getQueueType()) ? "Comic profile" : "chapter " + submission.getChapter();
+        auditLogService.log("REVIEW_QUEUE", "Rejected " + targetDesc + " of " + submission.getTitle() + " (Reason: " + reason + ")");
         handleSubmissionRejected(submission);
 
         return ResponseEntity.ok(BaseResponse.<SubmissionDTO>builder()
