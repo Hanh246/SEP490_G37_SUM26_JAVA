@@ -156,7 +156,7 @@ public class ChapterCrudPlugin
             cachedResults = chapterRepository.findChapterMetadataByComicId(comicId, ChapterStatus.PUBLISHED);
 
             if (cachedResults != null && !cachedResults.isEmpty()) {
-                redisTemplate.opsForValue().set(cacheKey, cachedResults, Duration.ofDays(7));
+                redisTemplate.opsForValue().set(cacheKey, cachedResults, Duration.ofHours(3));
             } else {
                 return Collections.emptyList();
             }
