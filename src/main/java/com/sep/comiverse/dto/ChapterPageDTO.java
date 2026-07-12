@@ -1,13 +1,12 @@
 package com.sep.comiverse.dto;
 
 import com.sep.comiverse.entity.enums.PageStatus;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 @Data
 @Builder
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 public class ChapterPageDTO {
@@ -15,5 +14,5 @@ public class ChapterPageDTO {
     private Integer pageNumber;
     private String imageUrl;
     private PageStatus status;
-
+    private String bubbles;
 }

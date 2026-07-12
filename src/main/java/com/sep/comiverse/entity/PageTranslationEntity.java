@@ -3,6 +3,8 @@ package com.sep.comiverse.entity;
 import com.sep.comiverse.entity.enums.PageStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.util.UUID;
 
@@ -32,11 +34,19 @@ public class PageTranslationEntity extends BaseEntity{
     @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 20)
-    private PageStatus status = PageStatus.BACKLOG;
+    private PageStatus status = PageStatus.TODO;
+
+    @Builder.Default
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "bubbles", columnDefinition = "jsonb")
+    private String bubbles = "[]";
 
     protected void ensureDefaults() {
         if (status == null) {
-            status = PageStatus.BACKLOG;
+            status = PageStatus.TODO;
+        }
+        if( bubbles == null) {
+            bubbles = "[]";
         }
     }
 }
