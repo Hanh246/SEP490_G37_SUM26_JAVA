@@ -42,6 +42,8 @@ public class SecurityConfig {
     private static final String[] URL_WHITELIST = {
             "/auth/**",
             "/upload/**",
+            "/likes/**",
+            "/saves/**",
             "/sync/**",
             "/error",
             "/v3/api-docs/**",

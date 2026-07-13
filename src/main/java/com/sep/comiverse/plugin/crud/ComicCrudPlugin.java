@@ -167,15 +167,7 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         boolean hasMore = entities.size() > request.getSize();
         List<ComicEntity> resultEntities = hasMore ? entities.subList(0, request.getSize()) : entities;
 
-        List<ComicDTO> dtoList = resultEntities.stream().map(entity -> {
-            ComicDTO dto = new ComicDTO();
-            dto.setId(entity.getId());
-            dto.setTitle(entity.getTitle());
-            dto.setStatus(entity.getStatus());
-            dto.setCover(entity.getCover());
-            dto.setViewCount(entity.getViewCount());
-            return dto;
-        }).toList();
+        List<ComicDTO> dtoList = resultEntities.stream().map(plugin::toDto).toList();
 
         String nextCursor = null;
         UUID nextReferenceId = null;

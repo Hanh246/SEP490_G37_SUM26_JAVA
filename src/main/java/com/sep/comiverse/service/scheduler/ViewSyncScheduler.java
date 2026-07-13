@@ -1,8 +1,10 @@
 package com.sep.comiverse.service.scheduler;
 
 import com.fasterxml.uuid.Generators;
+import com.sep.comiverse.plugin.crud.ComicCrudPlugin;
 import com.sep.comiverse.service.ReadingHistoryService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -14,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class ViewSyncScheduler {
@@ -21,6 +24,7 @@ public class ViewSyncScheduler {
     private final RedisTemplate<String, Object> redisTemplate;
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final ReadingHistoryService readingHistoryService;
+    private final ComicCrudPlugin comicCrudPlugin;
 
     public static final String COMIC_VIEW_HASH = "comic:view:counter";
     public static final String CHAPTER_VIEW_HASH = "chapter:view:counter";
@@ -79,6 +83,13 @@ public class ViewSyncScheduler {
 
             jdbcTemplate.update(upsertDailySql, params);
             jdbcTemplate.update(updateGlobalSql, params);
+
+            // Evict cache of comic detail
+            try {
+                comicCrudPlugin.evictComicCache(UUID.fromString(comicIdStr));
+            } catch (Exception e) {
+                log.error("Failed to evict comic cache for comicId: {}", comicIdStr, e);
+            }
         }
     }
 
