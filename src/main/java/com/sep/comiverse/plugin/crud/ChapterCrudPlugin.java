@@ -156,7 +156,7 @@ public class ChapterCrudPlugin
             cachedResults = chapterRepository.findChapterMetadataByComicId(comicId, ChapterStatus.PUBLISHED);
 
             if (cachedResults != null && !cachedResults.isEmpty()) {
-                redisTemplate.opsForValue().set(cacheKey, cachedResults, Duration.ofDays(7));
+                redisTemplate.opsForValue().set(cacheKey, cachedResults, Duration.ofHours(3));
             } else {
                 return Collections.emptyList();
             }
@@ -172,11 +172,29 @@ public class ChapterCrudPlugin
                     .createdAt(dto.getCreatedAt())
                     .build();
 
-            Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, copy.getId().toString());
-            if (rawChapterViews != null) {
-                copy.setViewCount(copy.getViewCount() + rawChapterViews.intValue());
-            }
+                Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, copy.getId().toString());
+                if (rawChapterViews != null) {
+                    copy.setViewCount(copy.getViewCount() + rawChapterViews.intValue());
+                }
             return copy;
         }).toList();
+    }
+
+    public void evictChaptersCache(UUID comicId) {
+        String cacheKey = COMIC_CHAPTERS_LIST_CACHE_PREFIX + comicId.toString();
+        try {
+            redisTemplate.delete(cacheKey);
+        } catch (Exception e) {
+            // Ignore/log error
+        }
+    }
+
+    public void evictChapterDetailCache(UUID chapterId) {
+        String cacheKey = CHAPTER_DETAIL_CACHE_PREFIX + chapterId.toString();
+        try {
+            redisTemplate.delete(cacheKey);
+        } catch (Exception e) {
+            // Ignore/log error
+        }
     }
 }

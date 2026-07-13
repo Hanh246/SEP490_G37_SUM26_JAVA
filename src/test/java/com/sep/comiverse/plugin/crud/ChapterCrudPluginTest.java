@@ -91,7 +91,7 @@ public class ChapterCrudPluginTest {
         entity.setModerationStatus(ChapterStatus.PUBLISHED);
         entity.setImages(List.of("img1.png", "img2.png"));
 
-        when(chapterRepository.findByIdAndDeletedFalseAndModerationStatus(chapterId, ChapterStatus.PUBLISHED))
+        when(chapterRepository.findById(chapterId))
                 .thenReturn(Optional.of(entity));
 
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
@@ -129,7 +129,7 @@ public class ChapterCrudPluginTest {
         entity.setModerationStatus(ChapterStatus.PUBLISHED);
         entity.setImages(List.of("img1.png", "img2.png"));
 
-        when(chapterRepository.findByIdAndDeletedFalseAndModerationStatus(chapterId, ChapterStatus.PUBLISHED))
+        when(chapterRepository.findById(chapterId))
                 .thenReturn(Optional.of(entity));
 
         // Mock authorization
@@ -168,7 +168,7 @@ public class ChapterCrudPluginTest {
         entity.setModerationStatus(ChapterStatus.PUBLISHED);
         entity.setImages(List.of("img1.png", "img2.png"));
 
-        when(chapterRepository.findByIdAndDeletedFalseAndModerationStatus(chapterId, ChapterStatus.PUBLISHED))
+        when(chapterRepository.findById(chapterId))
                 .thenReturn(Optional.of(entity));
 
         // Mock unauthorized
@@ -199,7 +199,7 @@ public class ChapterCrudPluginTest {
                 .createdAt(java.time.Instant.now())
                 .build();
 
-        when(chapterRepository.findChapterMetadataByComicIdAndStatus(comicId, ChapterStatus.PUBLISHED))
+        when(chapterRepository.findChapterMetadataByComicId(comicId, ChapterStatus.PUBLISHED))
                 .thenReturn(List.of(liteDto));
 
         // Redis view tracking mock
