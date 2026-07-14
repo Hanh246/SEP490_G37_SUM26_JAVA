@@ -13,8 +13,7 @@ import java.util.UUID;
 public class ChapterUploadRequest {
 
     private UUID authorId;
-
-    @NotBlank(message = "Chapter number is required")
+    
     private String chapterNumber;
 
     private String title;

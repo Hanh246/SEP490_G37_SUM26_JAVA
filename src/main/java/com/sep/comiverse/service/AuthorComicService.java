@@ -166,9 +166,31 @@ public class AuthorComicService {
         chapterRepository.findAllByComic_IdAndDeletedFalse(comicId).forEach(chapter -> {
             chapter.setDeleted(true);
             chapterRepository.save(chapter);
+            cancelPendingChapterSubmissions(chapter.getId(), authorId);
         });
+        cancelPendingComicSubmissions(comicId, authorId);
         comic.setDeleted(true);
         comicRepository.save(comic);
+    }
+
+    private void cancelPendingComicSubmissions(UUID comicId, UUID authorId) {
+        submissionRepository.findAllByComicIdAndAuthorIdAndQueueTypeIgnoreCaseAndStatusIgnoreCaseAndDeletedFalse(
+                        comicId, authorId, "author", "pending")
+                .forEach(submission -> {
+                    submission.setStatus("cancelled");
+                    submission.setDeleted(true);
+                    submissionRepository.save(submission);
+                });
+    }
+
+    private void cancelPendingChapterSubmissions(UUID chapterId, UUID authorId) {
+        submissionRepository.findAllByChapterIdAndAuthorIdAndQueueTypeIgnoreCaseAndStatusIgnoreCaseAndDeletedFalse(
+                        chapterId, authorId, "author", "pending")
+                .forEach(submission -> {
+                    submission.setStatus("cancelled");
+                    submission.setDeleted(true);
+                    submissionRepository.save(submission);
+                });
     }
 
     @Transactional(readOnly = true)
