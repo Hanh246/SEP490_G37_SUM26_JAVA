@@ -128,4 +128,6 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
     List<String> findImagesByChapterIdAndStatus(
             @Param("chapterId") UUID chapterId
     );
+
+    List<ChapterEntity> findByProjectTeam_Id(UUID projectTeamId);
 }

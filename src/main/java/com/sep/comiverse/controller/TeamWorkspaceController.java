@@ -1,14 +1,18 @@
 package com.sep.comiverse.controller;
 
+import com.sep.comiverse.dto.TeamMemberDto;
+import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.entity.*;
 import com.sep.comiverse.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/team-workspace")
@@ -20,6 +24,13 @@ public class TeamWorkspaceController {
     private final ITeamMessageRepository messageRepository;
     private final ITeamTaskRepository taskRepository;
     private final ITeamJoinRequestRepository joinRequestRepository;
+    // ⚠️ 2 field MỚI cần thêm — đổi lại đúng tên interface thật trong project bạn nếu
+    // khác (ví dụ IProjectTeamRepository/IUserRepository có thể tên khác). Nhờ có
+    // @RequiredArgsConstructor ở trên class, chỉ cần khai báo field "private final" là
+    // Spring tự inject qua constructor, không cần viết tay constructor.
+    private final IProjectTeamRepository projectTeamRepository;
+    private final IUserRepository userRepository;
+    private final IChapterRepository chapterRepository;
 
     // ── ANNOUNCEMENTS ────────────────────────────────
     @GetMapping("/{teamId}/announcements")
@@ -65,23 +76,69 @@ public class TeamWorkspaceController {
     @PostMapping("/{teamId}/tasks")
     public ResponseEntity<TeamTaskEntity> createTask(@PathVariable UUID teamId, @RequestBody TeamTaskEntity task) {
         task.setProjectTeamId(teamId);
-        if (task.getProgress() == null) {
-            task.setProgress(0);
-        }
         return ResponseEntity.ok(taskRepository.save(task));
     }
 
-    @PutMapping("/tasks/{id}")
-    public ResponseEntity<TeamTaskEntity> updateTask(@PathVariable UUID id, @RequestBody TeamTaskEntity taskUpdates) {
-        return taskRepository.findById(id).map(task -> {
-            if (taskUpdates.getColumnName() != null) {
-                task.setColumnName(taskUpdates.getColumnName());
-            }
-            if (taskUpdates.getProgress() != null) {
-                task.setProgress(taskUpdates.getProgress());
-            }
-            return ResponseEntity.ok(taskRepository.save(task));
-        }).orElse(ResponseEntity.notFound().build());
+    @GetMapping("/{teamId}/members")
+    public ResponseEntity<?> getTeamMembers(@PathVariable UUID teamId) {
+        ProjectTeamEntity team = projectTeamRepository.findById(teamId).orElse(null);
+        if (team == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        List<UUID> memberIds = team.getMemberIds() != null ? team.getMemberIds() : Collections.emptyList();
+        if (memberIds.isEmpty()) {
+            return ResponseEntity.ok(Collections.emptyList());
+        }
+
+        List<UserEntity> users = userRepository.findAllById(memberIds);
+
+        List<TeamMemberDto> result = users.stream()
+                .map(u -> TeamMemberDto.builder()
+                        .id(u.getId())
+                        .name(u.getFullName())
+                        .avatar(computeInitials(u.getFullName()))
+                        .build())
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(result);
+    }
+
+    // Query TRỰC TIẾP qua repository (giống pattern taskRepository.findByProjectTeamId
+    // đã dùng cho TeamTaskEntity) thay vì đọc qua team.getChaptersList() — collection
+    // LAZY @OneToMany đôi khi trả rỗng do cache/filter ẩn khó đoán, query trực tiếp
+    // đáng tin cậy hơn.
+    // ⚠️ Cần thêm method này vào IChapterRepository nếu chưa có:
+    //     List<ChapterEntity> findByProjectTeam_Id(UUID projectTeamId);
+    @GetMapping("/{teamId}/chapters")
+    public ResponseEntity<List<ChapterLiteDTO>> getTeamChapters(@PathVariable UUID teamId) {
+        List<ChapterEntity> chapters = chapterRepository.findByProjectTeam_Id(teamId);
+
+        List<ChapterLiteDTO> result = chapters.stream()
+                .map(c -> ChapterLiteDTO.builder()
+                        .id(c.getId())
+                        .comicId(c.getComic() != null ? c.getComic().getId() : null)
+                        .chapterNumber(c.getChapterNumber())
+                        .title(c.getTitle())
+                        .viewCount(c.getViewCount())
+                        .isPremium(c.getIsPremium())
+                        .createdAt(c.getCreatedAt())
+
+                        .build())
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(result);
+    }
+
+    private String computeInitials(String fullName) {
+        if (fullName == null || fullName.isBlank()) return "?";
+        String[] parts = fullName.trim().split("\\s+");
+        StringBuilder sb = new StringBuilder();
+        for (String p : parts) {
+            if (!p.isEmpty()) sb.append(Character.toUpperCase(p.charAt(0)));
+            if (sb.length() >= 2) break;
+        }
+        return sb.toString();
     }
 
     @GetMapping("/tasks/{id}")

@@ -61,9 +61,7 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
                 TeamTaskEntity task = TeamTaskEntity.builder()
                         .projectTeamId(createdDto.getId())
                         .title(taskTitle)
-                        .columnName("backlog")
-                        .progress(0)
-                        .assignees("")
+                        .status("backlog")
                         .build();
                 teamTaskRepository.save(task);
             }

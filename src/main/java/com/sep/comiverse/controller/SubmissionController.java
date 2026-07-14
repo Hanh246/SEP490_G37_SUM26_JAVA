@@ -144,9 +144,8 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                     com.sep.comiverse.entity.TeamTaskEntity task = com.sep.comiverse.entity.TeamTaskEntity.builder()
                             .projectTeamId(team.getId())
                             .title(taskTitle)
-                            .columnName("backlog")
-                            .progress(0)
-                            .assignees("")
+                            .status("backlog")
+
                             .build();
                     teamTaskRepository.save(task);
                 }

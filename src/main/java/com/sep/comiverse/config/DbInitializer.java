@@ -327,7 +327,6 @@ public class DbInitializer implements CommandLineRunner {
                     .priority("High")
                     .cover("⚔️")
                     .description("A legendary sword cultivator reincarnates in a waste body and climbs to the peak of martial arts.")
-                    .assignedToMe(true)
                     .build();
 
             team1.getChaptersList().add(ChapterEntity.builder()
@@ -439,54 +438,42 @@ public class DbInitializer implements CommandLineRunner {
             teamTaskRepository.save(TeamTaskEntity.builder()
                     .projectTeamId(team1.getId())
                     .title("Chapter 46 - Translation")
-                    .columnName("backlog")
-                    .progress(0)
-                    .assignees("MC")
+                    .status("backlog")
                     .dueDate("06/20/2024")
                     .build());
 
             teamTaskRepository.save(TeamTaskEntity.builder()
                     .projectTeamId(team1.getId())
                     .title("Chapter 45 - Translation")
-                    .columnName("in_progress")
-                    .progress(65)
-                    .assignees("MC,SD")
+                    .status("in_progress")
                     .dueDate("06/15/2024")
                     .build());
 
             teamTaskRepository.save(TeamTaskEntity.builder()
                     .projectTeamId(team1.getId())
                     .title("Chapter 44 - Typesetting")
-                    .columnName("in_progress")
-                    .progress(80)
-                    .assignees("EB")
+                    .status("in_progress")
                     .dueDate("06/14/2024")
                     .build());
 
             teamTaskRepository.save(TeamTaskEntity.builder()
                     .projectTeamId(team1.getId())
                     .title("Chapter 43 - QC")
-                    .columnName("under_review")
-                    .progress(95)
-                    .assignees("LM,SD")
+                    .status("under_review")
                     .dueDate("06/07/2024")
                     .build());
 
             teamTaskRepository.save(TeamTaskEntity.builder()
                     .projectTeamId(team1.getId())
                     .title("Chapter 42")
-                    .columnName("completed")
-                    .progress(100)
-                    .assignees("MC")
+                    .status("completed")
                     .dueDate("06/10/2024")
                     .build());
 
             teamTaskRepository.save(TeamTaskEntity.builder()
                     .projectTeamId(team1.getId())
                     .title("Chapter 10")
-                    .columnName("paused")
-                    .progress(0)
-                    .assignees("")
+                    .status("paused")
                     .dueDate("05/01/2024")
                     .build());
 
@@ -506,7 +493,6 @@ public class DbInitializer implements CommandLineRunner {
                     .priority("Medium")
                     .cover("🔮")
                     .description("An urban student discovers ancient spiritual energy is recovering across the globe.")
-                    .assignedToMe(true)
                     .build();
 
             team2.getChaptersList().add(ChapterEntity.builder()
@@ -551,7 +537,6 @@ public class DbInitializer implements CommandLineRunner {
                     .priority("Low")
                     .cover("👑")
                     .description("The overthrown Demon Monarch wakes up as a low-level guard in a rival human kingdom.")
-                    .assignedToMe(false)
                     .build();
 
             team3.getChaptersList().add(ChapterEntity.builder()

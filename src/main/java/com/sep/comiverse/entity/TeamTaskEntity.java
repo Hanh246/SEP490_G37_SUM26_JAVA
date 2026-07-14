@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -28,15 +29,11 @@ public class TeamTaskEntity {
     @Column(name = "title")
     private String title;
 
-    @Column(name = "column_name")
-    private String columnName;
+    @Column(name = "status")
+    private String status;
 
-
-    @Column(name = "progress")
-    private Integer progress;
-
-    @Column(name = "assignees")
-    private String assignees; // Comma-separated list, e.g. "MC,SD"
+    @Column(name = "assignee_ids")
+    private List<UUID> assigneeIds;
 
     @Column(name = "due_date")
     private String dueDate;
