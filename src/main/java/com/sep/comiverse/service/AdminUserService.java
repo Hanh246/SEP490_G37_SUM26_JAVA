@@ -24,6 +24,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AdminUserService {
 
+    private static final String DEFAULT_ADMIN_RESET_PASSWORD = "abcd1234";
+
     private final IUserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailUtil emailUtil;
@@ -95,6 +97,18 @@ public class AdminUserService {
         String subject = "Your Password Has Been Reset by Admin";
         String content = buildResetEmailContent(user.getFullName(), user.getUsername(), tempPassword);
         emailUtil.sendEmail(user.getEmail(), subject, content);
+    }
+
+    /**
+     * Reset a user's password to the default value configured for admin account management.
+     */
+    @Transactional
+    public void resetUserPasswordToDefault(UUID userId) {
+        UserEntity user = findUserOrThrow(userId);
+        user.setPassword(passwordEncoder.encode(DEFAULT_ADMIN_RESET_PASSWORD));
+        user.setResetToken(null);
+        user.setResetTokenExpiresAt(null);
+        userRepository.save(user);
     }
 
     /**

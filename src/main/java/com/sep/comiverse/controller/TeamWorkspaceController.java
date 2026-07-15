@@ -4,9 +4,12 @@ import com.sep.comiverse.entity.*;
 import com.sep.comiverse.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import com.sep.comiverse.entity.enums.ChapterStatus;
+import com.sep.comiverse.security.UserPrincipal;
+import com.sep.comiverse.service.NotificationService;
 
 import java.util.List;
 import java.util.Map;
@@ -25,6 +28,7 @@ public class TeamWorkspaceController {
     private final IProjectTeamRepository projectTeamRepository;
     private final IComicRepository comicRepository;
     private final IChapterRepository chapterRepository;
+    private final NotificationService notificationService;
 
     // ── ANNOUNCEMENTS ────────────────────────────────
     @GetMapping("/{teamId}/announcements")
@@ -129,19 +133,43 @@ public class TeamWorkspaceController {
         if (task.getProgress() == null) {
             task.setProgress(0);
         }
-        return ResponseEntity.ok(taskRepository.save(task));
+        TeamTaskEntity saved = taskRepository.save(task);
+        if (saved.getAssigneeId() != null) {
+            ProjectTeamEntity team = projectTeamRepository.findById(teamId).orElse(null);
+            String teamName = team == null ? "your translation team" : team.getTitle();
+            notificationService.notifyUser(
+                    saved.getAssigneeId(),
+                    "New task assigned",
+                    saved.getTitle() + " was assigned to you in " + teamName + ".",
+                    "UPDATE"
+            );
+        }
+        return ResponseEntity.ok(saved);
     }
 
     @PutMapping("/tasks/{id}")
     public ResponseEntity<TeamTaskEntity> updateTask(@PathVariable UUID id, @RequestBody TeamTaskEntity taskUpdates) {
         return taskRepository.findById(id).map(task -> {
+            boolean wasCompleted = "completed".equalsIgnoreCase(task.getColumnName());
             if (taskUpdates.getColumnName() != null) {
                 task.setColumnName(taskUpdates.getColumnName());
             }
             if (taskUpdates.getProgress() != null) {
                 task.setProgress(taskUpdates.getProgress());
             }
-            return ResponseEntity.ok(taskRepository.save(task));
+            TeamTaskEntity saved = taskRepository.save(task);
+            boolean isNowCompleted = "completed".equalsIgnoreCase(saved.getColumnName());
+            if (!wasCompleted && isNowCompleted) {
+                projectTeamRepository.findById(saved.getProjectTeamId()).ifPresent(team ->
+                        notificationService.notifyUser(
+                                team.getLeaderId(),
+                                "Task completed",
+                                saved.getTitle() + " was marked complete in " + team.getTitle() + ".",
+                                "INFO"
+                        )
+                );
+            }
+            return ResponseEntity.ok(saved);
         }).orElse(ResponseEntity.notFound().build());
     }
 
@@ -168,9 +196,57 @@ public class TeamWorkspaceController {
     }
 
     @PostMapping("/{teamId}/requests")
-    public ResponseEntity<TeamJoinRequestEntity> createRequest(@PathVariable UUID teamId, @RequestBody TeamJoinRequestEntity request) {
+    public ResponseEntity<TeamJoinRequestEntity> createRequest(
+            @PathVariable UUID teamId,
+            @RequestBody TeamJoinRequestEntity request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
         request.setProjectTeamId(teamId);
-        return ResponseEntity.ok(joinRequestRepository.save(request));
+        if (principal != null) {
+            request.setRequesterId(principal.getId());
+        }
+        TeamJoinRequestEntity saved = joinRequestRepository.save(request);
+        projectTeamRepository.findById(teamId).ifPresent(team ->
+                notificationService.notifyUser(
+                        team.getLeaderId(),
+                        "New team join request",
+                        saved.getName() + " requested to join " + team.getTitle() + ".",
+                        "INFO"
+                )
+        );
+        return ResponseEntity.ok(saved);
+    }
+
+    @PutMapping("/requests/{id}/decision")
+    public ResponseEntity<TeamJoinRequestEntity> decideRequest(
+            @PathVariable UUID id,
+            @RequestBody Map<String, String> body
+    ) {
+        TeamJoinRequestEntity request = joinRequestRepository.findById(id).orElse(null);
+        if (request == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String decision = body == null ? "" : body.getOrDefault("decision", "").trim().toLowerCase();
+        if (!"approved".equals(decision) && !"rejected".equals(decision)) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        ProjectTeamEntity team = projectTeamRepository.findById(request.getProjectTeamId()).orElse(null);
+        if (team != null && "approved".equals(decision)) {
+            team.setMembersCount((team.getMembersCount() == null ? 0 : team.getMembersCount()) + 1);
+            projectTeamRepository.save(team);
+        }
+
+        String teamName = team == null ? "the translation team" : team.getTitle();
+        notificationService.notifyUser(
+                request.getRequesterId(),
+                "Team request " + decision,
+                "Your request to join " + teamName + " was " + decision + ".",
+                "approved".equals(decision) ? "UPDATE" : "WARNING"
+        );
+        joinRequestRepository.deleteById(id);
+        return ResponseEntity.ok(request);
     }
 
     @DeleteMapping("/requests/{id}")

@@ -58,7 +58,7 @@ public class ChapterController {
     @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<BaseResponse<ChapterDTO>> findById(@PathVariable UUID id) {
         return chapterCrudPlugin.read(id)
-                .map(dto -> ResponseEntity.ok(
+                .<ResponseEntity<BaseResponse<ChapterDTO>>>map(dto -> ResponseEntity.ok(
                         BaseResponse.<ChapterDTO>builder()
                                 .success(true)
                                 .data(dto)

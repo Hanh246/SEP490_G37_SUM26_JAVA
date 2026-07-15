@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Data
 @Entity
@@ -35,6 +36,9 @@ public class ProjectTeamEntity extends BaseEntity {
 
     @Column(name = "leader_name")
     private String leaderName;
+
+    @Column(name = "leader_id")
+    private UUID leaderId;
 
     @Column(name = "leader_initials")
     private String leaderInitials;

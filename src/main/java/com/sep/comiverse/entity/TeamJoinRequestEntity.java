@@ -19,6 +19,9 @@ public class TeamJoinRequestEntity {
     @Column(name = "project_team_id", nullable = false)
     private UUID projectTeamId;
 
+    @Column(name = "requester_id")
+    private UUID requesterId;
+
     @Column(name = "name")
     private String name;
 

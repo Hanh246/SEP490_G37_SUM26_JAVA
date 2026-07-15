@@ -38,6 +38,9 @@ public class TeamTaskEntity {
     @Column(name = "assignees")
     private String assignees; // Comma-separated list, e.g. "MC,SD"
 
+    @Column(name = "assignee_id")
+    private UUID assigneeId;
+
     @Column(name = "due_date")
     private String dueDate;
 }
