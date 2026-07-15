@@ -51,11 +51,6 @@ public class ProjectTeamController extends BaseController<ProjectTeamEntity, Pro
         return ResponseEntity.ok(result);
     }
 
-    // ⚠️ "comicTitle" và "assignedToMe" trong ProjectTeamDTO không thấy field tương ứng
-    // trực tiếp trên ProjectTeamEntity — để trống (null/false) tạm thời. Nếu 2 field này
-    // cần tính toán từ đâu đó khác (VD assignedToMe dựa vào user hiện tại), báo mình bổ
-    // sung logic đúng. "chaptersList" cũng để trống — trang danh sách project không cần
-    // hiển thị chi tiết chapter ở đây (đã có API riêng /team-workspace/{teamId}/chapters).
     private ProjectTeamDTO toDto(ProjectTeamEntity e) {
         ProjectTeamDTO dto = new ProjectTeamDTO();
         dto.setId(e.getId());

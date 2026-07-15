@@ -14,5 +14,6 @@ import java.util.UUID;
 public class TeamMemberDto {
     private UUID id;
     private String name;
+    private String role;
     private String avatar;
 }
