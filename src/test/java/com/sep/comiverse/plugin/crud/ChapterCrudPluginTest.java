@@ -202,7 +202,9 @@ public class ChapterCrudPluginTest {
         when(chapterRepository.findChapterMetadataByComicId(comicId, ChapterStatus.PUBLISHED))
                 .thenReturn(List.of(liteDto));
 
-        // Redis view tracking mock
+        // Redis mocks
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(anyString())).thenReturn(null);
         when(redisTemplate.opsForHash()).thenReturn(hashOperations);
         when(hashOperations.get(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString())).thenReturn(5);
 

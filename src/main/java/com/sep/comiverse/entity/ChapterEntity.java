@@ -61,19 +61,4 @@ public class ChapterEntity extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "project_team_id")
     private ProjectTeamEntity projectTeam;
-
-    protected void ensureDefaults() {
-        if (moderationStatus == null) {
-            moderationStatus = ChapterStatus.DRAFT;
-        }
-        if (images == null) {
-            images = new ArrayList<>();
-        }
-        if (viewCount == null) {
-            viewCount = 0L;
-        }
-        if (isPremium == null) {
-            isPremium = false;
-        }
-    }
 }

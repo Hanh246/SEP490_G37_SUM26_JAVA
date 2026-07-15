@@ -86,99 +86,83 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
     }
 
     private void handleAuthorApproval(SubmissionEntity submission) {
-        // Process side effects of approval
-        if ("author".equalsIgnoreCase(submission.getQueueType())) {
-            // Approving an author submission creates/updates a comic
-            String title = submission.getTitle();
-            String slug = title != null ? title.toLowerCase().replaceAll("[^a-z0-9]+", "-") : "";
-            ComicEntity comic = comicRepository.findAllByTitle(title).stream().findFirst()
-                    .or(() -> comicRepository.findAllByTitleIgnoreCase(title).stream().findFirst())
-                    .or(() -> comicRepository.findAllBySlug(slug).stream().findFirst())
-                    .orElse(null);
+        if (submission == null) {
+            return;
+        }
 
+        /*
+         * Case 1: Author submit chapter review.
+         * Khi moderator approve chapter submission:
+         * - lấy đúng ChapterEntity theo submission.chapterId
+         * - set moderationStatus = PUBLISHED
+         * - cập nhật metadata comic theo chapter đã publish
+         */
+        if (submission.getChapterId() != null) {
+            ChapterEntity chapter = chapterRepository.findById(submission.getChapterId())
+                    .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException(
+                            "Chapter with id " + submission.getChapterId() + " not found"
+                    ));
+
+            chapter.setModerationStatus(ChapterStatus.PUBLISHED);
+            ChapterEntity savedChapter = chapterRepository.save(chapter);
+
+            ComicEntity comic = savedChapter.getComic();
             if (comic != null) {
-                comic.setLatestChapterNumber(String.valueOf(Integer.parseInt(comic.getLatestChapterNumber() == null ? "0" : comic.getLatestChapterNumber()) + 1));
+                refreshComicMetadataAfterPublishedChapter(comic, savedChapter);
                 comicRepository.save(comic);
-            } else {
-                String authorName = submission.getSubmittedBy();
-                if (authorName != null && authorName.startsWith("Author: ")) {
-                    authorName = authorName.substring(8);
-                }
-                final String searchName = authorName;
-                com.sep.comiverse.entity.UserEntity authorUser = userRepository.findAll().stream()
-                        .filter(u -> searchName != null && (
-                                (u.getFullName() != null && u.getFullName().equalsIgnoreCase(searchName)) ||
-                                        (u.getUsername() != null && u.getUsername().equalsIgnoreCase(searchName))
-                        ))
-                        .findFirst()
-                        .orElse(null);
-                UUID authorId = authorUser != null ? authorUser.getId() : null;
-
-                ComicEntity newComic = ComicEntity.builder()
-                        .title(title)
-                        .slug(slug)
-                        .authorId(authorId)
-                        .status(com.sep.comiverse.constants.ComicStatus.ONGOING)
-                        .cover(submission.getCover() != null ? submission.getCover() : "📖")
-                        .build();
-                comicRepository.save(newComic);
             }
 
-            // Automatically push new chapter translation tasks to backlog of active teams translating this comic
-            List<ProjectTeamEntity> activeTeams = projectTeamRepository.findAll().stream()
-                    .filter(t -> t.getComicName() != null && t.getComicName().equalsIgnoreCase(title))
-                    .toList();
+            return;
+        }
 
-            for (ProjectTeamEntity team : activeTeams) {
-                String chapterTitle = submission.getChapter();
-                if (chapterTitle == null || chapterTitle.trim().isEmpty()) {
-                    chapterTitle = "Chapter 1";
-                }
-                String taskTitle = chapterTitle.contains("Translation") ? chapterTitle : chapterTitle + " - Translation";
+        /*
+         * Case 2: Author submit comic profile/review.
+         * Khi moderator approve comic submission:
+         * - lấy đúng ComicEntity theo submission.comicId
+         * - set moderationStatus = PUBLISHED
+         */
+        if (submission.getComicId() != null) {
+            ComicEntity comic = comicRepository.findById(submission.getComicId())
+                    .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException(
+                            "Comic with id " + submission.getComicId() + " not found"
+                    ));
 
-                // Avoid adding duplicate tasks
-                boolean taskExists = teamTaskRepository.findByProjectTeamId(team.getId()).stream()
-                        .anyMatch(t -> t.getTitle() != null && t.getTitle().equalsIgnoreCase(taskTitle));
+            comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+            comicRepository.save(comic);
 
-                if (!taskExists) {
-                    com.sep.comiverse.entity.TeamTaskEntity task = com.sep.comiverse.entity.TeamTaskEntity.builder()
-                            .projectTeamId(team.getId())
-                            .title(taskTitle)
-                            .status("backlog")
+            return;
+        }
 
-                            .build();
-                    teamTaskRepository.save(task);
-                }
-            }
-        } else if ("translator".equalsIgnoreCase(submission.getQueueType())) {
-            // Approving a translator submission increments project chapters & adds a chapter record
-            String teamName = submission.getSubmittedBy();
-            String comicTitle = submission.getTitle();
-
-            // Backward-compatible path for old author submissions that were created before the comic row existed.
-            if (submission.getChapterId() == null && submission.getComicId() == null) {
-                ComicEntity newComic = ComicEntity.builder()
-                        .title(submission.getTitle())
-                        .slug(buildSafeSlug(submission.getTitle()))
-                        .summary(submission.getContent())
-                        .authorId(submission.getAuthorId())
-                        .status(com.sep.comiverse.constants.ComicStatus.ONGOING)
-                        .moderationStatus(ComicModerationStatus.PUBLISHED)
-                        .cover(submission.getCover() != null ? submission.getCover() : "📖")
-                        .thumbnail(submission.getCover())
-                        .viewCount(0L)
-                        .saveCount(0)
-                        .likeCount(0)
-                        .ratingAverage(0.0)
-                        .ratingCount(0)
-                        .chapterCount(0)
-                        .lastChapterUpdatedAt(Instant.now())
-                        .build();
-                comicRepository.save(newComic);
-            }
+        /*
+         * Backward-compatible path:
+         * Chỉ dùng cho submission cũ chưa có comicId/chapterId.
+         * Không nên là luồng chính nữa.
+         */
+        ComicEntity comic = resolveComic(submission);
+        if (comic != null) {
+            comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+            comicRepository.save(comic);
         }
     }
+    private void refreshComicMetadataAfterPublishedChapter(ComicEntity comic, ChapterEntity chapter) {
+        if (comic == null || chapter == null) {
+            return;
+        }
 
+        comic.setLatestChapterNumber(chapter.getChapterNumber());
+        comic.setLastChapterUpdatedAt(Instant.now());
+
+        long publishedChapterCount = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
+                comic.getId(),
+                ChapterStatus.PUBLISHED
+        );
+
+        comic.setChapterCount(
+                publishedChapterCount > Integer.MAX_VALUE
+                        ? Integer.MAX_VALUE
+                        : (int) publishedChapterCount
+        );
+    }
     private void handleTranslatorApproval(SubmissionEntity submission) {
         String teamName = submission.getSubmittedBy();
         String comicTitle = submission.getTitle();

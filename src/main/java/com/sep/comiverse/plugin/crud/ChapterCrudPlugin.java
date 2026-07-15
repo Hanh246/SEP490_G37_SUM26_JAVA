@@ -51,7 +51,17 @@ public class ChapterCrudPlugin
     public ChapterDTO getChapterDetail(UUID chapterId, UUID userId, String clientIp) {
         String cacheKey = CHAPTER_DETAIL_CACHE_PREFIX + chapterId;
 
-        ChapterLiteDTO cacheDto = (ChapterLiteDTO) redisTemplate.opsForValue().get(cacheKey);
+        ChapterLiteDTO cacheDto = null;
+        try {
+            cacheDto = (ChapterLiteDTO) redisTemplate.opsForValue().get(cacheKey);
+        } catch (Exception e) {
+            // Delete corrupt cache so it can be rebuilt
+            try {
+                redisTemplate.delete(cacheKey);
+            } catch (Exception ex) {
+                // Ignore
+            }
+        }
         List<String> images;
 
         if (cacheDto == null) {
@@ -68,7 +78,11 @@ public class ChapterCrudPlugin
                     .createdAt(entity.getCreatedAt())
                     .build();
 
-            redisTemplate.opsForValue().set(cacheKey, cacheDto, Duration.ofDays(3));
+            try {
+                redisTemplate.opsForValue().set(cacheKey, cacheDto, Duration.ofDays(3));
+            } catch (Exception e) {
+                // Ignore Redis set errors
+            }
             images = entity.getImages();
         }else {
             List<String> rawImages = chapterRepository.findImagesByChapterIdAndStatus(chapterId);
@@ -151,12 +165,28 @@ public class ChapterCrudPlugin
     public List<ChapterLiteDTO> getChaptersByComicId(UUID comicId) {
         String cacheKey = COMIC_CHAPTERS_LIST_CACHE_PREFIX + comicId.toString();
 
-        List<ChapterLiteDTO> cachedResults = (List<ChapterLiteDTO>) redisTemplate.opsForValue().get(cacheKey);
+        List<ChapterLiteDTO> cachedResults = null;
+        try {
+            cachedResults = (List<ChapterLiteDTO>) redisTemplate.opsForValue().get(cacheKey);
+        } catch (Exception e) {
+            // Delete corrupt cache so it can be rebuilt
+            try {
+                redisTemplate.delete(cacheKey);
+            } catch (Exception ex) {
+                // Ignore
+            }
+        }
+
         if (cachedResults == null) {
             cachedResults = chapterRepository.findChapterMetadataByComicId(comicId, ChapterStatus.PUBLISHED);
 
             if (cachedResults != null && !cachedResults.isEmpty()) {
-                redisTemplate.opsForValue().set(cacheKey, cachedResults, Duration.ofHours(3));
+                List<ChapterLiteDTO> listToCache = new java.util.ArrayList<>(cachedResults);
+                try {
+                    redisTemplate.opsForValue().set(cacheKey, listToCache, Duration.ofHours(3));
+                } catch (Exception e) {
+                    // Ignore Redis set errors
+                }
             } else {
                 return Collections.emptyList();
             }

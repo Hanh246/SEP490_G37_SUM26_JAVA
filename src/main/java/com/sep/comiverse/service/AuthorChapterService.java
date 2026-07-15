@@ -30,14 +30,7 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.text.Collator;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
@@ -188,21 +181,14 @@ public class AuthorChapterService {
 
         if (request.getTitle() != null) {
             String title = trimToNull(request.getTitle());
-            if (!java.util.Objects.equals(trimToNull(chapter.getTitle()), title)) {
+            if (!Objects.equals(trimToNull(chapter.getTitle()), title)) {
                 chapter.setTitle(title);
                 changed = true;
             }
         }
 
-        if (changed) {
-            if (chapter.getModerationStatus() == ChapterStatus.PUBLISHED) {
-                chapter.setModerationStatus(ChapterStatus.SUBMITTED_FOR_REVIEW);
-                if (!hasPendingChapterSubmission(chapter.getId(), authorId)) {
-                    createChapterReviewSubmission(chapter.getComic(), chapter, authorId);
-                }
-            } else {
-                chapter.setModerationStatus(hasImages(chapter) ? ChapterStatus.PREVIEW_READY : ChapterStatus.DRAFT);
-            }
+        if (changed && chapter.getModerationStatus() != ChapterStatus.PUBLISHED) {
+            chapter.setModerationStatus(hasImages(chapter) ? ChapterStatus.PREVIEW_READY : ChapterStatus.DRAFT);
         }
 
         ChapterEntity savedChapter = chapterRepository.save(chapter);
@@ -216,7 +202,80 @@ public class AuthorChapterService {
         ChapterEntity chapter = getOwnedChapter(comicId, chapterId, authorId);
         chapter.setDeleted(true);
         chapterRepository.save(chapter);
+        cancelPendingChapterSubmissions(chapterId, authorId);
         refreshComicChapterMetadata(comic);
+    }
+
+    @Transactional
+    public ChapterPreviewResponse replaceChapterZip(UUID comicId, UUID chapterId, UUID authorId, MultipartFile zipFile) {
+        ComicEntity comic = authorComicService.getOwnedComic(comicId, authorId);
+        ChapterEntity chapter = getOwnedChapter(comicId, chapterId, authorId);
+        validateZipFile(zipFile);
+
+        String fileName = getBaseName(normalizeEntryName(zipFile.getOriginalFilename()));
+        String numberFromFileName = parseChapterNumberFromFileName(fileName);
+        if (!chapter.getChapterNumber().equals(numberFromFileName)) {
+            throw new CustomException(400,
+                    "Replacement CBZ filename must match the existing chapter number. Expected Chapter "
+                            + chapter.getChapterNumber() + ".cbz but got " + fileName,
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        List<ImageCandidate> images = extractAndValidateImages(zipFile);
+        images.sort(imageNaturalComparator());
+
+        List<String> imageUrls = new ArrayList<>();
+        String targetFolder = "comiverse/chapters/" + comicId + "/chapter-" + chapter.getChapterNumber();
+        for (int index = 0; index < images.size(); index++) {
+            ImageCandidate image = images.get(index);
+            CloudinaryUploadResult upload = cloudinaryStorageService.uploadImage(
+                    image.bytes(),
+                    buildOrderedFileName(index + 1, image.originalFileName()),
+                    targetFolder
+            );
+            imageUrls.add(upload.getSecureUrl());
+        }
+
+        chapter.setImages(imageUrls);
+        chapter.setModerationStatus(ChapterStatus.PREVIEW_READY);
+        cancelPendingChapterSubmissions(chapterId, authorId);
+
+        ChapterEntity savedChapter = chapterRepository.save(chapter);
+        refreshComicChapterMetadata(comic);
+        return toPreviewResponse(savedChapter);
+    }
+
+    private void cancelPendingChapterSubmissions(UUID chapterId, UUID authorId) {
+        submissionRepository.findAllByChapterIdAndAuthorIdAndQueueTypeIgnoreCaseAndStatusIgnoreCaseAndDeletedFalse(
+                        chapterId, authorId, "author", "pending")
+                .forEach(submission -> {
+                    submission.setStatus("cancelled");
+                    submission.setDeleted(true);
+                    submissionRepository.save(submission);
+                });
+    }
+
+    private void refreshComicChapterMetadata(ComicEntity comic) {
+        if (comic == null || comic.getId() == null) {
+            return;
+        }
+
+        List<ChapterEntity> publishedChapters = chapterRepository
+                .findAllByComic_IdAndDeletedFalseAndModerationStatus(comic.getId(), ChapterStatus.PUBLISHED);
+
+        comic.setChapterCount(publishedChapters.size());
+        publishedChapters.stream()
+                .filter(chapter -> StringUtils.hasText(chapter.getChapterNumber()))
+                .max(Comparator.comparing(chapter -> toChapterSortNumber(chapter.getChapterNumber())))
+                .ifPresentOrElse(chapter -> {
+                    comic.setLatestChapterNumber(chapter.getChapterNumber());
+                    comic.setLastChapterUpdatedAt(chapter.getUpdatedAt() != null ? chapter.getUpdatedAt() : Instant.now());
+                }, () -> {
+                    comic.setLatestChapterNumber(null);
+                    comic.setLastChapterUpdatedAt(null);
+                });
+
+        comicRepository.save(comic);
     }
 
     private boolean hasPendingChapterSubmission(UUID chapterId, UUID authorId) {
@@ -594,25 +653,6 @@ public class AuthorChapterService {
 
     private int resolvePageCount(ChapterEntity chapter) {
         return chapter.getImages() == null ? 0 : chapter.getImages().size();
-    }
-
-    private void refreshComicChapterMetadata(ComicEntity comic) {
-        if (comic == null || comic.getId() == null) {
-            return;
-        }
-        List<ChapterEntity> chapters = chapterRepository.findAllByComic_IdAndDeletedFalse(comic.getId());
-        comic.setChapterCount(chapters.size());
-        chapters.stream()
-                .filter(chapter -> StringUtils.hasText(chapter.getChapterNumber()))
-                .max(Comparator.comparing(chapter -> toChapterSortNumber(chapter.getChapterNumber())))
-                .ifPresent(chapter -> {
-                    comic.setLatestChapterNumber(chapter.getChapterNumber());
-                    comic.setLastChapterUpdatedAt(chapter.getUpdatedAt() != null ? chapter.getUpdatedAt() : Instant.now());
-                });
-        if (chapters.isEmpty()) {
-            comic.setLatestChapterNumber(null);
-        }
-        comicRepository.save(comic);
     }
 
     private BigDecimal toChapterSortNumber(String chapterNumber) {
