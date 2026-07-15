@@ -25,15 +25,32 @@ public class AuditLogController {
     private final ModelMapper modelMapper;
 
     @GetMapping("/all")
-    @Operation(summary = "Retrieve all audit logs", description = "Get sorted activity audit logs in chronological order")
+    @Operation(summary = "Retrieve all audit logs (capped to latest 100 for performance)", description = "Get sorted activity audit logs in chronological order")
     public ResponseEntity<BaseResponse<List<AuditLogDTO>>> getAllAuditLogs() {
-        List<AuditLogDTO> dtos = auditLogRepository.findAllByOrderByCreatedAtDesc().stream()
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 100, org.springframework.data.domain.Sort.by("createdAt").descending());
+        List<AuditLogDTO> dtos = auditLogRepository.findAll(pageable).getContent().stream()
                 .map(log -> modelMapper.map(log, AuditLogDTO.class))
                 .collect(Collectors.toList());
 
         return ResponseEntity.ok(BaseResponse.<List<AuditLogDTO>>builder()
                 .success(true)
                 .data(dtos)
+                .build());
+    }
+
+    @GetMapping
+    @Operation(summary = "Retrieve paginated audit logs")
+    public ResponseEntity<BaseResponse<org.springframework.data.domain.Page<AuditLogDTO>>> getPaginatedAuditLogs(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "15") int size
+    ) {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size, org.springframework.data.domain.Sort.by("createdAt").descending());
+        org.springframework.data.domain.Page<AuditLogDTO> dtoPage = auditLogRepository.findAll(pageable)
+                .map(log -> modelMapper.map(log, AuditLogDTO.class));
+
+        return ResponseEntity.ok(BaseResponse.<org.springframework.data.domain.Page<AuditLogDTO>>builder()
+                .success(true)
+                .data(dtoPage)
                 .build());
     }
 }
