@@ -23,8 +23,9 @@ public class TeamTaskEntity {
     @Column(name = "project_team_id", nullable = false)
     private UUID projectTeamId;
 
-    @Column(name = "chapter_id")
-    private UUID chapterId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "chapter_id")
+    private ChapterEntity chapter;
 
     @Column(name = "title")
     private String title;

@@ -11,4 +11,5 @@ import java.util.UUID;
 @Repository
 public interface IPageTranslationRepository extends JpaRepository<PageTranslationEntity, UUID> {
     List<PageTranslationEntity> findByTaskId_IdOrderByPageNumberAsc(UUID taskId);
+
 }

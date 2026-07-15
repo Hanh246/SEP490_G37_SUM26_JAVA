@@ -32,16 +32,6 @@ public class PageController {
         return ResponseEntity.ok(result);
     }
 
-    /**
-     * Lưu bubbles (vùng chọn + bản dịch + màu sắc + hình dạng) cho 1 trang cụ thể.
-     * Dùng LUÔN ChapterPageDTO làm request body — chỉ đọc field "bubbles" trong đó,
-     * các field khác (pageNumber, imageUrl, status...) nếu có gửi lên cũng bị BỎ QUA,
-     * không ghi đè — tránh trường hợp frontend gửi thiếu/sai các field đó làm hỏng dữ liệu.
-     *
-     * ⚠️ ChapterPageDTO BẮT BUỘC phải có @NoArgsConstructor (và setter/​@Data) thì
-     * Jackson mới deserialize được JSON gửi lên — khác với lúc trả response (GET) chỉ
-     * cần getter/builder là đủ.
-     */
     @PutMapping("/translate-workspace/pages/{pageId}/bubbles")
     public ResponseEntity<?> saveBubbles(@PathVariable UUID pageId, @RequestBody ChapterPageDTO request) {
         PageTranslationEntity page = pageTranslationRepository.findById(pageId)

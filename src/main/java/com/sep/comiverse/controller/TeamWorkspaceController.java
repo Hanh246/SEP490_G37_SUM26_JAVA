@@ -1,5 +1,6 @@
 package com.sep.comiverse.controller;
 
+import com.sep.comiverse.dto.CreateTaskRequest;
 import com.sep.comiverse.dto.TeamMemberDto;
 import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.entity.*;
@@ -9,10 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @RestController
@@ -25,13 +23,10 @@ public class TeamWorkspaceController {
     private final ITeamMessageRepository messageRepository;
     private final ITeamTaskRepository taskRepository;
     private final ITeamJoinRequestRepository joinRequestRepository;
-    // ⚠️ 2 field MỚI cần thêm — đổi lại đúng tên interface thật trong project bạn nếu
-    // khác (ví dụ IProjectTeamRepository/IUserRepository có thể tên khác). Nhờ có
-    // @RequiredArgsConstructor ở trên class, chỉ cần khai báo field "private final" là
-    // Spring tự inject qua constructor, không cần viết tay constructor.
     private final IProjectTeamRepository projectTeamRepository;
     private final IUserRepository userRepository;
     private final IChapterRepository chapterRepository;
+    private final IPageTranslationRepository iPageTranslationRepository;
 
     // ── ANNOUNCEMENTS ────────────────────────────────
     @GetMapping("/{teamId}/announcements")
@@ -75,13 +70,49 @@ public class TeamWorkspaceController {
     }
 
     @PostMapping("/{teamId}/tasks")
-    public ResponseEntity<TeamTaskEntity> createTask(@PathVariable UUID teamId, @RequestBody TeamTaskEntity task) {
-        task.setProjectTeamId(teamId);
+    public ResponseEntity<?> createTask(@PathVariable UUID teamId, @RequestBody CreateTaskRequest request) {
+
+        ChapterEntity chapter = null;
+        if (request.getChapterId() != null) {
+            chapter = chapterRepository.findById(request.getChapterId()).orElse(null);
+            if (chapter == null) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("success", false, "message", "Chapter not found: " + request.getChapterId()));
+            }
+        } else {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "chapterId is required"));
+        }
+
+        TeamTaskEntity task = TeamTaskEntity.builder()
+                .projectTeamId(teamId)
+                .title(request.getTitle())
+                .status(request.getStatus())
+                .assigneeIds(request.getAssigneeIds())
+                .chapter(chapter)
+                .dueDate(request.getDueDate())
+                .build();
+
         TeamTaskEntity created = taskRepository.save(task);
+
+        // === Copy ảnh từ chapter.images -> tạo bộ page_translation riêng cho task này ===
+        List<String> images = chapter.getImages();
+        if (images != null && !images.isEmpty()) {
+            List<PageTranslationEntity> pages = new ArrayList<>();
+            for (int i = 0; i < images.size(); i++) {
+                pages.add(PageTranslationEntity.builder()
+                        .taskId(created)
+                        .imageUrl(images.get(i))
+                        .pageNumber(i + 1)
+                        .status(com.sep.comiverse.entity.enums.PageStatus.TODO)
+                        .bubbles("[]")
+                        .build());
+            }
+            iPageTranslationRepository.saveAll(pages);
+        }
 
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
-
     @GetMapping("/{teamId}/members")
     public ResponseEntity<?> getTeamMembers(@PathVariable UUID teamId) {
         ProjectTeamEntity team = projectTeamRepository.findById(teamId).orElse(null);
@@ -106,12 +137,6 @@ public class TeamWorkspaceController {
         return ResponseEntity.ok(result);
     }
 
-    // Query TRỰC TIẾP qua repository (giống pattern taskRepository.findByProjectTeamId
-    // đã dùng cho TeamTaskEntity) thay vì đọc qua team.getChaptersList() — collection
-    // LAZY @OneToMany đôi khi trả rỗng do cache/filter ẩn khó đoán, query trực tiếp
-    // đáng tin cậy hơn.
-    // ⚠️ Cần thêm method này vào IChapterRepository nếu chưa có:
-    //     List<ChapterEntity> findByProjectTeam_Id(UUID projectTeamId);
     @GetMapping("/{teamId}/chapters")
     public ResponseEntity<List<ChapterLiteDTO>> getTeamChapters(@PathVariable UUID teamId) {
         List<ChapterEntity> chapters = chapterRepository.findByProjectTeam_Id(teamId);
@@ -145,18 +170,11 @@ public class TeamWorkspaceController {
 
     @GetMapping("/tasks/{id}")
     public ResponseEntity<Object> getTaskById(@PathVariable UUID id) {
-        var taskOpt = taskRepository.findById(id);
-
-        if (taskOpt.isPresent()) {
-            // Nếu tìm thấy, trả về trực tiếp Entity (Spring sẽ tự chuyển sang JSON)
-            return ResponseEntity.ok(taskOpt.get());
-        } else {
-            // Nếu không, trả về Map lỗi
-            return ResponseEntity.status(404).body(Map.of(
-                    "success", false,
-                    "message", "Task not found"
-            ));
+        var taskOpt = taskRepository.findByIdWithChapter(id);
+        if (taskOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("success", false, "message", "Task not found"));
         }
+        return ResponseEntity.ok(taskOpt.get());
     }
 
     // ── JOIN REQUESTS ────────────────────────────────
