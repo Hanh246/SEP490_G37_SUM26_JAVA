@@ -24,6 +24,9 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
     private final ITeamTaskRepository teamTaskRepository;
 
     @Autowired
+    private com.sep.comiverse.service.AuditLogService auditLogService;
+
+    @Autowired
     public ProjectTeamCrudPlugin(IProjectTeamRepository repository,
                                  PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry,
                                  ISubmissionRepository submissionRepository,
@@ -36,39 +39,66 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
     @Override
     @org.springframework.transaction.annotation.Transactional
     public ProjectTeamDTO create(ProjectTeamDTO dto) throws RuntimeException {
-        // Create project team using base CRUD logic
-        ProjectTeamDTO createdDto = super.create(dto);
+        ProjectTeamDTO created = super.create(dto);
+        auditLogService.log("PROJECT_TEAMS", "Created project team: " + created.getTitle() + " for comic: " + created.getComicName());
+        return created;
+    }
 
-        // Find the comic name
-        String comicName = createdDto.getComicName();
-        if (comicName != null && !comicName.trim().isEmpty()) {
-            // Find all approved submissions of type "author" for this comic
-            List<SubmissionEntity> approvedSubmissions = submissionRepository.findAll().stream()
-                    .filter(s -> "author".equalsIgnoreCase(s.getQueueType())
-                            && "approved".equalsIgnoreCase(s.getStatus())
-                            && s.getTitle() != null
-                            && s.getTitle().equalsIgnoreCase(comicName))
-                    .toList();
-
-            // Create a task in the team's backlog for each approved chapter
-            for (SubmissionEntity sub : approvedSubmissions) {
-                String chapterTitle = sub.getChapter();
-                if (chapterTitle == null || chapterTitle.trim().isEmpty()) {
-                    chapterTitle = "Chapter 1";
-                }
-                String taskTitle = chapterTitle.contains("Translation") ? chapterTitle : chapterTitle + " - Translation";
-
-                TeamTaskEntity task = TeamTaskEntity.builder()
-                        .projectTeamId(createdDto.getId())
-                        .title(taskTitle)
-                        .columnName("backlog")
-                        .progress(0)
-                        .assignees("")
-                        .build();
-                teamTaskRepository.save(task);
+    @Override
+    @org.springframework.transaction.annotation.Transactional
+    public ProjectTeamDTO update(UUID id, ProjectTeamDTO dto) throws RuntimeException {
+        var existingOpt = repository.findById(id);
+        if (existingOpt.isPresent()) {
+            var existing = existingOpt.get();
+            if (dto.getLeaderName() == null) {
+                dto.setLeaderName(existing.getLeaderName());
+            }
+            if (dto.getLeaderInitials() == null) {
+                dto.setLeaderInitials(existing.getLeaderInitials());
+            }
+            if (dto.getMembersCount() == null) {
+                dto.setMembersCount(existing.getMembersCount());
+            }
+            if (dto.getChaptersCount() == null) {
+                dto.setChaptersCount(existing.getChaptersCount());
+            }
+            if (dto.getProgress() == null) {
+                dto.setProgress(existing.getProgress());
+            }
+            if (dto.getAssignedToMe() == null) {
+                dto.setAssignedToMe(existing.getAssignedToMe());
+            }
+            if (dto.getCover() == null) {
+                dto.setCover(existing.getCover());
+            }
+            if (dto.getDeadline() == null) {
+                dto.setDeadline(existing.getDeadline());
+            }
+            if (dto.getSourceLang() == null) {
+                dto.setSourceLang(existing.getSourceLang());
+            }
+            if (dto.getTargetLang() == null) {
+                dto.setTargetLang(existing.getTargetLang());
+            }
+            if (dto.getPriority() == null) {
+                dto.setPriority(existing.getPriority());
             }
         }
+        return super.update(id, dto);
+    }
 
-        return createdDto;
+    @Override
+    @org.springframework.transaction.annotation.Transactional
+    public void delete(UUID id) throws RuntimeException {
+        String teamTitle = "Unknown Team";
+        try {
+            var existing = repository.findById(id).orElse(null);
+            if (existing != null) {
+                teamTitle = existing.getTitle();
+            }
+        } catch (Exception e) {}
+        
+        super.delete(id);
+        auditLogService.log("PROJECT_TEAMS", "Removed project team: " + teamTitle);
     }
 }

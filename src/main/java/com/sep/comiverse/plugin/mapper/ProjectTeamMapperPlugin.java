@@ -29,7 +29,18 @@ public class ProjectTeamMapperPlugin extends AbstractMapperPlugin<ProjectTeamEnt
                     .map(chap -> {
                         var chapDto = new com.sep.comiverse.dto.ChapterDTO();
                         chapDto.setId(chap.getId());
-                        chapDto.setComicId(chap.getComic() != null ? chap.getComic().getId() : null);
+                        
+                        // Extract comic ID directly from the Hibernate proxy without running a database query
+                        UUID comicId = null;
+                        if (chap.getComic() != null) {
+                            if (chap.getComic() instanceof org.hibernate.proxy.HibernateProxy proxy) {
+                                comicId = (UUID) proxy.getHibernateLazyInitializer().getIdentifier();
+                            } else {
+                                comicId = chap.getComic().getId();
+                            }
+                        }
+                        chapDto.setComicId(comicId);
+                        
                         chapDto.setChapterNumber(chap.getChapterNumber());
                         chapDto.setTitle(chap.getTitle());
                         chapDto.setNum("Chapter " + chap.getChapterNumber());

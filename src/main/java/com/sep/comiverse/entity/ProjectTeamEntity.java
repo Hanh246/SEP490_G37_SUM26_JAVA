@@ -63,7 +63,16 @@ public class ProjectTeamEntity extends BaseEntity {
     @Column(name = "assigned_to_me")
     private Boolean assignedToMe; // simple indicator flag for frontend display
 
+    @Column(name = "is_recruiting")
+    @Builder.Default
+    private Boolean isRecruiting = false;
+
+    @Column(name = "max_members")
+    @Builder.Default
+    private Integer maxMembers = 5;
+
     @OneToMany(mappedBy = "projectTeam", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @org.hibernate.annotations.BatchSize(size = 100)
     @Builder.Default
     private List<ChapterEntity> chaptersList = new ArrayList<>();
 }

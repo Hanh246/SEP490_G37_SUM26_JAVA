@@ -28,5 +28,7 @@ public class ProjectTeamDTO {
     private String notes;
     private String comicTitle;
     private Boolean assignedToMe;
+    private Boolean isRecruiting;
+    private Integer maxMembers;
     private List<ChapterDTO> chaptersList;
 }

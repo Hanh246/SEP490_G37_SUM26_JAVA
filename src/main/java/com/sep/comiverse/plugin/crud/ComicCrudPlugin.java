@@ -5,6 +5,7 @@ import com.sep.comiverse.dto.pagination.CursorResponseDTO;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.dto.request.ComicExploreRequestDTO;
 import com.sep.comiverse.entity.ComicEntity;
+import com.sep.comiverse.entity.GenreEntity;
 import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.plugin.AbstractCrudPlugin;
 import com.sep.comiverse.plugin.IMapperPlugin;
@@ -12,6 +13,7 @@ import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.service.scheduler.LeaderboardScheduler;
 import com.sep.comiverse.service.scheduler.UserInteractionSyncScheduler;
 import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
+import com.sep.comiverse.repository.IGenreRepository;
 import com.sep.comiverse.specification.ComicSpecification;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -36,16 +38,103 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
     private final LeaderboardScheduler leaderboardScheduler;
 
     private static final String COMIC_CACHE_PREFIX = "comic:detail:";
+    private final IGenreRepository genreRepository;
 
     @Autowired
     public ComicCrudPlugin(IComicRepository repository,
+                           IGenreRepository genreRepository,
                            PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry,
                            RedisTemplate<String, Object> redisTemplate,
                            @org.springframework.context.annotation.Lazy LeaderboardScheduler leaderboardScheduler) {
         super(repository, pluginRegistry, ComicEntity.class);
         this.comicRepository = repository;
+        this.genreRepository = genreRepository;
         this.redisTemplate = redisTemplate;
         this.leaderboardScheduler = leaderboardScheduler;
+    }
+
+    @Override
+    @Transactional
+    public ComicDTO update(UUID id, ComicDTO dto) throws RuntimeException {
+        ComicEntity existing = comicRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Comic not found"));
+
+        if (dto.getTitle() != null) {
+            existing.setTitle(dto.getTitle());
+        }
+        if (dto.getSlug() != null) {
+            existing.setSlug(dto.getSlug());
+        }
+        if (dto.getSummary() != null) {
+            existing.setSummary(dto.getSummary());
+        }
+        if (dto.getAuthorId() != null) {
+            existing.setAuthorId(dto.getAuthorId());
+        }
+        if (dto.getStatus() != null) {
+            existing.setStatus(dto.getStatus());
+        }
+        if (dto.getModerationStatus() != null) {
+            existing.setModerationStatus(dto.getModerationStatus());
+        }
+        if (dto.getCover() != null) {
+            existing.setCover(dto.getCover());
+        }
+        if (dto.getThumbnail() != null) {
+            existing.setThumbnail(dto.getThumbnail());
+        }
+        if (dto.getViewCount() != null) {
+            existing.setViewCount(dto.getViewCount());
+        }
+        if (dto.getLikeCount() != null) {
+            existing.setLikeCount(dto.getLikeCount());
+        }
+        if (dto.getSaveCount() != null) {
+            existing.setSaveCount(dto.getSaveCount());
+        }
+        if (dto.getRatingAverage() != null) {
+            existing.setRatingAverage(dto.getRatingAverage());
+        }
+        if (dto.getRatingCount() != null) {
+            existing.setRatingCount(dto.getRatingCount());
+        }
+        if (dto.getLatestChapterNumber() != null) {
+            existing.setLatestChapterNumber(dto.getLatestChapterNumber());
+        }
+        if (dto.getChapterCount() != null) {
+            existing.setChapterCount(dto.getChapterCount());
+        }
+        if (dto.getLastChapterUpdatedAt() != null) {
+            existing.setLastChapterUpdatedAt(dto.getLastChapterUpdatedAt());
+        }
+
+        // Update genres relation and genre_ids list property
+        if (dto.getGenreIds() != null) {
+            List<GenreEntity> genreEntities = genreRepository.findAllById(dto.getGenreIds());
+            existing.setGenres(new java.util.HashSet<>(genreEntities));
+            List<UUID> validGenreIds = genreEntities.stream()
+                    .map(GenreEntity::getId)
+                    .toList();
+            existing.setGenreIds(validGenreIds);
+        }
+
+        ComicEntity saved = comicRepository.save(existing);
+        return plugin.toDto(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ComicDTO> listPublishedComics() {
+        return comicRepository.findAllByDeletedFalseAndModerationStatusWithGenres(ComicModerationStatus.PUBLISHED)
+                .stream()
+                .map(plugin::toDto)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ComicDTO> listPublishedComics(PaginationSearchDTO paginationDTO) {
+        Pageable pageable = paginationDTO.toPageRequest();
+        return comicRepository.findPublishedComics(ComicModerationStatus.PUBLISHED, paginationDTO.getSearch(), pageable)
+                .map(plugin::toDto);
     }
 
     @Transactional(readOnly = true)
