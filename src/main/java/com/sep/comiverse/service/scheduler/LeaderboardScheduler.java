@@ -33,10 +33,13 @@ public class LeaderboardScheduler {
 
     private void cacheRankingsForTimeframe(String timeframe, LocalDate startDate, LocalDate endDate) {
         String sql = """
-            SELECT comic_id, SUM(view_count) as total_views
-            FROM comic_daily_views
-            WHERE log_date BETWEEN :startDate AND :endDate
-            GROUP BY comic_id
+            SELECT cdv.comic_id, SUM(cdv.view_count) as total_views
+            FROM comic_daily_views cdv
+            INNER JOIN comics c ON cdv.comic_id = c.id
+            WHERE cdv.log_date BETWEEN :startDate AND :endDate
+              AND c.deleted = false
+              AND c.moderation_status = 'PUBLISHED'
+            GROUP BY cdv.comic_id
             ORDER BY total_views DESC
             LIMIT 20
         """;
@@ -46,12 +49,20 @@ public class LeaderboardScheduler {
                 .addValue("endDate", endDate);
 
         List<UUID> topComicIds = jdbcTemplate.query(sql, params, (rs, rowNum) ->
-                UUID.fromString(rs.getString("comic_id"))
+                rs.getObject("comic_id", UUID.class)
         );
 
-        List<ComicDTO> leaderboardList = topComicIds.stream()
-                .map(comicCrudPlugin::getComicDetail)
-                .toList();
+        List<ComicDTO> leaderboardList = new java.util.ArrayList<>();
+        for (UUID id : topComicIds) {
+            try {
+                ComicDTO detail = comicCrudPlugin.getComicDetail(id);
+                if (detail != null) {
+                    leaderboardList.add(detail);
+                }
+            } catch (Exception e) {
+                // Ignore mapping errors
+            }
+        }
 
         String cacheKey = LEADERBOARD_CACHE_KEY_PREFIX + timeframe;
         redisTemplate.opsForValue().set(cacheKey, leaderboardList);
