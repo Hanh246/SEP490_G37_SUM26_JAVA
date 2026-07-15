@@ -235,7 +235,7 @@ public class AuthService {
     }
 
     @Transactional
-    public UserEntity updateProfile(java.util.UUID userId, String fullName, String avatarUrl) {
+    public UserEntity updateProfile(java.util.UUID userId, String fullName, String avatarUrl, String backgroundImageUrl) {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(404, "User not found", HttpStatus.NOT_FOUND));
 
@@ -244,6 +244,9 @@ public class AuthService {
         }
         if (avatarUrl != null) {
             user.setAvatarUrl(avatarUrl);
+        }
+        if (backgroundImageUrl != null) {
+            user.setBackgroundImageUrl(backgroundImageUrl);
         }
         return userRepository.save(user);
     }

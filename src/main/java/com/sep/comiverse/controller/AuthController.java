@@ -131,7 +131,12 @@ public class AuthController {
         if (principal == null) {
             throw new CustomException(401, "Unauthorized", HttpStatus.UNAUTHORIZED);
         }
-        UserEntity updatedUser = authService.updateProfile(principal.getId(), request.getFullName(), request.getAvatarUrl());
+        UserEntity updatedUser = authService.updateProfile(
+                principal.getId(),
+                request.getFullName(),
+                request.getAvatarUrl(),
+                request.getBackgroundImageUrl()
+        );
         UserProfileResponse response = premiumPlanService.toUserProfileResponse(updatedUser);
         return ResponseEntity.ok(BaseResponse.<UserProfileResponse>builder()
                 .success(true)

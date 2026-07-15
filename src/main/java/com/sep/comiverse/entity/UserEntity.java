@@ -43,6 +43,9 @@ public class UserEntity extends BaseEntity {
     @Column(name = "avatar_url")
     private String avatarUrl;
 
+    @Column(name = "background_image_url")
+    private String backgroundImageUrl;
+
     @Column(name = "reset_token")
     private String resetToken;
 

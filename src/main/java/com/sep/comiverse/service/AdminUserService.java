@@ -185,19 +185,29 @@ public class AdminUserService {
                 .fullName(user.getFullName())
                 .email(user.getEmail())
                 .phone(user.getPhone())
-                .role(capitalizeFirst(roleName))
+                .role(formatRoleName(roleName))
                 .status(displayStatus)
                 .provider(user.getProvider())
                 .avatarUrl(user.getAvatarUrl())
+                .backgroundImageUrl(user.getBackgroundImageUrl())
                 .createdDate(user.getCreatedAt() != null ? java.util.Date.from(user.getCreatedAt()) : null)
                 .updatedDate(user.getUpdatedAt() != null ? java.util.Date.from(user.getUpdatedAt()) : null)
                 .dateOfBirth(user.getDateOfBirth())
                 .build();
     }
 
-    private String capitalizeFirst(String str) {
-        if (str == null || str.isEmpty()) return str;
-        return str.substring(0, 1).toUpperCase() + str.substring(1).toLowerCase();
+    private String formatRoleName(String roleName) {
+        if (roleName == null || roleName.isBlank()) return "Reader";
+        String[] parts = roleName.trim().toLowerCase().split("[_\\s]+");
+        StringBuilder formatted = new StringBuilder();
+        for (String part : parts) {
+            if (part.isEmpty()) continue;
+            if (!formatted.isEmpty()) {
+                formatted.append(' ');
+            }
+            formatted.append(part.substring(0, 1).toUpperCase()).append(part.substring(1));
+        }
+        return formatted.isEmpty() ? "Reader" : formatted.toString();
     }
 
     private String generateTempPassword() {
