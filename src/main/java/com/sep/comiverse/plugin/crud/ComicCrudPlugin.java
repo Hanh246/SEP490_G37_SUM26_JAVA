@@ -10,6 +10,9 @@ import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.plugin.AbstractCrudPlugin;
 import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.repository.IComicRepository;
+import com.sep.comiverse.service.scheduler.LeaderboardScheduler;
+import com.sep.comiverse.service.scheduler.UserInteractionSyncScheduler;
+import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
 import com.sep.comiverse.repository.IGenreRepository;
 import com.sep.comiverse.specification.ComicSpecification;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,11 +21,12 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.plugin.core.PluginRegistry;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -30,10 +34,17 @@ import java.util.UUID;
 public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, UUID, PaginationSearchDTO> {
 
     private final IComicRepository comicRepository;
+    private final RedisTemplate<String, Object> redisTemplate;
+    private final LeaderboardScheduler leaderboardScheduler;
+
+    private static final String COMIC_CACHE_PREFIX = "comic:detail:";
     private final IGenreRepository genreRepository;
 
     @Autowired
     public ComicCrudPlugin(IComicRepository repository,
+                           PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry,
+                           RedisTemplate<String, Object> redisTemplate,
+                           @org.springframework.context.annotation.Lazy LeaderboardScheduler leaderboardScheduler) {
                            IGenreRepository genreRepository,
                            PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry) {
         super(repository, pluginRegistry, ComicEntity.class);
@@ -123,42 +134,108 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         Pageable pageable = paginationDTO.toPageRequest();
         return comicRepository.findPublishedComics(ComicModerationStatus.PUBLISHED, paginationDTO.getSearch(), pageable)
                 .map(plugin::toDto);
+        this.redisTemplate = redisTemplate;
+        this.leaderboardScheduler = leaderboardScheduler;
     }
 
-    @Transactional(readOnly = true)
-    public Page<ComicDTO> getTopViews(PaginationSearchDTO paginationDTO) {
-        Pageable pageable = paginationDTO.toPageRequest();
-
-        Page<ComicEntity> comicPage = comicRepository.findByDeletedFalseAndModerationStatusOrderByViewCountDesc(
-                ComicModerationStatus.PUBLISHED,
-                pageable
-        );
-
-        return comicPage.map(plugin::toDto);
-    }
-
-    @Transactional(readOnly = true)
-    public Page<ComicDTO> getComicsByLatestChapters(PaginationSearchDTO paginationDTO) {
-        Pageable pageable = paginationDTO.toPageRequest();
-
-        Page<ComicEntity> comicPage = comicRepository.findComicsByLatestChapters(ComicModerationStatus.PUBLISHED, pageable);
-
-        return comicPage.map(plugin::toDto);
-    }
-
-    /**
-     * Public comic detail. Only returns PUBLISHED comics.
-     */
     @Transactional(readOnly = true)
     public ComicDTO getComicDetail(UUID comicId) {
-        ComicEntity entity = comicRepository
-                .findByIdAndDeletedFalseAndModerationStatus(comicId, ComicModerationStatus.PUBLISHED)
-                .orElseThrow(() -> new RuntimeException("Comic not found or not published"));
+        String cacheKey = COMIC_CACHE_PREFIX + comicId.toString();
+        String comicIdStr = comicId.toString();
+        ComicDTO dto = null;
+        try {
+            dto = (ComicDTO) redisTemplate.opsForValue().get(cacheKey);
+        } catch (Exception e) {
+            // Delete corrupt cache so it can be rebuilt
+            try {
+                redisTemplate.delete(cacheKey);
+            } catch (Exception ex) {
+                // Ignore
+            }
+        }
 
-        return plugin.toDto(entity);
+        if (dto == null) {
+            ComicEntity entity = comicRepository.findById(comicId)
+                    .orElseThrow(() -> new RuntimeException("Comic not found"));
+
+            dto = plugin.toDto(entity);
+
+            try {
+                redisTemplate.opsForValue().set(cacheKey, dto, Duration.ofHours(24));
+            } catch (Exception e) {
+                // Ignore Redis set errors
+            }
+        }
+
+        //increase view
+        try {
+            Number rawViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.COMIC_VIEW_HASH, comicIdStr);
+            if (rawViews != null) {
+                dto.setViewCount(dto.getViewCount() + rawViews.intValue());
+            }
+        } catch (Exception e) {
+            // Ignore Redis hash errors
+        }
+
+        //increase like
+        try {
+            Number rawLikes = (Number) redisTemplate.opsForHash().get(UserInteractionSyncScheduler.COMIC_LIKE_HASH, comicIdStr);
+            if (rawLikes != null) {
+                dto.setLikeCount(dto.getLikeCount() + rawLikes.intValue());
+            }
+        } catch (Exception e) {
+            // Ignore Redis hash errors
+        }
+
+        //increase save
+        try {
+            Number rawSaves = (Number) redisTemplate.opsForHash().get(UserInteractionSyncScheduler.COMIC_SAVE_HASH, comicIdStr);
+            if (rawSaves != null) {
+                dto.setSaveCount(dto.getSaveCount() + rawSaves.intValue());
+            }
+        } catch (Exception e) {
+            // Ignore Redis hash errors
+        }
+
+        return dto;
     }
 
-    @Transactional(readOnly = true)
+    @SuppressWarnings("unchecked")
+    public List<ComicDTO> getCachedLeaderboard(String timeframe) {
+        String cacheKey = LeaderboardScheduler.LEADERBOARD_CACHE_KEY_PREFIX + timeframe;
+        List<ComicDTO> ranking = null;
+        try {
+            ranking = (List<ComicDTO>) redisTemplate.opsForValue().get(cacheKey);
+        } catch (Exception e) {
+            // Delete corrupt cache so it can be rebuilt
+            try {
+                redisTemplate.delete(cacheKey);
+            } catch (Exception ex) {
+                // Ignore
+            }
+        }
+
+        if (ranking == null) {
+            try {
+                leaderboardScheduler.computeLeaderboards();
+                ranking = (List<ComicDTO>) redisTemplate.opsForValue().get(cacheKey);
+            } catch (Exception e) {
+                // If scheduler or redis fails, fallback gracefully
+            }
+        }
+
+        return ranking != null ? ranking : java.util.Collections.emptyList();
+    }
+
+    public void evictComicCache(UUID comicId) {
+        String cacheKey = COMIC_CACHE_PREFIX + comicId.toString();
+        try {
+            redisTemplate.delete(cacheKey);
+        } catch (Exception e) {
+            // Ignore/log error
+        }
+    }
+
     public CursorResponseDTO<ComicDTO> getExploreComicsCursor(ComicExploreRequestDTO request) {
         String sortProperty = "createdAt";
         boolean isTimeField = true;
@@ -194,16 +271,7 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         boolean hasMore = entities.size() > request.getSize();
         List<ComicEntity> resultEntities = hasMore ? entities.subList(0, request.getSize()) : entities;
 
-        List<ComicDTO> dtoList = resultEntities.stream().map(entity -> {
-            ComicDTO dto = plugin.toDto(entity);
-            dto.setId(entity.getId());
-            dto.setTitle(entity.getTitle());
-            dto.setStatus(entity.getStatus());
-            dto.setModerationStatus(entity.getModerationStatus());
-            dto.setCover(entity.getCover());
-            dto.setViewCount(entity.getViewCount());
-            return dto;
-        }).toList();
+        List<ComicDTO> dtoList = resultEntities.stream().map(plugin::toDto).toList();
 
         String nextCursor = null;
         UUID nextReferenceId = null;
@@ -215,6 +283,19 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         }
 
         return new CursorResponseDTO<>(dtoList, nextCursor, nextReferenceId, hasMore);
+    }
+
+    public List<ComicDTO> listPublishedComics() {
+        return comicRepository.findAllByDeletedFalseAndModerationStatus(ComicModerationStatus.PUBLISHED)
+                .stream()
+                .map(plugin::toDto)
+                .toList();
+    }
+
+    public Page<ComicDTO> listPublishedComics(PaginationSearchDTO paginationDTO) {
+        Pageable pageable = paginationDTO.toPageRequest();
+        return comicRepository.findPublishedComics(ComicModerationStatus.PUBLISHED, paginationDTO.getSearch(), pageable)
+                .map(plugin::toDto);
     }
 
     private String getTimeProperty(ComicEntity entity, String property) {

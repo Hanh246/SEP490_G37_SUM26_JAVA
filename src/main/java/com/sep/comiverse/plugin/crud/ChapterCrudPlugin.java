@@ -17,7 +17,7 @@ import org.springframework.plugin.core.PluginRegistry;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Arrays;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
@@ -31,12 +31,15 @@ public class ChapterCrudPlugin
     private final IUserRepository userRepository;
     private final PremiumPlanService premiumPlanService;
 
+    private static final String CHAPTER_DETAIL_CACHE_PREFIX = "chapter:detail:meta:";
+    private static final String COMIC_CHAPTERS_LIST_CACHE_PREFIX = "comic:chapters:list:";
+
     @Autowired
     public ChapterCrudPlugin(IChapterRepository repository,
                              PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry,
                              RedisTemplate<String, Object> redisTemplate,
                              IUserRepository userRepository,
-                             PremiumPlanService premiumPlanService) {
+                             PremiumPlanService premiumPlanService){
         super(repository, pluginRegistry, ChapterEntity.class);
         this.chapterRepository = repository;
         this.redisTemplate = redisTemplate;
@@ -44,54 +47,86 @@ public class ChapterCrudPlugin
         this.premiumPlanService = premiumPlanService;
     }
 
-    /**
-     * Public chapter detail endpoint.
-     * Always loads by PUBLISHED moderation status so draft/pending/rejected chapters are never exposed.
-     */
     @Transactional(readOnly = true)
     public ChapterDTO getChapterDetail(UUID chapterId, UUID userId, String clientIp) {
-        ChapterEntity entity = chapterRepository
-                .findByIdAndDeletedFalseAndModerationStatus(chapterId, ChapterStatus.PUBLISHED)
-                .orElseThrow(() -> new RuntimeException("Chapter not found or not published"));
+        String cacheKey = CHAPTER_DETAIL_CACHE_PREFIX + chapterId;
+
+        ChapterLiteDTO cacheDto = null;
+        try {
+            cacheDto = (ChapterLiteDTO) redisTemplate.opsForValue().get(cacheKey);
+        } catch (Exception e) {
+            // Delete corrupt cache so it can be rebuilt
+            try {
+                redisTemplate.delete(cacheKey);
+            } catch (Exception ex) {
+                // Ignore
+            }
+        }
+        List<String> images;
+
+        if (cacheDto == null) {
+            ChapterEntity entity = chapterRepository.findById(chapterId)
+                    .orElseThrow(() -> new RuntimeException("Chapter not found"));
+
+            cacheDto = ChapterLiteDTO.builder()
+                    .id(entity.getId())
+                    .comicId(entity.getComic().getId())
+                    .chapterNumber(entity.getChapterNumber())
+                    .title(entity.getTitle())
+                    .viewCount(entity.getViewCount())
+                    .isPremium(entity.getIsPremium())
+                    .createdAt(entity.getCreatedAt())
+                    .build();
+
+            try {
+                redisTemplate.opsForValue().set(cacheKey, cacheDto, Duration.ofDays(3));
+            } catch (Exception e) {
+                // Ignore Redis set errors
+            }
+            images = entity.getImages();
+        }else {
+            List<String> rawImages = chapterRepository.findImagesByChapterIdAndStatus(chapterId);
+
+            if (rawImages != null && rawImages.size() == 1 && rawImages.getFirst().contains(",")) {
+                images = java.util.Arrays.asList(rawImages.getFirst().split(","));
+            } else {
+                images = rawImages != null ? rawImages : Collections.emptyList();
+            }
+        }
 
         ChapterDTO responseDto = ChapterDTO.builder()
-                .id(entity.getId())
-                .comicId(entity.getComic() == null ? null : entity.getComic().getId())
-                .chapterNumber(entity.getChapterNumber())
-                .title(entity.getTitle())
-                .moderationStatus(entity.getModerationStatus())
-                .viewCount(entity.getViewCount() == null ? 0L : entity.getViewCount())
-                .isPremium(Boolean.TRUE.equals(entity.getIsPremium()))
-                .createdAt(entity.getCreatedAt())
+                .id(cacheDto.getId())
+                .comicId(cacheDto.getComicId())
+                .chapterNumber(cacheDto.getChapterNumber())
+                .title(cacheDto.getTitle())
+                .viewCount(cacheDto.getViewCount())
+                .isPremium(cacheDto.getIsPremium())
+                .createdAt(cacheDto.getCreatedAt())
                 .build();
 
         if (Boolean.TRUE.equals(responseDto.getIsPremium()) && !checkUserPremiumAccess(userId)) {
             responseDto.setImages(Collections.emptyList());
-        } else {
-            responseDto.setImages(normalizeImageList(entity.getImages()));
+        }else {
+            responseDto.setImages(images);
         }
 
         trackAndIncrementView(responseDto.getComicId(), chapterId, userId, clientIp);
 
-        Number rawChapterViews = (Number) redisTemplate.opsForHash()
-                .get(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString());
+        Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString());
         if (rawChapterViews != null) {
-            responseDto.setViewCount(responseDto.getViewCount() + rawChapterViews.longValue());
+            responseDto.setViewCount(responseDto.getViewCount() + rawChapterViews.intValue());
         }
 
         return responseDto;
     }
 
     private void trackAndIncrementView(UUID comicId, UUID chapterId, UUID userId, String clientIp) {
-        if (comicId == null || chapterId == null) {
-            return;
-        }
-
         String userIdentity = (userId != null) ? "user:" + userId : "guest:ip:" + clientIp;
+
         String lockKey = String.format("view:lock:%s:chapter:%s", userIdentity, chapterId);
 
         Boolean isFirstTimeIn10Mins = redisTemplate.opsForValue()
-                .setIfAbsent(lockKey, "1", java.time.Duration.ofMinutes(10));
+                .setIfAbsent(lockKey, "1", Duration.ofMinutes(10));
 
         if (Boolean.TRUE.equals(isFirstTimeIn10Mins)) {
             redisTemplate.opsForHash().increment(ViewSyncScheduler.COMIC_VIEW_HASH, comicId.toString(), 1);
@@ -111,54 +146,85 @@ public class ChapterCrudPlugin
                 .orElse(false);
     }
 
-    /**
-     * Public chapter list by comic. Only PUBLISHED chapters are returned.
-     */
+    private ChapterDTO maskPremiumImages(ChapterDTO dto) {
+        return ChapterDTO.builder()
+                .id(dto.getId())
+                .comicId(dto.getComicId())
+                .chapterNumber(dto.getChapterNumber())
+                .title(dto.getTitle())
+                .viewCount(dto.getViewCount())
+                .isPremium(dto.getIsPremium())
+                .createdAt(dto.getCreatedAt())
+                .num(dto.getNum())
+                .date(dto.getDate())
+                .build();
+    }
+
+    @SuppressWarnings("unchecked")
     @Transactional(readOnly = true)
     public List<ChapterLiteDTO> getChaptersByComicId(UUID comicId) {
-        List<ChapterLiteDTO> results = chapterRepository.findChapterMetadataByComicIdAndStatus(
-                comicId,
-                ChapterStatus.PUBLISHED
-        );
+        String cacheKey = COMIC_CHAPTERS_LIST_CACHE_PREFIX + comicId.toString();
 
-        if (results == null || results.isEmpty()) {
-            return Collections.emptyList();
+        List<ChapterLiteDTO> cachedResults = null;
+        try {
+            cachedResults = (List<ChapterLiteDTO>) redisTemplate.opsForValue().get(cacheKey);
+        } catch (Exception e) {
+            // Delete corrupt cache so it can be rebuilt
+            try {
+                redisTemplate.delete(cacheKey);
+            } catch (Exception ex) {
+                // Ignore
+            }
         }
 
-        return results.stream().map(dto -> {
+        if (cachedResults == null) {
+            cachedResults = chapterRepository.findChapterMetadataByComicId(comicId, ChapterStatus.PUBLISHED);
+
+            if (cachedResults != null && !cachedResults.isEmpty()) {
+                List<ChapterLiteDTO> listToCache = new java.util.ArrayList<>(cachedResults);
+                try {
+                    redisTemplate.opsForValue().set(cacheKey, listToCache, Duration.ofHours(3));
+                } catch (Exception e) {
+                    // Ignore Redis set errors
+                }
+            } else {
+                return Collections.emptyList();
+            }
+        }
+        return cachedResults.stream().map(dto -> {
             ChapterLiteDTO copy = ChapterLiteDTO.builder()
                     .id(dto.getId())
                     .comicId(dto.getComicId())
                     .chapterNumber(dto.getChapterNumber())
                     .title(dto.getTitle())
-                    .viewCount(dto.getViewCount() == null ? 0L : dto.getViewCount())
-                    .isPremium(Boolean.TRUE.equals(dto.getIsPremium()))
+                    .viewCount(dto.getViewCount())
+                    .isPremium(dto.getIsPremium())
                     .createdAt(dto.getCreatedAt())
                     .build();
 
-            Number rawChapterViews = (Number) redisTemplate.opsForHash()
-                    .get(ViewSyncScheduler.CHAPTER_VIEW_HASH, copy.getId().toString());
-            if (rawChapterViews != null) {
-                copy.setViewCount(copy.getViewCount() + rawChapterViews.longValue());
-            }
+                Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, copy.getId().toString());
+                if (rawChapterViews != null) {
+                    copy.setViewCount(copy.getViewCount() + rawChapterViews.intValue());
+                }
             return copy;
         }).toList();
     }
 
-    /**
-     * Compatibility guard for bad legacy data like images = ARRAY['url1,url2,url3'].
-     * New uploads save each URL as one element in PostgreSQL text[].
-     */
-    private List<String> normalizeImageList(List<String> rawImages) {
-        if (rawImages == null || rawImages.isEmpty()) {
-            return Collections.emptyList();
+    public void evictChaptersCache(UUID comicId) {
+        String cacheKey = COMIC_CHAPTERS_LIST_CACHE_PREFIX + comicId.toString();
+        try {
+            redisTemplate.delete(cacheKey);
+        } catch (Exception e) {
+            // Ignore/log error
         }
-        if (rawImages.size() == 1 && rawImages.getFirst() != null && rawImages.getFirst().contains(",http")) {
-            return Arrays.stream(rawImages.getFirst().split(",(?=https?://)"))
-                    .map(String::trim)
-                    .filter(value -> !value.isBlank())
-                    .toList();
+    }
+
+    public void evictChapterDetailCache(UUID chapterId) {
+        String cacheKey = CHAPTER_DETAIL_CACHE_PREFIX + chapterId.toString();
+        try {
+            redisTemplate.delete(cacheKey);
+        } catch (Exception e) {
+            // Ignore/log error
         }
-        return rawImages;
     }
 }

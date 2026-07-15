@@ -1,5 +1,6 @@
 package com.sep.comiverse.service.scheduler;
 
+import com.sep.comiverse.plugin.crud.ComicCrudPlugin;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -10,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 @Slf4j
 @Component
@@ -18,6 +20,7 @@ public class UserInteractionSyncScheduler {
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final ComicCrudPlugin comicCrudPlugin;
 
     public static final String COMIC_LIKE_HASH = "comic:like:counter";
     public static final String COMIC_SAVE_HASH = "comic:save:counter";
@@ -55,6 +58,13 @@ public class UserInteractionSyncScheduler {
                     "likeIncrement", increments
             );
             jdbcTemplate.update(updateGlobalComicLikeSql, params);
+
+            // Evict cache of comic detail
+            try {
+                comicCrudPlugin.evictComicCache(UUID.fromString(comicIdStr));
+            } catch (Exception e) {
+                log.error("Failed to evict comic cache for comicId: {}", comicIdStr, e);
+            }
         }
     }
 
@@ -84,6 +94,13 @@ public class UserInteractionSyncScheduler {
                     "saveIncrement", increments
             );
             jdbcTemplate.update(updateGlobalComicSaveSql, params);
+
+            // Evict cache of comic detail
+            try {
+                comicCrudPlugin.evictComicCache(UUID.fromString(comicIdStr));
+            } catch (Exception e) {
+                log.error("Failed to evict comic cache for comicId: {}", comicIdStr, e);
+            }
         }
     }
 }

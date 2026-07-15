@@ -25,6 +25,8 @@ public class UserSaveService {
 
     @Transactional
     public boolean toggleSaveComic(UUID comicId, UUID userId) {
+        if(userId == null) return false;
+
         String comicIdStr = comicId.toString();
         boolean isSaved = isComicSavedByUser(comicId, userId);
 

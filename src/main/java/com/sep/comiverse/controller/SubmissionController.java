@@ -10,10 +10,7 @@ import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
 import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.plugin.crud.SubmissionCrudPlugin;
-import com.sep.comiverse.repository.IChapterRepository;
-import com.sep.comiverse.repository.IComicRepository;
-import com.sep.comiverse.repository.IProjectTeamRepository;
-import com.sep.comiverse.repository.ISubmissionRepository;
+import com.sep.comiverse.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -24,7 +21,6 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.time.Instant;
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -48,6 +44,9 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
     @Autowired
     private IChapterRepository chapterRepository;
+
+    @Autowired
+    private IUserRepository userRepository;
 
     private static final Pattern CHAPTER_NUMBER_PATTERN =
             Pattern.compile("(?i)chapter\\s+([0-9]+(?:[,.][0-9]+)?)");
@@ -84,8 +83,8 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         SubmissionEntity savedSubmission = submissionRepository.save(submission);
 
         if (!alreadyApproved) {
-            String targetDesc = (submission.getChapter() != null && !submission.getChapter().isBlank()) 
-                    ? "chapter " + submission.getChapter() 
+            String targetDesc = (submission.getChapter() != null && !submission.getChapter().isBlank())
+                    ? "chapter " + submission.getChapter()
                     : "Comic profile";
             auditLogService.log("REVIEW_QUEUE", "Approved " + targetDesc + " of " + submission.getTitle());
             if ("author".equalsIgnoreCase(submission.getQueueType())) {
@@ -115,31 +114,82 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 updateLatestChapterIfAuthorChapterSubmission(comic, submission);
                 // Automatically push task to backlog disabled - now handled by Chapter Backlog
             }
-            comicRepository.save(comic);
+        if (submission == null) {
             return;
         }
 
-        // Backward-compatible path for old author submissions that were created before the comic row existed.
-        if (submission.getChapterId() == null && submission.getComicId() == null) {
-            ComicEntity newComic = ComicEntity.builder()
-                    .title(submission.getTitle())
-                    .slug(buildSafeSlug(submission.getTitle()))
-                    .summary(submission.getContent())
-                    .authorId(submission.getAuthorId())
-                    .status(com.sep.comiverse.constants.ComicStatus.ONGOING)
-                    .moderationStatus(ComicModerationStatus.PUBLISHED)
-                    .cover(submission.getCover() != null ? submission.getCover() : "📖")
-                    .thumbnail(submission.getCover())
-                    .viewCount(0L)
-                    .saveCount(0)
-                    .likeCount(0)
-                    .ratingAverage(0.0)
-                    .ratingCount(0)
-                    .chapterCount(0)
-                    .lastChapterUpdatedAt(Instant.now())
-                    .build();
-            comicRepository.save(newComic);
+        /*
+         * Case 1: Author submit chapter review.
+         * Khi moderator approve chapter submission:
+         * - lấy đúng ChapterEntity theo submission.chapterId
+         * - set moderationStatus = PUBLISHED
+         * - cập nhật metadata comic theo chapter đã publish
+         */
+        if (submission.getChapterId() != null) {
+            ChapterEntity chapter = chapterRepository.findById(submission.getChapterId())
+                    .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException(
+                            "Chapter with id " + submission.getChapterId() + " not found"
+                    ));
+
+            chapter.setModerationStatus(ChapterStatus.PUBLISHED);
+            ChapterEntity savedChapter = chapterRepository.save(chapter);
+
+            ComicEntity comic = savedChapter.getComic();
+            if (comic != null) {
+                refreshComicMetadataAfterPublishedChapter(comic, savedChapter);
+                comicRepository.save(comic);
+            }
+
+            return;
         }
+
+        /*
+         * Case 2: Author submit comic profile/review.
+         * Khi moderator approve comic submission:
+         * - lấy đúng ComicEntity theo submission.comicId
+         * - set moderationStatus = PUBLISHED
+         */
+        if (submission.getComicId() != null) {
+            ComicEntity comic = comicRepository.findById(submission.getComicId())
+                    .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException(
+                            "Comic with id " + submission.getComicId() + " not found"
+                    ));
+
+            comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+            comicRepository.save(comic);
+
+            return;
+        }
+
+        /*
+         * Backward-compatible path:
+         * Chỉ dùng cho submission cũ chưa có comicId/chapterId.
+         * Không nên là luồng chính nữa.
+         */
+        ComicEntity comic = resolveComic(submission);
+        if (comic != null) {
+            comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+            comicRepository.save(comic);
+        }
+    }
+    private void refreshComicMetadataAfterPublishedChapter(ComicEntity comic, ChapterEntity chapter) {
+        if (comic == null || chapter == null) {
+            return;
+        }
+
+        comic.setLatestChapterNumber(chapter.getChapterNumber());
+        comic.setLastChapterUpdatedAt(Instant.now());
+
+        long publishedChapterCount = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
+                comic.getId(),
+                ChapterStatus.PUBLISHED
+        );
+
+        comic.setChapterCount(
+                publishedChapterCount > Integer.MAX_VALUE
+                        ? Integer.MAX_VALUE
+                        : (int) publishedChapterCount
+        );
     }
 
     private void handleTranslatorApproval(SubmissionEntity submission) {
@@ -158,9 +208,9 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                     .orElse(null);
         }
 
-        ComicEntity comic = comicRepository.findAllByTitle(comicTitle).stream().findFirst()
-                .or(() -> comicRepository.findAllByTitleIgnoreCase(comicTitle).stream().findFirst())
-                .orElse(null);
+            ComicEntity comic = comicRepository.findAllByTitle(comicTitle).stream().findFirst()
+                    .or(() -> comicRepository.findAllByTitleIgnoreCase(comicTitle).stream().findFirst())
+                    .orElse(null);
 
         if (team != null) {
             team.setChaptersCount(team.getChaptersCount() == null ? 1 : team.getChaptersCount() + 1);
@@ -212,6 +262,16 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         if (comic == null || submission == null) {
             return;
         }
+        if (submission.getChapterId() == null && !looksLikeChapterSubmission(submission.getChapter())) {
+            return;
+        }
+        String chapterNumber = extractChapterNumber(submission.getChapter());
+        if (chapterNumber != null) {
+            comic.setLatestChapterNumber(chapterNumber);
+        }
+        comic.setLastChapterUpdatedAt(Instant.now());
+        long chapterCount = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(comic.getId(), ChapterStatus.PUBLISHED);
+        comic.setChapterCount(chapterCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) chapterCount);
 
         List<ChapterEntity> publishedChapters = chapterRepository
                 .findAllByComic_IdAndDeletedFalseAndModerationStatus(comic.getId(), ChapterStatus.PUBLISHED);

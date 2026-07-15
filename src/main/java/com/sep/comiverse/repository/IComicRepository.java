@@ -106,6 +106,56 @@ public interface IComicRepository extends AbstractCrudRepository<ComicEntity, UU
             nativeQuery = true)
     Page<ComicEntity> findComicsByLatestChapters(Pageable pageable);
 
+    @Query("SELECT c FROM ComicEntity c WHERE c.summaryVector IS NULL AND c.deleted = false")
+    List<ComicEntity> findComicsMissingVector();
+
+    @Query(value = "SELECT * FROM comics " +
+                   "WHERE id != :currentComicId AND deleted = false AND moderation_status = 'PUBLISHED' " +
+                   "AND summary_vector IS NOT NULL " +
+                   "ORDER BY summary_vector <=> (SELECT summary_vector FROM comics WHERE id = :currentComicId) " +
+                   "LIMIT :limit", nativeQuery = true)
+    List<ComicEntity> findSimilarComics(@Param("currentComicId") UUID currentComicId, @Param("limit") int limit);
+
+    @Query(value = "SELECT c.* FROM comics c " +
+                   "WHERE c.deleted = false AND c.moderation_status = 'PUBLISHED' " +
+                   "AND c.summary_vector IS NOT NULL " +
+                   "ORDER BY c.summary_vector <=> (SELECT user_vector FROM users WHERE id = :userId) " +
+                   "LIMIT :limit", nativeQuery = true)
+    List<ComicEntity> findRecommendedComicsForUser(@Param("userId") UUID userId, @Param("limit") int limit);
+
+    @Query(value = "WITH recommended_comics AS (" +
+                   "    SELECT c.id, " +
+                   "           c.summary_vector <=> (SELECT user_vector FROM users WHERE id = :userId) AS distance " +
+                   "    FROM comics c " +
+                   "    WHERE c.deleted = false AND c.moderation_status = 'PUBLISHED' " +
+                   "      AND c.summary_vector IS NOT NULL" +
+                   ") " +
+                   "SELECT id FROM recommended_comics " +
+                   "WHERE (:cursorDistance IS NULL OR distance > :cursorDistance OR (distance = :cursorDistance AND id > :referenceId)) " +
+                   "ORDER BY distance ASC, id ASC " +
+                   "LIMIT :limit", nativeQuery = true)
+    List<UUID> findRecommendedComicIdsForUserCursor(
+            @Param("userId") UUID userId,
+            @Param("cursorDistance") Double cursorDistance,
+            @Param("referenceId") UUID referenceId,
+            @Param("limit") int limit
+    );
+
+    @Query(value = "SELECT c.id FROM comics c " +
+                   "WHERE c.deleted = false AND c.moderation_status = 'PUBLISHED' " +
+                   "AND (" +
+                   "  :cursorVal IS NULL OR " +
+                   "  c.view_count < :cursorVal OR " +
+                   "  (c.view_count = :cursorVal AND c.id < :referenceId)" +
+                   ") " +
+                   "ORDER BY c.view_count DESC, c.id DESC " +
+                   "LIMIT :limit", nativeQuery = true)
+    List<UUID> findPopularComicIdsCursor(
+            @Param("cursorVal") Long cursorVal,
+            @Param("referenceId") UUID referenceId,
+            @Param("limit") int limit
+    );
+
     @Query("SELECT g.name FROM ComicEntity c JOIN c.genres g WHERE c.id = :comicId AND c.deleted = false")
     List<String> findGenreNamesByComicId(@Param("comicId") UUID comicId);
 }
