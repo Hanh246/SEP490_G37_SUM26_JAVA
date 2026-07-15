@@ -28,6 +28,9 @@ public interface IComicRepository extends AbstractCrudRepository<ComicEntity, UU
 
     List<ComicEntity> findAllByDeletedFalseAndModerationStatus(ComicModerationStatus moderationStatus);
 
+    @Query("SELECT DISTINCT c FROM ComicEntity c LEFT JOIN FETCH c.genres WHERE c.deleted = false AND c.moderationStatus = :moderationStatus")
+    List<ComicEntity> findAllByDeletedFalseAndModerationStatusWithGenres(@Param("moderationStatus") ComicModerationStatus moderationStatus);
+
     Page<ComicEntity> findByDeletedFalseAndModerationStatus(ComicModerationStatus moderationStatus, Pageable pageable);
 
     Page<ComicEntity> findByDeletedFalseAndModerationStatusOrderByViewCountDesc(ComicModerationStatus moderationStatus, Pageable pageable);
@@ -152,4 +155,7 @@ public interface IComicRepository extends AbstractCrudRepository<ComicEntity, UU
             @Param("referenceId") UUID referenceId,
             @Param("limit") int limit
     );
+
+    @Query("SELECT g.name FROM ComicEntity c JOIN c.genres g WHERE c.id = :comicId AND c.deleted = false")
+    List<String> findGenreNamesByComicId(@Param("comicId") UUID comicId);
 }

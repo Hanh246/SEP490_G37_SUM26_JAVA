@@ -41,4 +41,6 @@ public class ComicDTO {
     private Double ratingAverage;
     private Integer ratingCount;
     private String latestChapterNumber;
+    private Integer chapterCount;
+    private java.time.Instant lastChapterUpdatedAt;
 }
