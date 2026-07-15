@@ -52,12 +52,16 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
     public ComicDTO getComicDetail(UUID comicId) {
         String cacheKey = COMIC_CACHE_PREFIX + comicId.toString();
         String comicIdStr = comicId.toString();
-
         ComicDTO dto = null;
         try {
             dto = (ComicDTO) redisTemplate.opsForValue().get(cacheKey);
         } catch (Exception e) {
-            // Fallback if Redis is down
+            // Delete corrupt cache so it can be rebuilt
+            try {
+                redisTemplate.delete(cacheKey);
+            } catch (Exception ex) {
+                // Ignore
+            }
         }
 
         if (dto == null) {
@@ -109,7 +113,17 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
     @SuppressWarnings("unchecked")
     public List<ComicDTO> getCachedLeaderboard(String timeframe) {
         String cacheKey = LeaderboardScheduler.LEADERBOARD_CACHE_KEY_PREFIX + timeframe;
-        List<ComicDTO> ranking = (List<ComicDTO>) redisTemplate.opsForValue().get(cacheKey);
+        List<ComicDTO> ranking = null;
+        try {
+            ranking = (List<ComicDTO>) redisTemplate.opsForValue().get(cacheKey);
+        } catch (Exception e) {
+            // Delete corrupt cache so it can be rebuilt
+            try {
+                redisTemplate.delete(cacheKey);
+            } catch (Exception ex) {
+                // Ignore
+            }
+        }
 
         if (ranking == null) {
             try {
