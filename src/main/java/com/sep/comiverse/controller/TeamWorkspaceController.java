@@ -5,6 +5,7 @@ import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.entity.*;
 import com.sep.comiverse.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -76,7 +77,9 @@ public class TeamWorkspaceController {
     @PostMapping("/{teamId}/tasks")
     public ResponseEntity<TeamTaskEntity> createTask(@PathVariable UUID teamId, @RequestBody TeamTaskEntity task) {
         task.setProjectTeamId(teamId);
-        return ResponseEntity.ok(taskRepository.save(task));
+        TeamTaskEntity created = taskRepository.save(task);
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
     @GetMapping("/{teamId}/members")
@@ -86,14 +89,13 @@ public class TeamWorkspaceController {
             return ResponseEntity.notFound().build();
         }
 
-        List<UUID> memberIds = team.getMemberIds() != null ? team.getMemberIds() : Collections.emptyList();
-        if (memberIds.isEmpty()) {
+        List<UserEntity> members = team.getMembers() != null ? team.getMembers() : Collections.emptyList();
+        if (members.isEmpty()) {
             return ResponseEntity.ok(Collections.emptyList());
         }
 
-        List<UserEntity> users = userRepository.findAllById(memberIds);
 
-        List<TeamMemberDto> result = users.stream()
+        List<TeamMemberDto> result = members.stream()
                 .map(u -> TeamMemberDto.builder()
                         .id(u.getId())
                         .name(u.getFullName())
