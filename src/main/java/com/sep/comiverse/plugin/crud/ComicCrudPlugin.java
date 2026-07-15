@@ -42,14 +42,15 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
 
     @Autowired
     public ComicCrudPlugin(IComicRepository repository,
+                           IGenreRepository genreRepository,
                            PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry,
                            RedisTemplate<String, Object> redisTemplate,
                            @org.springframework.context.annotation.Lazy LeaderboardScheduler leaderboardScheduler) {
-                           IGenreRepository genreRepository,
-                           PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry) {
         super(repository, pluginRegistry, ComicEntity.class);
         this.comicRepository = repository;
         this.genreRepository = genreRepository;
+        this.redisTemplate = redisTemplate;
+        this.leaderboardScheduler = leaderboardScheduler;
     }
 
     @Override
@@ -134,8 +135,6 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         Pageable pageable = paginationDTO.toPageRequest();
         return comicRepository.findPublishedComics(ComicModerationStatus.PUBLISHED, paginationDTO.getSearch(), pageable)
                 .map(plugin::toDto);
-        this.redisTemplate = redisTemplate;
-        this.leaderboardScheduler = leaderboardScheduler;
     }
 
     @Transactional(readOnly = true)

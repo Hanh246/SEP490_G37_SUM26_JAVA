@@ -78,6 +78,14 @@ public class DbInitializer implements CommandLineRunner {
         } catch (Exception e) {
             e.printStackTrace();
         }
+
+        // Create HNSW index for cosine similarity on comics
+        try {
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_comics_summary_vector_hnsw ON comics USING hnsw (summary_vector vector_cosine_ops)");
+            System.out.println("✅ Database Setup: HNSW Index created/verified on comics table");
+        } catch (Exception e) {
+            System.err.println("⚠️ Warning: Failed to create HNSW index: " + e.getMessage());
+        }
     }
 
     private void migrateLegacyChapterPagesIntoChapterImages() {

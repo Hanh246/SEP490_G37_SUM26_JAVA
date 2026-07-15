@@ -101,19 +101,6 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
     }
 
     private void handleAuthorApproval(SubmissionEntity submission) {
-        ComicEntity comic = resolveComic(submission);
-        if (comic != null) {
-            if (submission.getChapterId() == null) {
-                comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
-                comic.setLastChapterUpdatedAt(Instant.now());
-            } else {
-                chapterRepository.findById(submission.getChapterId()).ifPresent(chapter -> {
-                    chapter.setModerationStatus(ChapterStatus.PUBLISHED);
-                    chapterRepository.save(chapter);
-                });
-                updateLatestChapterIfAuthorChapterSubmission(comic, submission);
-                // Automatically push task to backlog disabled - now handled by Chapter Backlog
-            }
         if (submission == null) {
             return;
         }
