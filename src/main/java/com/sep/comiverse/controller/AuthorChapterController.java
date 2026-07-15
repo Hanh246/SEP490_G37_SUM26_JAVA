@@ -165,6 +165,24 @@ public class AuthorChapterController {
                 .message("Chapter deleted")
                 .build());
     }
+    @PutMapping(value = "/{chapterId}/replace-cbz", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Replace chapter CBZ", description = "Replaces all image URLs of an owned chapter. The new CBZ filename must match the existing chapter number.")
+    public ResponseEntity<BaseResponse<ChapterPreviewResponse>> replaceChapterZip(
+            @PathVariable UUID comicId,
+            @PathVariable UUID chapterId,
+            @RequestParam(value = "zipFile", required = false) MultipartFile zipFile,
+            @RequestParam(value = "file", required = false) MultipartFile fallbackFile,
+            @RequestParam(value = "authorId", required = false) UUID authorId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        UUID resolvedAuthorId = resolveAuthorId(authorId, principal);
+        MultipartFile resolvedZipFile = zipFile != null ? zipFile : fallbackFile;
+        return ResponseEntity.ok(BaseResponse.<ChapterPreviewResponse>builder()
+                .success(true)
+                .message("Chapter CBZ replaced. Submit it for review when the preview is correct.")
+                .data(authorChapterService.replaceChapterZip(comicId, chapterId, resolvedAuthorId, resolvedZipFile))
+                .build());
+    }
 
     private UUID resolveAuthorId(UUID requestAuthorId, UserPrincipal principal) {
         if (principal != null) {
@@ -174,7 +192,7 @@ public class AuthorChapterController {
     }
 
     private void applyPrincipalAuthorId(ChapterUploadRequest request, UserPrincipal principal) {
-        if (principal != null) {
+        if (request != null && principal != null) {
             request.setAuthorId(principal.getId());
         }
     }

@@ -1,11 +1,14 @@
 package com.sep.comiverse.service;
 
+import com.sep.comiverse.entity.UserLikeEntity;
 import com.sep.comiverse.repository.IUserLikeRepository;
 import com.sep.comiverse.service.scheduler.UserInteractionSyncScheduler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -15,67 +18,35 @@ public class UserLikeService {
     private final RedisTemplate<String, Object> redisTemplate;
     private final IUserLikeRepository userLikeRepository;
 
-
-
     public boolean isComicLikedByUser(UUID comicId, UUID userId) {
         if (userId == null) return false;
-
-        String comicIdStr = comicId.toString();
-        String userSetKey = UserInteractionSyncScheduler.COMIC_LIKE_USERS_SET_PREFIX + comicIdStr;
-        String userIdStr = userId.toString();
-
-        // 1. Check if it is pending removal
-        Boolean isPendingRemove = redisTemplate.opsForSet().isMember(UserInteractionSyncScheduler.COMIC_LIKE_SYNC_REMOVE, comicIdStr + ":" + userIdStr);
-        if (Boolean.TRUE.equals(isPendingRemove)) {
-            return false;
-        }
-
-        // 2. Check inside the temporary Redis buffer
-        Boolean isLikedInRedis = redisTemplate.opsForSet().isMember(userSetKey, userIdStr);
-        if (Boolean.TRUE.equals(isLikedInRedis)) {
-            return true;
-        }
-
-        // 3. Check if it is pending addition
-        Boolean isPendingAdd = redisTemplate.opsForSet().isMember(UserInteractionSyncScheduler.COMIC_LIKE_SYNC_ADD, comicIdStr + ":" + userIdStr);
-        if (Boolean.TRUE.equals(isPendingAdd)) {
-            return true;
-        }
-
-        // 4. Check the database
-        boolean isLikedInDb = userLikeRepository.existsByComicIdAndUserId(comicId, userId);
-        if (isLikedInDb) {
-            redisTemplate.opsForSet().add(userSetKey, userIdStr);
-            return true;
-        }
-        return false;
+        return userLikeRepository.existsByComicIdAndUserId(comicId, userId);
     }
 
+    @Transactional
     public boolean toggleLikeComic(UUID comicId, UUID userId) {
+        if(userId == null) return false;
         String comicIdStr = comicId.toString();
-        String userSetKey = UserInteractionSyncScheduler.COMIC_LIKE_USERS_SET_PREFIX + comicIdStr;
-        String userIdStr = userId.toString();
-
         boolean isLiked = isComicLikedByUser(comicId, userId);
 
         if (!isLiked) {
-            redisTemplate.opsForSet().add(userSetKey, userIdStr);
+            UserLikeEntity like = UserLikeEntity.builder()
+                    .comicId(comicId)
+                    .userId(userId)
+                    .build();
+            userLikeRepository.save(like);
             redisTemplate.opsForHash().increment(UserInteractionSyncScheduler.COMIC_LIKE_HASH, comicIdStr, 1);
-
-            redisTemplate.opsForSet().add(UserInteractionSyncScheduler.COMIC_LIKE_SYNC_ADD, comicIdStr + ":" + userIdStr);
-            redisTemplate.opsForSet().remove(UserInteractionSyncScheduler.COMIC_LIKE_SYNC_REMOVE, comicIdStr + ":" + userIdStr);
             return true;
         } else {
-            redisTemplate.opsForSet().remove(userSetKey, userIdStr);
+            userLikeRepository.findByComicIdAndUserId(comicId, userId)
+                    .ifPresent(userLikeRepository::delete);
             redisTemplate.opsForHash().increment(UserInteractionSyncScheduler.COMIC_LIKE_HASH, comicIdStr, -1);
-
-            redisTemplate.opsForSet().add(UserInteractionSyncScheduler.COMIC_LIKE_SYNC_REMOVE, comicIdStr + ":" + userIdStr);
-            redisTemplate.opsForSet().remove(UserInteractionSyncScheduler.COMIC_LIKE_SYNC_ADD, comicIdStr + ":" + userIdStr);
             return false;
         }
     }
 
-    public java.util.List<UUID> getLikedComicIds(UUID userId) {
+    public List<UUID> getLikedComicIds(UUID userId) {
         return userLikeRepository.findLikedComicIdsByUserId(userId);
     }
 }
+
