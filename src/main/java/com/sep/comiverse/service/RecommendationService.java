@@ -227,7 +227,12 @@ public class RecommendationService {
                     log.warn("Failed to parse cursor distance: {}", cursor);
                 }
             }
-            ids = comicRepository.findRecommendedComicIdsForUserCursor(userId, cursorDistance, referenceId, limit);
+            List<UUID> excludedIds = null;
+            Set<UUID> interacted = getInteractedComicIds(userId);
+            if (interacted != null && !interacted.isEmpty()) {
+                excludedIds = new ArrayList<>(interacted);
+            }
+            ids = comicRepository.findRecommendedComicIdsForUserCursor(user.getUserVector(), cursorDistance, referenceId, excludedIds, limit);
         } else {
             Long cursorVal = null;
             if (cursor != null && !cursor.trim().isEmpty()) {

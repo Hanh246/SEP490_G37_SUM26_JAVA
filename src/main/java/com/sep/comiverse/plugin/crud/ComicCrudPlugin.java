@@ -123,21 +123,6 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
     }
 
     @Transactional(readOnly = true)
-    public List<ComicDTO> listPublishedComics() {
-        return comicRepository.findAllByDeletedFalseAndModerationStatusWithGenres(ComicModerationStatus.PUBLISHED)
-                .stream()
-                .map(plugin::toDto)
-                .toList();
-    }
-
-    @Transactional(readOnly = true)
-    public Page<ComicDTO> listPublishedComics(PaginationSearchDTO paginationDTO) {
-        Pageable pageable = paginationDTO.toPageRequest();
-        return comicRepository.findPublishedComics(ComicModerationStatus.PUBLISHED, paginationDTO.getSearch(), pageable)
-                .map(plugin::toDto);
-    }
-
-    @Transactional(readOnly = true)
     public ComicDTO getComicDetail(UUID comicId) {
         String cacheKey = COMIC_CACHE_PREFIX + comicId.toString();
         String comicIdStr = comicId.toString();
