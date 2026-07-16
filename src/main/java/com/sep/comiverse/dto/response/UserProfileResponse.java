@@ -19,6 +19,7 @@ public class UserProfileResponse {
     private String email;
     private String role;
     private String avatarUrl;
+    private String backgroundImageUrl;
     private String premiumPlan;
     private LocalDateTime premiumExpiresAt;
     private Boolean premiumActive;

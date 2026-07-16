@@ -53,6 +53,13 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         this.leaderboardScheduler = leaderboardScheduler;
     }
 
+    public ComicCrudPlugin(IComicRepository repository,
+                           PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry,
+                           RedisTemplate<String, Object> redisTemplate,
+                           LeaderboardScheduler leaderboardScheduler) {
+        this(repository, null, pluginRegistry, redisTemplate, leaderboardScheduler);
+    }
+
     @Override
     @Transactional
     public ComicDTO update(UUID id, ComicDTO dto) throws RuntimeException {
@@ -120,6 +127,40 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
 
         ComicEntity saved = comicRepository.save(existing);
         return plugin.toDto(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ComicDTO> listPublishedComics() {
+        return comicRepository.findAllByDeletedFalseAndModerationStatusWithGenres(ComicModerationStatus.PUBLISHED)
+                .stream()
+                .map(plugin::toDto)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ComicDTO> listPublishedComics(PaginationSearchDTO paginationDTO) {
+        Pageable pageable = paginationDTO.toPageRequest();
+        return comicRepository.findPublishedComics(ComicModerationStatus.PUBLISHED, paginationDTO.getSearch(), pageable)
+                .map(plugin::toDto);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ComicDTO> getTopViews(PaginationSearchDTO paginationDTO) {
+        Pageable pageable = paginationDTO.toPageRequest();
+        return comicRepository
+                .findByDeletedFalseAndModerationStatusOrderByViewCountDesc(
+                        ComicModerationStatus.PUBLISHED,
+                        pageable
+                )
+                .map(plugin::toDto);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ComicDTO> getComicsByLatestChapters(PaginationSearchDTO paginationDTO) {
+        Pageable pageable = paginationDTO.toPageRequest();
+        return comicRepository
+                .findComicsByLatestChapters(ComicModerationStatus.PUBLISHED, pageable)
+                .map(plugin::toDto);
     }
 
     @Transactional(readOnly = true)
@@ -269,14 +310,14 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         return new CursorResponseDTO<>(dtoList, nextCursor, nextReferenceId, hasMore);
     }
 
-    public List<ComicDTO> listPublishedComics() {
+    public List<ComicDTO> listPublishedComicsWithoutGenres() {
         return comicRepository.findAllByDeletedFalseAndModerationStatus(ComicModerationStatus.PUBLISHED)
                 .stream()
                 .map(plugin::toDto)
                 .toList();
     }
 
-    public Page<ComicDTO> listPublishedComics(PaginationSearchDTO paginationDTO) {
+    public Page<ComicDTO> listPublishedComicsWithoutGenres(PaginationSearchDTO paginationDTO) {
         Pageable pageable = paginationDTO.toPageRequest();
         return comicRepository.findPublishedComics(ComicModerationStatus.PUBLISHED, paginationDTO.getSearch(), pageable)
                 .map(plugin::toDto);

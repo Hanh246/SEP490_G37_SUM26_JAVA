@@ -13,14 +13,29 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.HexFormat;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
 public class AuthService {
-    private static final int PASSWORD_RESET_OTP_TTL_MINUTES = 10;
+    private static final int EMAIL_VERIFICATION_OTP_TTL_MINUTES = 5;
+    private static final int PASSWORD_RESET_OTP_TTL_MINUTES = 5;
+    private static final int OTP_RESEND_COOLDOWN_SECONDS = 60;
+    private static final int OTP_MAX_SENDS_PER_HOUR = 5;
+    private static final int OTP_MAX_VERIFY_ATTEMPTS = 5;
     private static final SecureRandom OTP_RANDOM = new SecureRandom();
+    private static final Map<String, OtpThrottleState> EMAIL_VERIFICATION_THROTTLE = new ConcurrentHashMap<>();
+    private static final Map<String, Integer> EMAIL_VERIFICATION_FAILURES = new ConcurrentHashMap<>();
+    private static final Map<String, OtpThrottleState> PASSWORD_RESET_THROTTLE = new ConcurrentHashMap<>();
+    private static final Map<String, Integer> PASSWORD_RESET_FAILURES = new ConcurrentHashMap<>();
 
     private final IUserRepository userRepository;
     private final IRoleRepository roleRepository;
@@ -37,16 +52,22 @@ public class AuthService {
         if ("INACTIVE".equals(user.getStatus())) {
             throw new CustomException(403, "Your account has been banned!", HttpStatus.FORBIDDEN);
         }
+        if ("PENDING_VERIFICATION".equals(user.getStatus())) {
+            throw new CustomException(403, "Please verify your email before signing in.", HttpStatus.FORBIDDEN);
+        }
         return user;
     }
 
     @Transactional
     public UserEntity register(RegisterRequest request) {
-        if (userRepository.existsByUsername(request.getUsername())) {
+        String username = request.getUsername().trim();
+        String email = request.getEmail().trim().toLowerCase();
+
+        if (userRepository.existsByUsername(username)) {
             throw new CustomException(400, "Username already exists", HttpStatus.BAD_REQUEST);
         }
 
-        if (userRepository.existsByEmail(request.getEmail())) {
+        if (userRepository.existsByEmail(email)) {
             throw new CustomException(400, "Email already exists", HttpStatus.BAD_REQUEST);
         }
 
@@ -54,27 +75,84 @@ public class AuthService {
                 .orElseThrow(() -> new CustomException(500, "Role READER not found", HttpStatus.INTERNAL_SERVER_ERROR));
 
         UserEntity user = UserEntity.builder()
-                .username(request.getUsername())
+                .username(username)
                 .password(passwordEncoder.encode(request.getPassword()))
                 .fullName(request.getFullName())
-                .email(request.getEmail())
+                .email(email)
                 .phone(request.getPhone())
                 .role(userRole)
-                .status("ACTIVE")
+                .status("PENDING_VERIFICATION")
                 .dateOfBirth(request.getDateOfBirth())
                 .build();
 
-        return userRepository.save(user);
+        UserEntity savedUser = userRepository.save(user);
+        issueEmailVerificationOtp(savedUser);
+        return savedUser;
+    }
+
+    @Transactional
+    public void verifyEmail(String email, String otp) {
+        String normalizedEmail = email.trim().toLowerCase();
+        UserEntity user = userRepository.findByEmail(normalizedEmail)
+                .orElseThrow(() -> new CustomException(400, "Invalid or expired verification code", HttpStatus.BAD_REQUEST));
+
+        if (!"LOCAL".equalsIgnoreCase(user.getProvider())) {
+            throw new CustomException(400, "Invalid or expired verification code", HttpStatus.BAD_REQUEST);
+        }
+        if ("ACTIVE".equalsIgnoreCase(user.getStatus())) {
+            clearEmailVerificationFailures(normalizedEmail);
+            return;
+        }
+        if (!"PENDING_VERIFICATION".equalsIgnoreCase(user.getStatus())) {
+            throw new CustomException(400, "This account cannot be verified.", HttpStatus.BAD_REQUEST);
+        }
+        if (getEmailVerificationFailureCount(normalizedEmail) >= OTP_MAX_VERIFY_ATTEMPTS) {
+            throw new CustomException(429, "Too many invalid OTP attempts. Please request a new code.", HttpStatus.TOO_MANY_REQUESTS);
+        }
+        if (user.getEmailVerificationToken() == null || !user.getEmailVerificationToken().equals(hashOtp(otp.trim()))) {
+            registerEmailVerificationFailure(normalizedEmail);
+            throw new CustomException(400, "Invalid or expired verification code", HttpStatus.BAD_REQUEST);
+        }
+        if (user.getEmailVerificationExpiresAt() == null || user.getEmailVerificationExpiresAt().isBefore(LocalDateTime.now())) {
+            user.setEmailVerificationToken(null);
+            user.setEmailVerificationExpiresAt(null);
+            userRepository.save(user);
+            clearEmailVerificationFailures(normalizedEmail);
+            throw new CustomException(400, "Verification code has expired. Please request a new code.", HttpStatus.BAD_REQUEST);
+        }
+
+        user.setStatus("ACTIVE");
+        user.setEmailVerificationToken(null);
+        user.setEmailVerificationExpiresAt(null);
+        userRepository.save(user);
+        clearEmailVerificationFailures(normalizedEmail);
+    }
+
+    @Transactional
+    public void resendEmailVerificationOtp(String email) {
+        String normalizedEmail = email.trim().toLowerCase();
+        assertEmailVerificationThrottle(normalizedEmail);
+
+        UserEntity user = userRepository.findByEmail(normalizedEmail).orElse(null);
+        if (user == null || !"LOCAL".equalsIgnoreCase(user.getProvider()) || !"PENDING_VERIFICATION".equalsIgnoreCase(user.getStatus())) {
+            return;
+        }
+
+        issueEmailVerificationOtp(user);
     }
 
     @Transactional
     public void forgotPassword(String email) {
         String normalizedEmail = email.trim().toLowerCase();
-        UserEntity user = userRepository.findByEmail(normalizedEmail)
-                .orElseThrow(() -> new CustomException(404, "No account found with this email", HttpStatus.NOT_FOUND));
+        assertPasswordResetThrottle(normalizedEmail);
+
+        UserEntity user = userRepository.findByEmail(normalizedEmail).orElse(null);
+        if (user == null || !"LOCAL".equalsIgnoreCase(user.getProvider())) {
+            return;
+        }
 
         String otp = String.format("%06d", OTP_RANDOM.nextInt(1_000_000));
-        user.setResetToken(otp);
+        user.setResetToken(hashOtp(otp));
         user.setResetTokenExpiresAt(LocalDateTime.now().plusMinutes(PASSWORD_RESET_OTP_TTL_MINUTES));
         userRepository.save(user);
 
@@ -85,20 +163,30 @@ public class AuthService {
     public void resetPassword(String email, String otp, String newPassword) {
         String normalizedEmail = email.trim().toLowerCase();
         UserEntity user = userRepository.findByEmail(normalizedEmail)
-                .orElseThrow(() -> new CustomException(404, "No account found with this email", HttpStatus.NOT_FOUND));
-        if (user.getResetToken() == null || !user.getResetToken().equals(otp.trim())) {
+                .orElseThrow(() -> new CustomException(400, "Invalid or expired OTP code", HttpStatus.BAD_REQUEST));
+
+        if (!"LOCAL".equalsIgnoreCase(user.getProvider())) {
+            throw new CustomException(400, "Invalid or expired OTP code", HttpStatus.BAD_REQUEST);
+        }
+        if (getPasswordResetFailureCount(normalizedEmail) >= OTP_MAX_VERIFY_ATTEMPTS) {
+            throw new CustomException(429, "Too many invalid OTP attempts. Please request a new code.", HttpStatus.TOO_MANY_REQUESTS);
+        }
+        if (user.getResetToken() == null || !user.getResetToken().equals(hashOtp(otp.trim()))) {
+            registerPasswordResetFailure(normalizedEmail);
             throw new CustomException(400, "Invalid or expired OTP code", HttpStatus.BAD_REQUEST);
         }
         if (user.getResetTokenExpiresAt() == null || user.getResetTokenExpiresAt().isBefore(LocalDateTime.now())) {
             user.setResetToken(null);
             user.setResetTokenExpiresAt(null);
             userRepository.save(user);
+            clearPasswordResetFailures(normalizedEmail);
             throw new CustomException(400, "OTP code has expired. Please request a new code.", HttpStatus.BAD_REQUEST);
         }
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setResetToken(null);
         user.setResetTokenExpiresAt(null);
         userRepository.save(user);
+        clearPasswordResetFailures(normalizedEmail);
     }
 
     @Transactional
@@ -147,7 +235,7 @@ public class AuthService {
     }
 
     @Transactional
-    public UserEntity updateProfile(java.util.UUID userId, String fullName, String avatarUrl) {
+    public UserEntity updateProfile(java.util.UUID userId, String fullName, String avatarUrl, String backgroundImageUrl) {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(404, "User not found", HttpStatus.NOT_FOUND));
 
@@ -157,11 +245,111 @@ public class AuthService {
         if (avatarUrl != null) {
             user.setAvatarUrl(avatarUrl);
         }
+        if (backgroundImageUrl != null) {
+            user.setBackgroundImageUrl(backgroundImageUrl);
+        }
         return userRepository.save(user);
     }
 
     private String capitalizeFirst(String str) {
         if (str == null || str.isEmpty()) return str;
         return str.substring(0, 1).toUpperCase() + str.substring(1).toLowerCase();
+    }
+
+    private void assertPasswordResetThrottle(String normalizedEmail) {
+        Instant now = Instant.now();
+        synchronized (PASSWORD_RESET_THROTTLE) {
+            OtpThrottleState state = PASSWORD_RESET_THROTTLE.get(normalizedEmail);
+            if (state == null || Duration.between(state.windowStartedAt, now).toHours() >= 1) {
+                PASSWORD_RESET_THROTTLE.put(normalizedEmail, new OtpThrottleState(now, now, 1));
+                return;
+            }
+            long secondsSinceLastSend = Duration.between(state.lastSentAt, now).getSeconds();
+            if (secondsSinceLastSend < OTP_RESEND_COOLDOWN_SECONDS) {
+                throw new CustomException(429, "Please wait before requesting another OTP.", HttpStatus.TOO_MANY_REQUESTS);
+            }
+            if (state.sentInWindow >= OTP_MAX_SENDS_PER_HOUR) {
+                throw new CustomException(429, "Too many OTP requests. Please try again later.", HttpStatus.TOO_MANY_REQUESTS);
+            }
+            state.lastSentAt = now;
+            state.sentInWindow++;
+        }
+    }
+
+    private void assertEmailVerificationThrottle(String normalizedEmail) {
+        assertOtpThrottle(EMAIL_VERIFICATION_THROTTLE, normalizedEmail);
+    }
+
+    private void assertOtpThrottle(Map<String, OtpThrottleState> throttleMap, String normalizedEmail) {
+        Instant now = Instant.now();
+        synchronized (throttleMap) {
+            OtpThrottleState state = throttleMap.get(normalizedEmail);
+            if (state == null || Duration.between(state.windowStartedAt, now).toHours() >= 1) {
+                throttleMap.put(normalizedEmail, new OtpThrottleState(now, now, 1));
+                return;
+            }
+            long secondsSinceLastSend = Duration.between(state.lastSentAt, now).getSeconds();
+            if (secondsSinceLastSend < OTP_RESEND_COOLDOWN_SECONDS) {
+                throw new CustomException(429, "Please wait before requesting another OTP.", HttpStatus.TOO_MANY_REQUESTS);
+            }
+            if (state.sentInWindow >= OTP_MAX_SENDS_PER_HOUR) {
+                throw new CustomException(429, "Too many OTP requests. Please try again later.", HttpStatus.TOO_MANY_REQUESTS);
+            }
+            state.lastSentAt = now;
+            state.sentInWindow++;
+        }
+    }
+
+    private void issueEmailVerificationOtp(UserEntity user) {
+        String otp = String.format("%06d", OTP_RANDOM.nextInt(1_000_000));
+        user.setEmailVerificationToken(hashOtp(otp));
+        user.setEmailVerificationExpiresAt(LocalDateTime.now().plusMinutes(EMAIL_VERIFICATION_OTP_TTL_MINUTES));
+        userRepository.save(user);
+        emailUtil.sendSignupOtp(user.getEmail(), otp, user.getFullName());
+    }
+
+    private int getEmailVerificationFailureCount(String normalizedEmail) {
+        return EMAIL_VERIFICATION_FAILURES.getOrDefault(normalizedEmail, 0);
+    }
+
+    private void registerEmailVerificationFailure(String normalizedEmail) {
+        EMAIL_VERIFICATION_FAILURES.merge(normalizedEmail, 1, Integer::sum);
+    }
+
+    private void clearEmailVerificationFailures(String normalizedEmail) {
+        EMAIL_VERIFICATION_FAILURES.remove(normalizedEmail);
+    }
+
+    private int getPasswordResetFailureCount(String normalizedEmail) {
+        return PASSWORD_RESET_FAILURES.getOrDefault(normalizedEmail, 0);
+    }
+
+    private void registerPasswordResetFailure(String normalizedEmail) {
+        PASSWORD_RESET_FAILURES.merge(normalizedEmail, 1, Integer::sum);
+    }
+
+    private void clearPasswordResetFailures(String normalizedEmail) {
+        PASSWORD_RESET_FAILURES.remove(normalizedEmail);
+    }
+
+    private String hashOtp(String otp) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(otp.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            throw new CustomException(500, "Could not secure OTP code.", HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    private static class OtpThrottleState {
+        private final Instant windowStartedAt;
+        private Instant lastSentAt;
+        private int sentInWindow;
+
+        private OtpThrottleState(Instant windowStartedAt, Instant lastSentAt, int sentInWindow) {
+            this.windowStartedAt = windowStartedAt;
+            this.lastSentAt = lastSentAt;
+            this.sentInWindow = sentInWindow;
+        }
     }
 }
