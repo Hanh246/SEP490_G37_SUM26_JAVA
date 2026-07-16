@@ -28,6 +28,9 @@ public interface IComicRepository extends AbstractCrudRepository<ComicEntity, UU
 
     List<ComicEntity> findAllByDeletedFalseAndModerationStatus(ComicModerationStatus moderationStatus);
 
+    @Query("SELECT DISTINCT c FROM ComicEntity c LEFT JOIN FETCH c.genres WHERE c.deleted = false AND c.moderationStatus = :moderationStatus")
+    List<ComicEntity> findAllByDeletedFalseAndModerationStatusWithGenres(@Param("moderationStatus") ComicModerationStatus moderationStatus);
+
     Page<ComicEntity> findByDeletedFalseAndModerationStatus(ComicModerationStatus moderationStatus, Pageable pageable);
 
     Page<ComicEntity> findByDeletedFalseAndModerationStatusOrderByViewCountDesc(ComicModerationStatus moderationStatus, Pageable pageable);
@@ -120,21 +123,21 @@ public interface IComicRepository extends AbstractCrudRepository<ComicEntity, UU
                    "LIMIT :limit", nativeQuery = true)
     List<ComicEntity> findRecommendedComicsForUser(@Param("userId") UUID userId, @Param("limit") int limit);
 
-    @Query(value = "WITH recommended_comics AS (" +
-                   "    SELECT c.id, " +
-                   "           c.summary_vector <=> (SELECT user_vector FROM users WHERE id = :userId) AS distance " +
-                   "    FROM comics c " +
-                   "    WHERE c.deleted = false AND c.moderation_status = 'PUBLISHED' " +
-                   "      AND c.summary_vector IS NOT NULL" +
-                   ") " +
-                   "SELECT id FROM recommended_comics " +
-                   "WHERE (:cursorDistance IS NULL OR distance > :cursorDistance OR (distance = :cursorDistance AND id > :referenceId)) " +
-                   "ORDER BY distance ASC, id ASC " +
+    @Query(value = "SELECT id " +
+                   "FROM comics " +
+                   "WHERE deleted = false " +
+                   "  AND moderation_status = 'PUBLISHED' " +
+                   "  AND summary_vector IS NOT NULL " +
+                   "  AND (COALESCE(:excludedIds) IS NULL OR id NOT IN (:excludedIds)) " +
+                   "  AND (:cursorDistance IS NULL OR (summary_vector <=> CAST(:userVector AS vector)) > :cursorDistance " +
+                   "       OR ((summary_vector <=> CAST(:userVector AS vector)) = :cursorDistance AND id > :referenceId)) " +
+                   "ORDER BY (summary_vector <=> CAST(:userVector AS vector)) ASC, id ASC " +
                    "LIMIT :limit", nativeQuery = true)
     List<UUID> findRecommendedComicIdsForUserCursor(
-            @Param("userId") UUID userId,
+            @Param("userVector") float[] userVector,
             @Param("cursorDistance") Double cursorDistance,
             @Param("referenceId") UUID referenceId,
+            @Param("excludedIds") List<UUID> excludedIds,
             @Param("limit") int limit
     );
 
@@ -152,4 +155,7 @@ public interface IComicRepository extends AbstractCrudRepository<ComicEntity, UU
             @Param("referenceId") UUID referenceId,
             @Param("limit") int limit
     );
+
+    @Query("SELECT g.name FROM ComicEntity c JOIN c.genres g WHERE c.id = :comicId AND c.deleted = false")
+    List<String> findGenreNamesByComicId(@Param("comicId") UUID comicId);
 }

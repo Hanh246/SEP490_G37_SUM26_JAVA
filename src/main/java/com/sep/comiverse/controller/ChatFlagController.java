@@ -9,11 +9,7 @@ import com.sep.comiverse.repository.IChatFlagRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,6 +19,9 @@ public class ChatFlagController extends BaseController<ChatFlagEntity, ChatFlagD
 
     @Autowired
     private IChatFlagRepository chatFlagRepository;
+
+    @Autowired
+    private com.sep.comiverse.service.AuditLogService auditLogService;
 
     @Autowired
     public ChatFlagController(ChatFlagCrudPlugin crud) {
@@ -45,10 +44,26 @@ public class ChatFlagController extends BaseController<ChatFlagEntity, ChatFlagD
 
         flag.setStatus("warned");
         ChatFlagEntity saved = chatFlagRepository.save(flag);
+        auditLogService.log("CHAT_MODERATION", "Warned user for flagged chat message: \"" + flag.getMessage() + "\"");
 
         return ResponseEntity.ok(BaseResponse.<ChatFlagDTO>builder()
                 .success(true)
                 .data(crudPlugin.getPlugin().toDto(saved))
                 .build());
+    }
+
+    @Override
+    @Transactional
+    public ResponseEntity<BaseResponse<Void>> delete(@PathVariable UUID id) {
+        String msg = "Unknown Message";
+        try {
+            var existing = chatFlagRepository.findById(id).orElse(null);
+            if (existing != null) {
+                msg = existing.getMessage();
+            }
+        } catch (Exception e) {}
+        
+        auditLogService.log("CHAT_MODERATION", "Resolved/ignored chat flag for message: \"" + msg + "\"");
+        return super.delete(id);
     }
 }
