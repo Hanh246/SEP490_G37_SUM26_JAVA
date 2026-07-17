@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.ResponseEntity;
+import com.sep.comiverse.dto.ReadingHistoryCacheDTO;
 import com.sep.comiverse.dto.pagination.CursorResponseDTO;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -171,12 +172,11 @@ public class RecommendationService {
             Set<Object> queued = redisTemplate.opsForSet().members("reading:history:sync:queue");
             if (queued != null) {
                 for (Object obj : queued) {
-                    String entry = (String) obj;
-                    String[] parts = entry.split(":");
-                    if (parts.length == 3) {
-                        UUID entryUserId = UUID.fromString(parts[2]);
-                        if (entryUserId.equals(userId)) {
-                            comicIds.add(UUID.fromString(parts[0]));
+                    if (obj instanceof ReadingHistoryCacheDTO entry) {
+                        if (userId.equals(entry.getUserId())) {
+                            if (entry.getComicId() != null) {
+                                comicIds.add(entry.getComicId());
+                            }
                         }
                     }
                 }

@@ -1,5 +1,6 @@
 package com.sep.comiverse.service;
 
+import com.sep.comiverse.dto.ReadingHistoryCacheDTO;
 import com.sep.comiverse.entity.ReadingHistoryEntity;
 import com.sep.comiverse.repository.IReadingHistoryRepository;
 import com.sep.comiverse.security.JwtTokenUtil;
@@ -29,7 +30,25 @@ public class ReadingHistoryService {
         if (userId == null) {
             return Collections.emptyList();
         }
-        return readingHistoryRepository.findReadChapterIdsByUserIdAndComicId(userId, comicId);
+        List<UUID> dbChapterIds = readingHistoryRepository.findReadChapterIdsByUserIdAndComicId(userId, comicId);
+        java.util.Set<UUID> allReadChapterIds = new java.util.HashSet<>(dbChapterIds);
+        try {
+            Set<Object> queuedEntries = redisTemplate.opsForSet().members(READING_HISTORY_SYNC_QUEUE);
+            if (queuedEntries != null && !queuedEntries.isEmpty()) {
+                for (Object obj : queuedEntries) {
+                    if (obj instanceof ReadingHistoryCacheDTO entry) {
+                        if (comicId.equals(entry.getComicId()) && userId.equals(entry.getUserId())) {
+                            if (entry.getChapterId() != null) {
+                                allReadChapterIds.add(entry.getChapterId());
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+        }
+
+        return new java.util.ArrayList<>(allReadChapterIds);
     }
 
     public boolean isChapterRead(UUID chapterId) {
@@ -48,37 +67,37 @@ public class ReadingHistoryService {
         }
 
         for (Object obj : queued) {
-            String entry = (String) obj;
-            String[] parts = entry.split(":");
-            if (parts.length == 3) {
+            if (obj instanceof ReadingHistoryCacheDTO entry) {
                 try {
-                    UUID comicId = UUID.fromString(parts[0]);
-                    UUID chapterId = UUID.fromString(parts[1]);
-                    UUID userId = UUID.fromString(parts[2]);
+                    UUID comicId = entry.getComicId();
+                    UUID chapterId = entry.getChapterId();
+                    UUID userId = entry.getUserId();
 
-                    // Save or update reading history in DB
-                    Optional<ReadingHistoryEntity> existing = readingHistoryRepository.findByChapterIdAndUserId(chapterId, userId);
-                    if (existing.isEmpty()) {
-                        ReadingHistoryEntity newHistory = ReadingHistoryEntity.builder()
-                                .userId(userId)
-                                .comicId(comicId)
-                                .chapterId(chapterId)
-                                .build();
-                        readingHistoryRepository.save(newHistory);
-                    } else {
-                        ReadingHistoryEntity history = existing.get();
-                        if (Boolean.TRUE.equals(history.getDeleted())) {
-                            history.setDeleted(false);
+                    if (comicId != null && chapterId != null && userId != null) {
+                        // Save or update reading history in DB
+                        Optional<ReadingHistoryEntity> existing = readingHistoryRepository.findByChapterIdAndUserId(chapterId, userId);
+                        if (existing.isEmpty()) {
+                            ReadingHistoryEntity newHistory = ReadingHistoryEntity.builder()
+                                    .userId(userId)
+                                    .comicId(comicId)
+                                    .chapterId(chapterId)
+                                    .build();
+                            readingHistoryRepository.save(newHistory);
+                        } else {
+                            ReadingHistoryEntity history = existing.get();
+                            if (Boolean.TRUE.equals(history.getDeleted())) {
+                                history.setDeleted(false);
+                            }
+                            // Save updates updatedAt timestamp
+                            readingHistoryRepository.save(history);
                         }
-                        // Save updates updatedAt timestamp
-                        readingHistoryRepository.save(history);
                     }
                 } catch (Exception e) {
-                    // Log and ignore individual malformed entry processing failures
+                    // Log and ignore individual entry processing failures
                 }
+                // Remove from Redis queue
+                redisTemplate.opsForSet().remove(READING_HISTORY_SYNC_QUEUE, entry);
             }
-            // Remove from Redis queue
-            redisTemplate.opsForSet().remove(READING_HISTORY_SYNC_QUEUE, entry);
         }
     }
 
@@ -96,17 +115,9 @@ public class ReadingHistoryService {
         Set<Object> queued = redisTemplate.opsForSet().members(READING_HISTORY_SYNC_QUEUE);
         if (queued != null && !queued.isEmpty()) {
             for (Object obj : queued) {
-                String entry = (String) obj;
-                String[] parts = entry.split(":");
-                if (parts.length == 3) {
-                    try {
-                        UUID entryComicId = UUID.fromString(parts[0]);
-                        UUID entryUserId = UUID.fromString(parts[2]);
-                        if (entryComicId.equals(comicId) && entryUserId.equals(userId)) {
-                            redisTemplate.opsForSet().remove(READING_HISTORY_SYNC_QUEUE, entry);
-                        }
-                    } catch (Exception e) {
-                        // ignore malformed queue entry
+                if (obj instanceof ReadingHistoryCacheDTO entry) {
+                    if (comicId.equals(entry.getComicId()) && userId.equals(entry.getUserId())) {
+                        redisTemplate.opsForSet().remove(READING_HISTORY_SYNC_QUEUE, entry);
                     }
                 }
             }
