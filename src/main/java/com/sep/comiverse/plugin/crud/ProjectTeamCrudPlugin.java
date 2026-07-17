@@ -80,9 +80,6 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
             if (dto.getProgress() == null) {
                 dto.setProgress(existing.getProgress());
             }
-            if (dto.getAssignedToMe() == null) {
-                dto.setAssignedToMe(existing.getAssignedToMe());
-            }
             if (dto.getCover() == null) {
                 dto.setCover(existing.getCover());
             }

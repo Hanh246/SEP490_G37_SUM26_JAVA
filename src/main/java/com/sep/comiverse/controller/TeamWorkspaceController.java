@@ -1,19 +1,18 @@
 package com.sep.comiverse.controller;
 
+import com.sep.comiverse.dto.CreateTaskRequest;
+import com.sep.comiverse.dto.TeamMemberDto;
+import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.entity.*;
 import com.sep.comiverse.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import com.sep.comiverse.entity.enums.ChapterStatus;
-import com.sep.comiverse.security.UserPrincipal;
-import com.sep.comiverse.service.NotificationService;
-
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/team-workspace")
@@ -28,7 +27,8 @@ public class TeamWorkspaceController {
     private final IProjectTeamRepository projectTeamRepository;
     private final IComicRepository comicRepository;
     private final IChapterRepository chapterRepository;
-    private final NotificationService notificationService;
+    private final IUserRepository userRepository;
+    private final IPageTranslationRepository iPageTranslationRepository;
 
     // ── ANNOUNCEMENTS ────────────────────────────────
     @GetMapping("/{teamId}/announcements")
@@ -86,7 +86,7 @@ public class TeamWorkspaceController {
 
         // Find which chapter IDs already have a task associated with this team
         java.util.Set<UUID> taskChapterIds = teamTasks.stream()
-                .map(TeamTaskEntity::getChapterId)
+                .map(t -> t.getChapter() != null ? t.getChapter().getId() : null)
                 .filter(java.util.Objects::nonNull)
                 .collect(java.util.stream.Collectors.toSet());
 
@@ -128,65 +128,111 @@ public class TeamWorkspaceController {
     }
 
     @PostMapping("/{teamId}/tasks")
-    public ResponseEntity<TeamTaskEntity> createTask(@PathVariable UUID teamId, @RequestBody TeamTaskEntity task) {
-        task.setProjectTeamId(teamId);
-        if (task.getProgress() == null) {
-            task.setProgress(0);
+    public ResponseEntity<?> createTask(@PathVariable UUID teamId, @RequestBody CreateTaskRequest request) {
+
+        ChapterEntity chapter = null;
+        if (request.getChapterId() != null) {
+            chapter = chapterRepository.findById(request.getChapterId()).orElse(null);
+            if (chapter == null) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("success", false, "message", "Chapter not found: " + request.getChapterId()));
+            }
+        } else {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "chapterId is required"));
         }
-        TeamTaskEntity saved = taskRepository.save(task);
-        if (saved.getAssigneeId() != null) {
-            ProjectTeamEntity team = projectTeamRepository.findById(teamId).orElse(null);
-            String teamName = team == null ? "your translation team" : team.getTitle();
-            notificationService.notifyUser(
-                    saved.getAssigneeId(),
-                    "New task assigned",
-                    saved.getTitle() + " was assigned to you in " + teamName + ".",
-                    "UPDATE"
-            );
+
+        TeamTaskEntity task = TeamTaskEntity.builder()
+                .projectTeamId(teamId)
+                .title(request.getTitle())
+                .status(request.getStatus())
+                .assigneeIds(request.getAssigneeIds())
+                .chapter(chapter)
+                .dueDate(request.getDueDate())
+                .build();
+
+        TeamTaskEntity created = taskRepository.save(task);
+
+        // === Copy ảnh từ chapter.images -> tạo bộ page_translation riêng cho task này ===
+        List<String> images = chapter.getImages();
+        if (images != null && !images.isEmpty()) {
+            List<PageTranslationEntity> pages = new ArrayList<>();
+            for (int i = 0; i < images.size(); i++) {
+                pages.add(PageTranslationEntity.builder()
+                        .taskId(created)
+                        .imageUrl(images.get(i))
+                        .pageNumber(i + 1)
+                        .status(com.sep.comiverse.entity.enums.PageStatus.TODO)
+                        .bubbles("[]")
+                        .build());
+            }
+            iPageTranslationRepository.saveAll(pages);
         }
-        return ResponseEntity.ok(saved);
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+    @GetMapping("/{teamId}/members")
+    public ResponseEntity<?> getTeamMembers(@PathVariable UUID teamId) {
+        ProjectTeamEntity team = projectTeamRepository.findById(teamId).orElse(null);
+        if (team == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        List<UserEntity> members = team.getMembers() != null ? team.getMembers() : Collections.emptyList();
+        if (members.isEmpty()) {
+            return ResponseEntity.ok(Collections.emptyList());
+        }
+
+
+        List<TeamMemberDto> result = members.stream()
+                .map(u -> TeamMemberDto.builder()
+                        .id(u.getId())
+                        .name(u.getFullName())
+                        .avatar(computeInitials(u.getFullName()))
+                        .build())
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(result);
     }
 
-    @PutMapping("/tasks/{id}")
-    public ResponseEntity<TeamTaskEntity> updateTask(@PathVariable UUID id, @RequestBody TeamTaskEntity taskUpdates) {
-        return taskRepository.findById(id).map(task -> {
-            boolean wasCompleted = "completed".equalsIgnoreCase(task.getColumnName());
-            if (taskUpdates.getColumnName() != null) {
-                task.setColumnName(taskUpdates.getColumnName());
-            }
-            if (taskUpdates.getProgress() != null) {
-                task.setProgress(taskUpdates.getProgress());
-            }
-            TeamTaskEntity saved = taskRepository.save(task);
-            boolean isNowCompleted = "completed".equalsIgnoreCase(saved.getColumnName());
-            if (!wasCompleted && isNowCompleted) {
-                projectTeamRepository.findById(saved.getProjectTeamId()).ifPresent(team ->
-                        notificationService.notifyUser(
-                                team.getLeaderId(),
-                                "Task completed",
-                                saved.getTitle() + " was marked complete in " + team.getTitle() + ".",
-                                "INFO"
-                        )
-                );
-            }
-            return ResponseEntity.ok(saved);
-        }).orElse(ResponseEntity.notFound().build());
+    @GetMapping("/{teamId}/chapters")
+    public ResponseEntity<List<ChapterLiteDTO>> getTeamChapters(@PathVariable UUID teamId) {
+        List<ChapterEntity> chapters = chapterRepository.findByProjectTeam_Id(teamId);
+
+        List<ChapterLiteDTO> result = chapters.stream()
+                .map(c -> ChapterLiteDTO.builder()
+                        .id(c.getId())
+                        .comicId(c.getComic() != null ? c.getComic().getId() : null)
+                        .chapterNumber(c.getChapterNumber())
+                        .title(c.getTitle())
+                        .viewCount(c.getViewCount())
+                        .isPremium(c.getIsPremium())
+                        .createdAt(c.getCreatedAt())
+
+                        .build())
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(result);
+    }
+
+    private String computeInitials(String fullName) {
+        if (fullName == null || fullName.isBlank()) return "?";
+        String[] parts = fullName.trim().split("\\s+");
+        StringBuilder sb = new StringBuilder();
+        for (String p : parts) {
+            if (!p.isEmpty()) sb.append(Character.toUpperCase(p.charAt(0)));
+            if (sb.length() >= 2) break;
+        }
+        return sb.toString();
     }
 
     @GetMapping("/tasks/{id}")
     public ResponseEntity<Object> getTaskById(@PathVariable UUID id) {
-        var taskOpt = taskRepository.findById(id);
-
-        if (taskOpt.isPresent()) {
-            // Nếu tìm thấy, trả về trực tiếp Entity (Spring sẽ tự chuyển sang JSON)
-            return ResponseEntity.ok(taskOpt.get());
-        } else {
-            // Nếu không, trả về Map lỗi
-            return ResponseEntity.status(404).body(Map.of(
-                    "success", false,
-                    "message", "Task not found"
-            ));
+        var taskOpt = taskRepository.findByIdWithChapter(id);
+        if (taskOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("success", false, "message", "Task not found"));
         }
+        return ResponseEntity.ok(taskOpt.get());
     }
 
     // ── JOIN REQUESTS ────────────────────────────────

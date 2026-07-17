@@ -112,49 +112,6 @@ public class ComicController {
                 .build());
     }
 
-    @GetMapping("/top-views")
-    @Operation(summary = "Retrieve a paginated collection of published comics sorted by maximum traffic views")
-    public ResponseEntity<PaginationResponse<List<ComicDTO>>> getTopViews(
-            @Valid @ParameterObject PaginationSearchDTO paginationDTO
-    ) {
-        PaginationSearchDTO safePagination =
-                paginationDTO != null ? paginationDTO : new PaginationSearchDTO();
-
-        Page<ComicDTO> data = comicCrudPlugin.getTopViews(safePagination);
-
-        return ResponseEntity.ok(PaginationResponse.<List<ComicDTO>>builder()
-                .success(true)
-                .metadata(new PaginationMetadata(
-                        safePagination.getPage(),
-                        safePagination.getSize(),
-                        data.getTotalElements(),
-                        data.getTotalPages()
-                ))
-                .data(data.toList())
-                .build());
-    }
-
-    @GetMapping("/recently-updated")
-    @Operation(summary = "Retrieve a paginated collection of published comics with recently published chapters")
-    public ResponseEntity<PaginationResponse<List<ComicDTO>>> getRecentlyUpdated(
-            @Valid @ParameterObject PaginationSearchDTO paginationDTO
-    ) {
-        PaginationSearchDTO safePagination =
-                paginationDTO != null ? paginationDTO : new PaginationSearchDTO();
-
-        Page<ComicDTO> data = comicCrudPlugin.getComicsByLatestChapters(safePagination);
-
-        return ResponseEntity.ok(PaginationResponse.<List<ComicDTO>>builder()
-                .success(true)
-                .metadata(new PaginationMetadata(
-                        safePagination.getPage(),
-                        safePagination.getSize(),
-                        data.getTotalElements(),
-                        data.getTotalPages()
-                ))
-                .data(data.toList())
-                .build());
-    }
 
     @GetMapping("/explore")
     @Operation(summary = "Explore published catalog using optimized cursor pagination with filters and dynamic sorting")

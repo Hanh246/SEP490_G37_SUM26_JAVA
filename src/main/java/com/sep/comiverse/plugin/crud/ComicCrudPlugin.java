@@ -147,21 +147,17 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
     @Transactional(readOnly = true)
     public Page<ComicDTO> getTopViews(PaginationSearchDTO paginationDTO) {
         Pageable pageable = paginationDTO.toPageRequest();
-        return comicRepository
-                .findByDeletedFalseAndModerationStatusOrderByViewCountDesc(
-                        ComicModerationStatus.PUBLISHED,
-                        pageable
-                )
+        return comicRepository.findByDeletedFalseAndModerationStatusOrderByViewCountDesc(ComicModerationStatus.PUBLISHED, pageable)
                 .map(plugin::toDto);
     }
 
     @Transactional(readOnly = true)
     public Page<ComicDTO> getComicsByLatestChapters(PaginationSearchDTO paginationDTO) {
         Pageable pageable = paginationDTO.toPageRequest();
-        return comicRepository
-                .findComicsByLatestChapters(ComicModerationStatus.PUBLISHED, pageable)
+        return comicRepository.findComicsByLatestChapters(ComicModerationStatus.PUBLISHED, pageable)
                 .map(plugin::toDto);
     }
+
 
     @Transactional(readOnly = true)
     public ComicDTO getComicDetail(UUID comicId) {
@@ -310,18 +306,7 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         return new CursorResponseDTO<>(dtoList, nextCursor, nextReferenceId, hasMore);
     }
 
-    public List<ComicDTO> listPublishedComicsWithoutGenres() {
-        return comicRepository.findAllByDeletedFalseAndModerationStatus(ComicModerationStatus.PUBLISHED)
-                .stream()
-                .map(plugin::toDto)
-                .toList();
-    }
 
-    public Page<ComicDTO> listPublishedComicsWithoutGenres(PaginationSearchDTO paginationDTO) {
-        Pageable pageable = paginationDTO.toPageRequest();
-        return comicRepository.findPublishedComics(ComicModerationStatus.PUBLISHED, paginationDTO.getSearch(), pageable)
-                .map(plugin::toDto);
-    }
 
     private String getTimeProperty(ComicEntity entity, String property) {
         if ("lastChapterUpdatedAt".equals(property)) {
