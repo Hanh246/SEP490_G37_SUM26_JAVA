@@ -36,6 +36,9 @@ public class TeamTaskEntity {
     @Column(name = "assignee_ids")
     private List<UUID> assigneeIds;
 
+    @Column(name = "assignee_id")
+    private UUID assigneeId;
+
     @Column(name = "due_date")
     private String dueDate;
 }

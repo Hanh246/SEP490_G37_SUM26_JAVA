@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import com.sep.comiverse.security.UserPrincipal;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import java.math.BigDecimal;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.time.Instant;
@@ -48,6 +49,9 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
     @Autowired
     private IUserRepository userRepository;
+
+    @Autowired
+    private com.sep.comiverse.service.NotificationService notificationService;
 
     private static final Pattern CHAPTER_NUMBER_PATTERN =
             Pattern.compile("(?i)chapter\\s+([0-9]+(?:[,.][0-9]+)?)");
@@ -93,6 +97,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             } else if ("translator".equalsIgnoreCase(submission.getQueueType())) {
                 handleTranslatorApproval(submission);
             }
+            notifySubmissionOwner(submission, true, null);
         }
 
         return ResponseEntity.ok(BaseResponse.<SubmissionDTO>builder()
@@ -184,17 +189,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         String teamName = submission.getSubmittedBy();
         String comicTitle = submission.getTitle();
 
-        ProjectTeamEntity team = projectTeamRepository.findAll().stream()
-                .filter(t -> t.getTitle() != null && t.getTitle().equalsIgnoreCase(teamName))
-                .findFirst()
-                .orElse(null);
-
-        if (team == null) {
-            team = projectTeamRepository.findAll().stream()
-                    .filter(t -> t.getComicName() != null && t.getComicName().equalsIgnoreCase(comicTitle))
-                    .findFirst()
-                    .orElse(null);
-        }
+        ProjectTeamEntity team = findSubmissionTeam(submission);
 
             ComicEntity comic = comicRepository.findAllByTitle(comicTitle).stream().findFirst()
                     .or(() -> comicRepository.findAllByTitleIgnoreCase(comicTitle).stream().findFirst())
@@ -345,6 +340,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Submission with id " + id + " not found"));
 
         String reason = body != null ? body.getOrDefault("reason", "No reason provided.") : "No reason provided.";
+        boolean alreadyRejected = "rejected".equalsIgnoreCase(submission.getStatus());
         submission.setStatus("rejected");
         submission.setRejectionReason(reason);
         if (principal != null) {
@@ -352,13 +348,52 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         }
 
         SubmissionEntity savedSubmission = submissionRepository.save(submission);
-        String targetDesc = "author".equalsIgnoreCase(submission.getQueueType()) ? "Comic profile" : "chapter " + submission.getChapter();
-        auditLogService.log("REVIEW_QUEUE", "Rejected " + targetDesc + " of " + submission.getTitle() + " (Reason: " + reason + ")");
-        handleSubmissionRejected(submission);
+        if (!alreadyRejected) {
+            String targetDesc = "author".equalsIgnoreCase(submission.getQueueType()) ? "Comic profile" : "chapter " + submission.getChapter();
+            auditLogService.log("REVIEW_QUEUE", "Rejected " + targetDesc + " of " + submission.getTitle() + " (Reason: " + reason + ")");
+            handleSubmissionRejected(submission);
+            notifySubmissionOwner(submission, false, reason);
+        }
 
         return ResponseEntity.ok(BaseResponse.<SubmissionDTO>builder()
                 .success(true)
                 .data(crudPlugin.getPlugin().toDto(savedSubmission))
                 .build());
+    }
+
+    private void notifySubmissionOwner(SubmissionEntity submission, boolean approved, String rejectionReason) {
+        UUID recipientId = submission.getAuthorId();
+        if (recipientId == null && "translator".equalsIgnoreCase(submission.getQueueType())) {
+            ProjectTeamEntity team = findSubmissionTeam(submission);
+            recipientId = team == null ? null : team.getLeaderId();
+        }
+        String subject = submission.getChapter() == null || submission.getChapter().isBlank()
+                ? submission.getTitle()
+                : submission.getTitle() + " - " + submission.getChapter();
+        String message = approved
+                ? subject + " was approved and is ready for the next workflow step."
+                : subject + " needs changes. Reason: " + rejectionReason;
+        notificationService.notifyUser(
+                recipientId,
+                approved ? "Submission approved" : "Submission needs changes",
+                message,
+                approved ? "UPDATE" : "WARNING"
+        );
+    }
+
+    private ProjectTeamEntity findSubmissionTeam(SubmissionEntity submission) {
+        if (submission == null) {
+            return null;
+        }
+        String teamName = submission.getSubmittedBy();
+        String comicTitle = submission.getTitle();
+        return projectTeamRepository.findAll().stream()
+                .filter(team -> teamName != null && team.getTitle() != null && team.getTitle().equalsIgnoreCase(teamName))
+                .findFirst()
+                .orElseGet(() -> projectTeamRepository.findAll().stream()
+                        .filter(team -> comicTitle != null && team.getComicName() != null
+                                && team.getComicName().equalsIgnoreCase(comicTitle))
+                        .findFirst()
+                        .orElse(null));
     }
 }
