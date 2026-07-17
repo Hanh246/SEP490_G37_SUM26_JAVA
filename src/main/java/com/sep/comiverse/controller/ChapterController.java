@@ -113,7 +113,7 @@ public class ChapterController {
      * ADMIN CRUD - xóa chapter trực tiếp.
      */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'MODERATOR')")
     public ResponseEntity<BaseResponse<Void>> delete(@PathVariable UUID id) {
         chapterCrudPlugin.delete(id);
 
