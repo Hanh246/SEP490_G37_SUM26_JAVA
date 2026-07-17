@@ -9,6 +9,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import com.sep.comiverse.security.UserPrincipal;
+import com.sep.comiverse.service.NotificationService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
@@ -29,6 +31,7 @@ public class TeamWorkspaceController {
     private final IChapterRepository chapterRepository;
     private final IUserRepository userRepository;
     private final IPageTranslationRepository iPageTranslationRepository;
+    private final NotificationService notificationService;
 
     // ── ANNOUNCEMENTS ────────────────────────────────
     @GetMapping("/{teamId}/announcements")
