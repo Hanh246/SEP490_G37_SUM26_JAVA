@@ -134,6 +134,7 @@ public class DbInitializer implements CommandLineRunner {
         createRoleIfNotExist("MODERATOR");
         createRoleIfNotExist("AUTHOR");
         createRoleIfNotExist("TRANSLATOR");
+        createRoleIfNotExist("PROJECT_LEADER");
         createRoleIfNotExist("READER");
     }
 
@@ -176,6 +177,7 @@ public class DbInitializer implements CommandLineRunner {
         createSampleUser("moderator1", "Moderator One", "moderator1@comiverse.com", "0987654321", "MODERATOR", "staff123");
         createSampleUser("author1", "Author One", "author1@comiverse.com", "0987654322", "AUTHOR", "staff123");
         createSampleUser("translator1", "Translator One", "translator1@comiverse.com", "0987654323", "TRANSLATOR", "staff123");
+        createSampleUser("projectleader1", "Project Leader One", "projectleader1@comiverse.com", "0987654325", "PROJECT_LEADER", "staff123");
         createSampleUser("reader1", "Reader One", "reader1@comiverse.com", "0987654324", "READER", "reader123");
     }
 

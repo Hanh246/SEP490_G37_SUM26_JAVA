@@ -5,9 +5,12 @@ import com.sep.comiverse.dto.TeamMemberDto;
 import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.entity.*;
 import com.sep.comiverse.repository.*;
+import com.sep.comiverse.security.UserPrincipal;
+import com.sep.comiverse.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
@@ -28,6 +31,7 @@ public class TeamWorkspaceController {
     private final IChapterRepository chapterRepository;
     private final IUserRepository userRepository;
     private final IPageTranslationRepository iPageTranslationRepository;
+    private final NotificationService notificationService;
 
     // ── ANNOUNCEMENTS ────────────────────────────────
     @GetMapping("/{teamId}/announcements")
@@ -241,9 +245,57 @@ public class TeamWorkspaceController {
     }
 
     @PostMapping("/{teamId}/requests")
-    public ResponseEntity<TeamJoinRequestEntity> createRequest(@PathVariable UUID teamId, @RequestBody TeamJoinRequestEntity request) {
+    public ResponseEntity<TeamJoinRequestEntity> createRequest(
+            @PathVariable UUID teamId,
+            @RequestBody TeamJoinRequestEntity request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
         request.setProjectTeamId(teamId);
-        return ResponseEntity.ok(joinRequestRepository.save(request));
+        if (principal != null) {
+            request.setRequesterId(principal.getId());
+        }
+        TeamJoinRequestEntity saved = joinRequestRepository.save(request);
+        projectTeamRepository.findById(teamId).ifPresent(team ->
+                notificationService.notifyUser(
+                        team.getLeaderId(),
+                        "New team join request",
+                        saved.getName() + " requested to join " + team.getTitle() + ".",
+                        "INFO"
+                )
+        );
+        return ResponseEntity.ok(saved);
+    }
+
+    @PutMapping("/requests/{id}/decision")
+    public ResponseEntity<TeamJoinRequestEntity> decideRequest(
+            @PathVariable UUID id,
+            @RequestBody Map<String, String> body
+    ) {
+        TeamJoinRequestEntity request = joinRequestRepository.findById(id).orElse(null);
+        if (request == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String decision = body == null ? "" : body.getOrDefault("decision", "").trim().toLowerCase();
+        if (!"approved".equals(decision) && !"rejected".equals(decision)) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        ProjectTeamEntity team = projectTeamRepository.findById(request.getProjectTeamId()).orElse(null);
+        if (team != null && "approved".equals(decision)) {
+            team.setMembersCount((team.getMembersCount() == null ? 0 : team.getMembersCount()) + 1);
+            projectTeamRepository.save(team);
+        }
+
+        String teamName = team == null ? "the translation team" : team.getTitle();
+        notificationService.notifyUser(
+                request.getRequesterId(),
+                "Team request " + decision,
+                "Your request to join " + teamName + " was " + decision + ".",
+                "approved".equals(decision) ? "UPDATE" : "WARNING"
+        );
+        joinRequestRepository.deleteById(id);
+        return ResponseEntity.ok(request);
     }
 
     @DeleteMapping("/requests/{id}")

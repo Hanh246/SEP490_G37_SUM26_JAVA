@@ -53,6 +53,13 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         this.leaderboardScheduler = leaderboardScheduler;
     }
 
+    public ComicCrudPlugin(IComicRepository repository,
+                           PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry,
+                           RedisTemplate<String, Object> redisTemplate,
+                           LeaderboardScheduler leaderboardScheduler) {
+        this(repository, null, pluginRegistry, redisTemplate, leaderboardScheduler);
+    }
+
     @Override
     @Transactional
     public ComicDTO update(UUID id, ComicDTO dto) throws RuntimeException {

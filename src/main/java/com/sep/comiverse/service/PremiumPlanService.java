@@ -101,6 +101,7 @@ public class PremiumPlanService {
                 .email(user.getEmail())
                 .role(user.getRole() != null ? user.getRole().getRoleName() : "READER")
                 .avatarUrl(user.getAvatarUrl())
+                .backgroundImageUrl(user.getBackgroundImageUrl())
                 .premiumPlan(premiumActive ? user.getPremiumPlan() : null)
                 .premiumExpiresAt(user.getPremiumExpiresAt())
                 .premiumActive(premiumActive)
