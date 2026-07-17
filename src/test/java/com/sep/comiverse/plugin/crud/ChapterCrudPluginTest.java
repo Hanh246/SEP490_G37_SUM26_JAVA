@@ -2,6 +2,7 @@ package com.sep.comiverse.plugin.crud;
 
 import com.sep.comiverse.dto.ChapterDTO;
 import com.sep.comiverse.dto.ChapterLiteDTO;
+import com.sep.comiverse.dto.ReadingHistoryCacheDTO;
 import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.UserEntity;
@@ -111,7 +112,12 @@ public class ChapterCrudPluginTest {
 
         verify(hashOperations).increment(ViewSyncScheduler.COMIC_VIEW_HASH, comicId.toString(), 1L);
         verify(hashOperations).increment(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString(), 1L);
-        verify(setOperations).add("reading:history:sync:queue", comicId + ":" + chapterId + ":" + userId);
+        ReadingHistoryCacheDTO expectedDto = ReadingHistoryCacheDTO.builder()
+                .comicId(comicId)
+                .chapterId(chapterId)
+                .userId(userId)
+                .build();
+        verify(setOperations).add("reading:history:sync:queue", expectedDto);
     }
 
     @Test

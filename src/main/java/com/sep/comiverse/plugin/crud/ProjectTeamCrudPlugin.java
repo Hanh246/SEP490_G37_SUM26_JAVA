@@ -82,6 +82,12 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
             }
             if (dto.getPriority() == null) {
                 dto.setPriority(existing.getPriority());
+                TeamTaskEntity task = TeamTaskEntity.builder()
+                        .projectTeamId(createdDto.getId())
+                        .title(taskTitle)
+                        .status("backlog")
+                        .build();
+                teamTaskRepository.save(task);
             }
         }
         return super.update(id, dto);

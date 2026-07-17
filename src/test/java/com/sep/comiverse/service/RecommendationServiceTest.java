@@ -25,6 +25,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.SetOperations;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import com.sep.comiverse.dto.pagination.CursorResponseDTO;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestTemplate;
 
@@ -237,5 +238,127 @@ public class RecommendationServiceTest {
         assertEquals(1, results.size());
         assertEquals("Recommended Comic", results.get(0).getTitle());
         verify(comicRepository).findRecommendedComicsForUser(userId, 5);
+    }
+
+    @Test
+    void testGetRecommendedComicIdsCursor_VectorSearch_WithInteractedExclusions() {
+        // Arrange
+        UUID userId = UUID.randomUUID();
+        float[] userVec = new float[768];
+        Arrays.fill(userVec, 0.5f);
+
+        UserEntity user = new UserEntity();
+        user.setId(userId);
+        user.setUserVector(userVec);
+
+        UUID interactedId1 = UUID.randomUUID();
+        UUID interactedId2 = UUID.randomUUID();
+        UUID recommendedId = UUID.randomUUID();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(userLikeRepository.findLikedComicIdsByUserId(userId)).thenReturn(List.of(interactedId1));
+        when(userSaveRepository.findSavedComicIdsByUserId(userId)).thenReturn(List.of(interactedId2));
+        when(readingHistoryRepository.findReadComicIdsByUserId(userId)).thenReturn(Collections.emptyList());
+        
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(setOperations.members(anyString())).thenReturn(Collections.emptySet());
+
+        Double cursorDistance = 0.123;
+        UUID referenceId = UUID.randomUUID();
+        int size = 5;
+        int limit = size + 1;
+
+        when(comicRepository.findRecommendedComicIdsForUserCursor(
+                eq(userVec), eq(cursorDistance), eq(referenceId), any(), eq(limit)
+        )).thenReturn(List.of(recommendedId));
+
+        // Act
+        CursorResponseDTO<UUID> result = recommendationService.getRecommendedComicIdsCursor(
+                userId, String.valueOf(cursorDistance), referenceId, size
+        );
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(1, result.getData().size());
+        assertEquals(recommendedId, result.getData().get(0));
+        assertFalse(result.isHasMore());
+        verify(comicRepository).findRecommendedComicIdsForUserCursor(
+                eq(userVec), eq(cursorDistance), eq(referenceId), argThat(list -> 
+                        list != null && list.contains(interactedId1) && list.contains(interactedId2) && list.size() == 2
+                ), eq(limit)
+        );
+    }
+
+    @Test
+    void testGetRecommendedComicIdsCursor_VectorSearch_NoInteractedExclusions() {
+        // Arrange
+        UUID userId = UUID.randomUUID();
+        float[] userVec = new float[768];
+        Arrays.fill(userVec, 0.5f);
+
+        UserEntity user = new UserEntity();
+        user.setId(userId);
+        user.setUserVector(userVec);
+
+        UUID recommendedId = UUID.randomUUID();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(userLikeRepository.findLikedComicIdsByUserId(userId)).thenReturn(Collections.emptyList());
+        when(userSaveRepository.findSavedComicIdsByUserId(userId)).thenReturn(Collections.emptyList());
+        when(readingHistoryRepository.findReadComicIdsByUserId(userId)).thenReturn(Collections.emptyList());
+        
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(setOperations.members(anyString())).thenReturn(Collections.emptySet());
+
+        Double cursorDistance = null;
+        UUID referenceId = null;
+        int size = 5;
+        int limit = size + 1;
+
+        when(comicRepository.findRecommendedComicIdsForUserCursor(
+                eq(userVec), eq(null), eq(null), eq(null), eq(limit)
+        )).thenReturn(List.of(recommendedId));
+
+        // Act
+        CursorResponseDTO<UUID> result = recommendationService.getRecommendedComicIdsCursor(
+                userId, null, referenceId, size
+        );
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(1, result.getData().size());
+        assertEquals(recommendedId, result.getData().get(0));
+        assertFalse(result.isHasMore());
+        verify(comicRepository).findRecommendedComicIdsForUserCursor(
+                eq(userVec), eq(null), eq(null), eq(null), eq(limit)
+        );
+    }
+
+    @Test
+    void testGetRecommendedComicIdsCursor_PopularSearch_Fallback() {
+        // Arrange
+        UUID userId = UUID.randomUUID();
+        UserEntity user = new UserEntity();
+        user.setId(userId);
+        user.setUserVector(null); // Force fallback
+
+        UUID popularId = UUID.randomUUID();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(comicRepository.findPopularComicIdsCursor(eq(100L), any(), eq(6)))
+                .thenReturn(List.of(popularId));
+
+        // Act
+        CursorResponseDTO<UUID> result = recommendationService.getRecommendedComicIdsCursor(
+                userId, "100", null, 5
+        );
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(1, result.getData().size());
+        assertEquals(popularId, result.getData().get(0));
+        assertFalse(result.isHasMore());
+        verify(comicRepository).findPopularComicIdsCursor(eq(100L), any(), eq(6));
+        verify(comicRepository, never()).findRecommendedComicIdsForUserCursor(any(), any(), any(), any(), anyInt());
     }
 }

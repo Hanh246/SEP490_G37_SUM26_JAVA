@@ -86,6 +86,14 @@ public class DbInitializer implements CommandLineRunner {
         } catch (Exception e) {
             System.err.println("⚠️ Warning: Failed to create HNSW index: " + e.getMessage());
         }
+
+        // Create HNSW index for cosine similarity on users
+        try {
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_users_user_vector_hnsw ON users USING hnsw (user_vector vector_cosine_ops)");
+            System.out.println("✅ Database Setup: HNSW Index created/verified on users table");
+        } catch (Exception e) {
+            System.err.println("⚠️ Warning: Failed to create HNSW index on users table: " + e.getMessage());
+        }
     }
 
     private void migrateLegacyChapterPagesIntoChapterImages() {

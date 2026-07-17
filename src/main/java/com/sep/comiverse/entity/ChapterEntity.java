@@ -55,6 +55,9 @@ public class ChapterEntity extends BaseEntity {
     @Column(name = "is_premium", nullable = false, columnDefinition = "boolean default false")
     private Boolean isPremium = false;
 
+    @OneToMany(mappedBy = "chapter", fetch = FetchType.LAZY)
+    private List<TeamTaskEntity> tasks = new ArrayList<>();
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "project_team_id")
     private ProjectTeamEntity projectTeam;
