@@ -65,9 +65,6 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
             if (dto.getProgress() == null) {
                 dto.setProgress(existing.getProgress());
             }
-            if (dto.getAssignedToMe() == null) {
-                dto.setAssignedToMe(existing.getAssignedToMe());
-            }
             if (dto.getCover() == null) {
                 dto.setCover(existing.getCover());
             }
@@ -82,12 +79,6 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
             }
             if (dto.getPriority() == null) {
                 dto.setPriority(existing.getPriority());
-                TeamTaskEntity task = TeamTaskEntity.builder()
-                        .projectTeamId(createdDto.getId())
-                        .title(taskTitle)
-                        .status("backlog")
-                        .build();
-                teamTaskRepository.save(task);
             }
         }
         return super.update(id, dto);

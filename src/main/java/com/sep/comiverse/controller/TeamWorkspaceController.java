@@ -27,7 +27,6 @@ public class TeamWorkspaceController {
     private final IComicRepository comicRepository;
     private final IChapterRepository chapterRepository;
     private final IUserRepository userRepository;
-    private final IChapterRepository chapterRepository;
     private final IPageTranslationRepository iPageTranslationRepository;
 
     // ── ANNOUNCEMENTS ────────────────────────────────
@@ -86,7 +85,7 @@ public class TeamWorkspaceController {
 
         // Find which chapter IDs already have a task associated with this team
         java.util.Set<UUID> taskChapterIds = teamTasks.stream()
-                .map(TeamTaskEntity::getChapterId)
+                .map(t -> t.getChapter() != null ? t.getChapter().getId() : null)
                 .filter(java.util.Objects::nonNull)
                 .collect(java.util.stream.Collectors.toSet());
 
