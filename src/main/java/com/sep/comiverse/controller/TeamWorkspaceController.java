@@ -1,6 +1,6 @@
 package com.sep.comiverse.controller;
 
-import com.sep.comiverse.dto.CreateTaskRequest;
+import com.sep.comiverse.dto.request.CreateTaskRequest;
 import com.sep.comiverse.dto.TeamMemberDto;
 import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.entity.*;
@@ -11,7 +11,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import com.sep.comiverse.entity.enums.ChapterStatus;
 import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.NotificationService;
 

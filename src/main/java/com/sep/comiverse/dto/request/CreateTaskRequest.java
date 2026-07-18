@@ -1,4 +1,4 @@
-package com.sep.comiverse.dto;
+package com.sep.comiverse.dto.request;
 
 import lombok.*;
 import java.util.List;
