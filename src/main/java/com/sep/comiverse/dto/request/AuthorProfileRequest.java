@@ -27,6 +27,9 @@ public class AuthorProfileRequest {
     @Size(max = 3000, message = "Bio must not exceed 3000 characters")
     private String bio;
 
+    @Size(max = 100, message = "Language must not exceed 100 characters")
+    private String language;
+
     @Size(max = 500, message = "Avatar URL must not exceed 500 characters")
     private String avatarUrl;
 

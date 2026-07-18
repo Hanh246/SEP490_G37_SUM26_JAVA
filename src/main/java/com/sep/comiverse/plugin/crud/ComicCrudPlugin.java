@@ -171,7 +171,7 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
             ComicDTO dto = new ComicDTO();
             dto.setId(entity.getId());
             dto.setTitle(entity.getTitle());
-            dto.setStatus(entity.getStatus());
+            dto.setPublicationStatus(entity.getPublicationStatus());
             dto.setCover(entity.getCover());
             dto.setViewCount(entity.getViewCount());
             return dto;
