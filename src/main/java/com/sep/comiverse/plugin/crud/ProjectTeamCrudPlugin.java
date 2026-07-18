@@ -27,6 +27,9 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
     private com.sep.comiverse.service.AuditLogService auditLogService;
 
     @Autowired
+    private com.sep.comiverse.service.NotificationService notificationService;
+
+    @Autowired
     public ProjectTeamCrudPlugin(IProjectTeamRepository repository,
                                  PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry,
                                  ISubmissionRepository submissionRepository,
@@ -41,6 +44,7 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
     public ProjectTeamDTO create(ProjectTeamDTO dto) throws RuntimeException {
         ProjectTeamDTO created = super.create(dto);
         auditLogService.log("PROJECT_TEAMS", "Created project team: " + created.getTitle() + " for comic: " + created.getComicName());
+        notifyLeaderAboutAssignment(created, "You were assigned as project leader");
         return created;
     }
 
@@ -48,10 +52,21 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
     @org.springframework.transaction.annotation.Transactional
     public ProjectTeamDTO update(UUID id, ProjectTeamDTO dto) throws RuntimeException {
         var existingOpt = repository.findById(id);
+        UUID previousLeaderId = null;
+        String previousComicName = null;
+        String previousTargetLang = null;
+        String previousStatus = null;
         if (existingOpt.isPresent()) {
             var existing = existingOpt.get();
+            previousLeaderId = existing.getLeaderId();
+            previousComicName = existing.getComicName();
+            previousTargetLang = existing.getTargetLang();
+            previousStatus = existing.getStatus();
             if (dto.getLeaderName() == null) {
                 dto.setLeaderName(existing.getLeaderName());
+            }
+            if (dto.getLeaderId() == null) {
+                dto.setLeaderId(existing.getLeaderId());
             }
             if (dto.getLeaderInitials() == null) {
                 dto.setLeaderInitials(existing.getLeaderInitials());
@@ -64,9 +79,6 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
             }
             if (dto.getProgress() == null) {
                 dto.setProgress(existing.getProgress());
-            }
-            if (dto.getAssignedToMe() == null) {
-                dto.setAssignedToMe(existing.getAssignedToMe());
             }
             if (dto.getCover() == null) {
                 dto.setCover(existing.getCover());
@@ -84,7 +96,17 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
                 dto.setPriority(existing.getPriority());
             }
         }
-        return super.update(id, dto);
+        ProjectTeamDTO updated = super.update(id, dto);
+        boolean leaderChanged = updated.getLeaderId() != null && !updated.getLeaderId().equals(previousLeaderId);
+        boolean assignmentChanged = !java.util.Objects.equals(previousComicName, updated.getComicName())
+                || !java.util.Objects.equals(previousTargetLang, updated.getTargetLang())
+                || !java.util.Objects.equals(previousStatus, updated.getStatus());
+        if (leaderChanged) {
+            notifyLeaderAboutAssignment(updated, "You were assigned as project leader");
+        } else if (updated.getLeaderId() != null && assignmentChanged) {
+            notifyLeaderAboutAssignment(updated, "New project update");
+        }
+        return updated;
     }
 
     @Override
@@ -100,5 +122,23 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
         
         super.delete(id);
         auditLogService.log("PROJECT_TEAMS", "Removed project team: " + teamTitle);
+    }
+
+    private void notifyLeaderAboutAssignment(ProjectTeamDTO team, String title) {
+        if (team == null || team.getLeaderId() == null) {
+            return;
+        }
+        String projectName = team.getComicName() == null || team.getComicName().isBlank()
+                ? team.getTitle()
+                : team.getComicName();
+        String language = team.getTargetLang() == null || team.getTargetLang().isBlank()
+                ? "the selected language"
+                : team.getTargetLang();
+        notificationService.notifyUser(
+                team.getLeaderId(),
+                title,
+                "You are responsible for " + projectName + " (" + language + ").",
+                "UPDATE"
+        );
     }
 }

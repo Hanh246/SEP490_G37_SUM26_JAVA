@@ -9,6 +9,7 @@ import com.sep.comiverse.dto.request.ForgotPasswordRequest;
 import com.sep.comiverse.dto.request.ResetPasswordRequest;
 import com.sep.comiverse.dto.request.ChangePasswordRequest;
 import com.sep.comiverse.dto.request.UpdateProfileRequest;
+import com.sep.comiverse.dto.request.VerifyEmailRequest;
 import com.sep.comiverse.dto.response.AuthResponse;
 import com.sep.comiverse.dto.response.UserProfileResponse;
 import com.sep.comiverse.dto.request.RegisterRequest;
@@ -41,12 +42,31 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
-        UserEntity user = authService.register(request);
-        String token = jwtTokenUtil.generateToken(user);
-        String refreshToken = jwtTokenUtil.generateRefreshToken(user);
+    public ResponseEntity<BaseResponse<String>> register(@Valid @RequestBody RegisterRequest request) {
+        authService.register(request);
 
-        return ResponseEntity.ok(new AuthResponse(token, refreshToken));
+        return ResponseEntity.ok(BaseResponse.<String>builder()
+                .success(true)
+                .message("Account created. Please check your email for the verification OTP code.")
+                .build());
+    }
+
+    @PostMapping("/verify-email")
+    public ResponseEntity<BaseResponse<String>> verifyEmail(@Valid @RequestBody VerifyEmailRequest request) {
+        authService.verifyEmail(request.getEmail(), request.getOtp());
+        return ResponseEntity.ok(BaseResponse.<String>builder()
+                .success(true)
+                .message("Email verified successfully. You can now sign in.")
+                .build());
+    }
+
+    @PostMapping("/resend-verification-otp")
+    public ResponseEntity<BaseResponse<String>> resendVerificationOtp(@Valid @RequestBody ForgotPasswordRequest request) {
+        authService.resendEmailVerificationOtp(request.getEmail());
+        return ResponseEntity.ok(BaseResponse.<String>builder()
+                .success(true)
+                .message("If this email is pending verification, we have sent a new OTP code.")
+                .build());
     }
 
     @PostMapping("/forgot-password")
@@ -54,7 +74,7 @@ public class AuthController {
         authService.forgotPassword(request.getEmail());
         return ResponseEntity.ok(BaseResponse.<String>builder()
                 .success(true)
-                .message("An OTP code has been sent to your email.")
+                .message("If this email exists in our system, we have sent password reset instructions.")
                 .build());
     }
 
@@ -111,7 +131,12 @@ public class AuthController {
         if (principal == null) {
             throw new CustomException(401, "Unauthorized", HttpStatus.UNAUTHORIZED);
         }
-        UserEntity updatedUser = authService.updateProfile(principal.getId(), request.getFullName(), request.getAvatarUrl());
+        UserEntity updatedUser = authService.updateProfile(
+                principal.getId(),
+                request.getFullName(),
+                request.getAvatarUrl(),
+                request.getBackgroundImageUrl()
+        );
         UserProfileResponse response = premiumPlanService.toUserProfileResponse(updatedUser);
         return ResponseEntity.ok(BaseResponse.<UserProfileResponse>builder()
                 .success(true)

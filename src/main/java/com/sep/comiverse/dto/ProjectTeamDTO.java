@@ -18,6 +18,7 @@ public class ProjectTeamDTO {
     private Integer chaptersCount;
     private Integer progress;
     private String leaderName;
+    private UUID leaderId;
     private String leaderInitials;
     private String deadline;
     private String sourceLang;

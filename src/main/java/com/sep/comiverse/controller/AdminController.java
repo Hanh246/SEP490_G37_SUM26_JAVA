@@ -107,16 +107,16 @@ public class AdminController {
 
     /**
      * POST /admin/users/{id}/reset-password
-     * Admin-initiated password reset. Generates a temp password and emails it.
+     * Admin-initiated password reset to the system default.
      */
     @PostMapping("/{id}/reset-password")
-    @Operation(summary = "Reset user password", description = "Generate a temporary password and email it to the user")
+    @Operation(summary = "Reset user password", description = "Reset a user's password to the admin default password")
     public ResponseEntity<BaseResponse<String>> resetUserPassword(@PathVariable UUID id) {
-        adminUserService.resetUserPassword(id);
+        adminUserService.resetUserPasswordToDefault(id);
         return ResponseEntity.ok(
                 BaseResponse.<String>builder()
                         .success(true)
-                        .message("A temporary password has been sent to the user's email.")
+                        .message("User password has been reset to the default password.")
                         .build()
         );
     }

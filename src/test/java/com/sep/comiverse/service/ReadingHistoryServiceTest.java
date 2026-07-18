@@ -1,5 +1,6 @@
 package com.sep.comiverse.service;
 
+import com.sep.comiverse.dto.ReadingHistoryCacheDTO;
 import com.sep.comiverse.entity.ReadingHistoryEntity;
 import com.sep.comiverse.repository.IReadingHistoryRepository;
 import com.sep.comiverse.security.JwtTokenUtil;
@@ -64,11 +65,27 @@ public class ReadingHistoryServiceTest {
         when(readingHistoryRepository.findReadChapterIdsByUserIdAndComicId(userId, comicId))
                 .thenReturn(List.of(chapterId));
 
+        UUID chapterId2 = UUID.randomUUID();
+        ReadingHistoryCacheDTO queueValue = ReadingHistoryCacheDTO.builder()
+                .comicId(comicId)
+                .chapterId(chapterId2)
+                .userId(userId)
+                .build();
+        ReadingHistoryCacheDTO otherQueueValue = ReadingHistoryCacheDTO.builder()
+                .comicId(UUID.randomUUID())
+                .chapterId(UUID.randomUUID())
+                .userId(userId)
+                .build();
+
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(setOperations.members(syncQueueKey)).thenReturn(Set.of(queueValue, otherQueueValue));
+
         List<UUID> result = readingHistoryService.getReadChapters(comicId);
 
         assertNotNull(result);
-        assertEquals(1, result.size());
-        assertEquals(chapterId, result.get(0));
+        assertEquals(2, result.size());
+        assertTrue(result.contains(chapterId));
+        assertTrue(result.contains(chapterId2));
     }
 
     @Test
@@ -103,7 +120,11 @@ public class ReadingHistoryServiceTest {
 
     @Test
     void testSyncReadingHistoryFromRedis_NewEntry() {
-        String queueValue = comicId + ":" + chapterId + ":" + userId;
+        ReadingHistoryCacheDTO queueValue = ReadingHistoryCacheDTO.builder()
+                .comicId(comicId)
+                .chapterId(chapterId)
+                .userId(userId)
+                .build();
         when(redisTemplate.opsForSet()).thenReturn(setOperations);
         when(setOperations.members(syncQueueKey)).thenReturn(Set.of(queueValue));
         when(readingHistoryRepository.findByChapterIdAndUserId(chapterId, userId)).thenReturn(Optional.empty());
@@ -123,7 +144,11 @@ public class ReadingHistoryServiceTest {
 
     @Test
     void testSyncReadingHistoryFromRedis_ExistingDeletedEntry() {
-        String queueValue = comicId + ":" + chapterId + ":" + userId;
+        ReadingHistoryCacheDTO queueValue = ReadingHistoryCacheDTO.builder()
+                .comicId(comicId)
+                .chapterId(chapterId)
+                .userId(userId)
+                .build();
         ReadingHistoryEntity existing = ReadingHistoryEntity.builder()
                 .userId(userId)
                 .comicId(comicId)
@@ -155,15 +180,25 @@ public class ReadingHistoryServiceTest {
     @Test
     void testDeleteComicHistory_Success() {
         when(jwtTokenUtil.getCurrentUserId()).thenReturn(userId);
-        String queueValue = comicId + ":" + chapterId + ":" + userId;
+        ReadingHistoryCacheDTO queueValue = ReadingHistoryCacheDTO.builder()
+                .comicId(comicId)
+                .chapterId(chapterId)
+                .userId(userId)
+                .build();
+        ReadingHistoryCacheDTO otherQueueValue = ReadingHistoryCacheDTO.builder()
+                .comicId(UUID.randomUUID())
+                .chapterId(UUID.randomUUID())
+                .userId(UUID.randomUUID())
+                .build();
+
         when(redisTemplate.opsForSet()).thenReturn(setOperations);
-        when(setOperations.members(syncQueueKey)).thenReturn(Set.of(queueValue, "otherComic:ch:user"));
+        when(setOperations.members(syncQueueKey)).thenReturn(Set.of(queueValue, otherQueueValue));
 
         readingHistoryService.deleteComicHistory(comicId);
 
         verify(readingHistoryRepository).deleteByComicIdAndUserId(comicId, userId);
         verify(setOperations).remove(syncQueueKey, queueValue);
-        verify(setOperations, never()).remove(syncQueueKey, "otherComic:ch:user");
+        verify(setOperations, never()).remove(syncQueueKey, otherQueueValue);
     }
 
     @Test

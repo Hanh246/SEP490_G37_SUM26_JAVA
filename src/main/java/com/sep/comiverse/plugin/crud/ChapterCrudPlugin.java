@@ -2,6 +2,7 @@ package com.sep.comiverse.plugin.crud;
 
 import com.sep.comiverse.dto.ChapterDTO;
 import com.sep.comiverse.dto.ChapterLiteDTO;
+import com.sep.comiverse.dto.ReadingHistoryCacheDTO;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
@@ -10,6 +11,7 @@ import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.service.PremiumPlanService;
+import com.sep.comiverse.service.ReadingHistoryService;
 import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -132,7 +134,12 @@ public class ChapterCrudPlugin
             redisTemplate.opsForHash().increment(ViewSyncScheduler.COMIC_VIEW_HASH, comicId.toString(), 1);
             redisTemplate.opsForHash().increment(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString(), 1);
             if (userId != null) {
-                redisTemplate.opsForSet().add("reading:history:sync:queue", comicId + ":" + chapterId + ":" + userId);
+                ReadingHistoryCacheDTO historyDto = ReadingHistoryCacheDTO.builder()
+                        .comicId(comicId)
+                        .chapterId(chapterId)
+                        .userId(userId)
+                        .build();
+                redisTemplate.opsForSet().add(ReadingHistoryService.READING_HISTORY_SYNC_QUEUE, historyDto);
             }
         }
     }

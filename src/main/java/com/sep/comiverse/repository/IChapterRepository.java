@@ -93,7 +93,7 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
         WHERE c.comic.id = :comicId
           AND c.deleted = false
           AND c.moderationStatus = :moderationStatus
-        ORDER BY c.chapterNumber ASC
+        ORDER BY c.chapterNumber DESC
         """)
     List<ChapterLiteDTO> findChapterMetadataByComicId(
             @Param("comicId") UUID comicId,
@@ -108,4 +108,6 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
           AND c.moderation_status = 'PUBLISHED'
         """, nativeQuery = true)
     List<String> findImagesByChapterIdAndStatus(@Param("chapterId") UUID chapterId);
+
+    List<ChapterEntity> findByProjectTeam_Id(UUID projectTeamId);
 }

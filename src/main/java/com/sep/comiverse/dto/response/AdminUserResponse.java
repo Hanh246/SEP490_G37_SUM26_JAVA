@@ -44,6 +44,9 @@ public class AdminUserResponse {
     @JsonProperty("avatarUrl")
     private String avatarUrl;
 
+    @JsonProperty("backgroundImageUrl")
+    private String backgroundImageUrl;
+
     @JsonProperty("createdDate")
     private Date createdDate;
 

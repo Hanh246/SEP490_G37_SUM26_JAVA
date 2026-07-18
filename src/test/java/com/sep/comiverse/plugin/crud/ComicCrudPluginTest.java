@@ -4,6 +4,7 @@ import com.sep.comiverse.dto.ComicDTO;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.plugin.IMapperPluginDetail;
+import com.sep.comiverse.repository.IGenreRepository;
 import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.service.scheduler.LeaderboardScheduler;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,6 +32,9 @@ public class ComicCrudPluginTest {
     private IComicRepository comicRepository;
 
     @Mock
+    private IGenreRepository genreRepository;
+
+    @Mock
     private PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry;
 
     @Mock
@@ -55,7 +59,7 @@ public class ComicCrudPluginTest {
     @BeforeEach
     void setUp() {
         when(pluginRegistry.getPluginFor(ComicEntity.class)).thenReturn(Optional.of(mapperPlugin));
-        comicCrudPlugin = new ComicCrudPlugin(comicRepository, pluginRegistry, redisTemplate, leaderboardScheduler);
+        comicCrudPlugin = new ComicCrudPlugin(comicRepository, genreRepository, pluginRegistry, redisTemplate, leaderboardScheduler);
     }
 
     @Test
