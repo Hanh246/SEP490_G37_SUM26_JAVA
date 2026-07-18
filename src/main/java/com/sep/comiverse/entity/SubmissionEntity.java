@@ -64,4 +64,7 @@ public class SubmissionEntity extends BaseEntity {
 
     @Column(name = "rejection_reason", columnDefinition = "TEXT")
     private String rejectionReason;
+
+    @Column(name = "moderator_id")
+    private UUID moderatorId;
 }

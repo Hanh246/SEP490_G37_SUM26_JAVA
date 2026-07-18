@@ -2,6 +2,7 @@ package com.sep.comiverse.plugin.crud;
 
 import com.sep.comiverse.dto.ChapterDTO;
 import com.sep.comiverse.dto.ChapterLiteDTO;
+import com.sep.comiverse.dto.ReadingHistoryCacheDTO;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
@@ -10,6 +11,7 @@ import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.service.PremiumPlanService;
+import com.sep.comiverse.service.ReadingHistoryService;
 import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -51,7 +53,17 @@ public class ChapterCrudPlugin
     public ChapterDTO getChapterDetail(UUID chapterId, UUID userId, String clientIp) {
         String cacheKey = CHAPTER_DETAIL_CACHE_PREFIX + chapterId;
 
-        ChapterLiteDTO cacheDto = (ChapterLiteDTO) redisTemplate.opsForValue().get(cacheKey);
+        ChapterLiteDTO cacheDto = null;
+        try {
+            cacheDto = (ChapterLiteDTO) redisTemplate.opsForValue().get(cacheKey);
+        } catch (Exception e) {
+            // Delete corrupt cache so it can be rebuilt
+            try {
+                redisTemplate.delete(cacheKey);
+            } catch (Exception ex) {
+                // Ignore
+            }
+        }
         List<String> images;
 
         if (cacheDto == null) {
@@ -68,7 +80,11 @@ public class ChapterCrudPlugin
                     .createdAt(entity.getCreatedAt())
                     .build();
 
-            redisTemplate.opsForValue().set(cacheKey, cacheDto, Duration.ofDays(3));
+            try {
+                redisTemplate.opsForValue().set(cacheKey, cacheDto, Duration.ofDays(3));
+            } catch (Exception e) {
+                // Ignore Redis set errors
+            }
             images = entity.getImages();
         }else {
             List<String> rawImages = chapterRepository.findImagesByChapterIdAndStatus(chapterId);
@@ -118,7 +134,12 @@ public class ChapterCrudPlugin
             redisTemplate.opsForHash().increment(ViewSyncScheduler.COMIC_VIEW_HASH, comicId.toString(), 1);
             redisTemplate.opsForHash().increment(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString(), 1);
             if (userId != null) {
-                redisTemplate.opsForSet().add("reading:history:sync:queue", comicId + ":" + chapterId + ":" + userId);
+                ReadingHistoryCacheDTO historyDto = ReadingHistoryCacheDTO.builder()
+                        .comicId(comicId)
+                        .chapterId(chapterId)
+                        .userId(userId)
+                        .build();
+                redisTemplate.opsForSet().add(ReadingHistoryService.READING_HISTORY_SYNC_QUEUE, historyDto);
             }
         }
     }
@@ -155,17 +176,23 @@ public class ChapterCrudPlugin
         try {
             cachedResults = (List<ChapterLiteDTO>) redisTemplate.opsForValue().get(cacheKey);
         } catch (Exception e) {
-            // Fallback to database on Redis read failure
+            // Delete corrupt cache so it can be rebuilt
+            try {
+                redisTemplate.delete(cacheKey);
+            } catch (Exception ex) {
+                // Ignore
+            }
         }
 
         if (cachedResults == null) {
             cachedResults = chapterRepository.findChapterMetadataByComicId(comicId, ChapterStatus.PUBLISHED);
 
             if (cachedResults != null && !cachedResults.isEmpty()) {
+                List<ChapterLiteDTO> listToCache = new java.util.ArrayList<>(cachedResults);
                 try {
-                    redisTemplate.opsForValue().set(cacheKey, cachedResults, Duration.ofHours(1));
+                    redisTemplate.opsForValue().set(cacheKey, listToCache, Duration.ofHours(3));
                 } catch (Exception e) {
-                    // Ignore Redis write errors
+                    // Ignore Redis set errors
                 }
             } else {
                 return Collections.emptyList();
@@ -182,16 +209,44 @@ public class ChapterCrudPlugin
                     .createdAt(dto.getCreatedAt())
                     .build();
 
-            try {
                 Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, copy.getId().toString());
                 if (rawChapterViews != null) {
                     copy.setViewCount(copy.getViewCount() + rawChapterViews.intValue());
                 }
-            } catch (Exception e) {
-                // Fallback: ignore Redis hash query issues and use database view counts
-            }
             return copy;
         }).toList();
+    }
+
+    @Override
+    @Transactional
+    public ChapterDTO create(ChapterDTO dto) throws RuntimeException {
+        ChapterDTO created = super.create(dto);
+        if (created.getComicId() != null) {
+            evictChaptersCache(created.getComicId());
+        }
+        return created;
+    }
+
+    @Override
+    @Transactional
+    public ChapterDTO update(UUID id, ChapterDTO dto) {
+        ChapterDTO updated = super.update(id, dto);
+        if (updated.getComicId() != null) {
+            evictChaptersCache(updated.getComicId());
+            evictChapterDetailCache(updated.getId());
+        }
+        return updated;
+    }
+
+    @Override
+    @Transactional
+    public void delete(UUID id) {
+        ChapterEntity chapter = chapterRepository.findById(id).orElse(null);
+        super.delete(id);
+        if (chapter != null && chapter.getComic() != null) {
+            evictChaptersCache(chapter.getComic().getId());
+            evictChapterDetailCache(id);
+        }
     }
 
     public void evictChaptersCache(UUID comicId) {

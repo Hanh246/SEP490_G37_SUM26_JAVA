@@ -9,6 +9,7 @@ import com.sep.comiverse.dto.pagination.PaginationMetadata;
 import com.sep.comiverse.entity.ProjectTeamEntity;
 import com.sep.comiverse.repository.IProjectTeamRepository;
 import com.sep.comiverse.plugin.mapper.ProjectTeamMapperPlugin;
+import com.sep.comiverse.service.NotificationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -31,6 +32,7 @@ public class TranslationPoolController {
 
     private final IProjectTeamRepository projectTeamRepository;
     private final ProjectTeamMapperPlugin projectTeamMapper;
+    private final NotificationService notificationService;
 
     @PostMapping("/request")
     @Operation(summary = "Submit translation requests", description = "Creates a separate unclaimed translation project for each target language")
@@ -61,11 +63,18 @@ public class TranslationPoolController {
                     .notes(request.getNotes())
                     .cover("📚")
                     .description("Translation project for " + request.getComicTitle() + " from " + request.getSourceLang() + " to " + targetLang + ".")
-                    .assignedToMe(false)
                     .build();
 
             projectTeamRepository.save(team);
         }
+
+        notificationService.notifyRoles(
+                List.of("TRANSLATOR", "PROJECT_LEADER"),
+                "New translation request",
+                request.getComicTitle() + " needs translation from " + request.getSourceLang()
+                        + " to " + String.join(", ", request.getTargetLanguages()) + ".",
+                "UPDATE"
+        );
 
         return ResponseEntity.ok(
                 BaseResponse.<String>builder()
@@ -150,8 +159,20 @@ public class TranslationPoolController {
         team.setStatus("ACTIVE");
         team.setLeaderName(finalLeaderName);
         team.setLeaderInitials(finalLeaderInitials);
+        if (principal != null) {
+            team.setLeaderId(principal.getId());
+        }
         team.setMembersCount(1);
         ProjectTeamEntity saved = projectTeamRepository.save(team);
+
+        if (principal != null) {
+            notificationService.notifyUser(
+                    principal.getId(),
+                    "Translation project claimed",
+                    "You are now leading " + saved.getTitle() + ".",
+                    "UPDATE"
+            );
+        }
 
         return ResponseEntity.ok(
                 BaseResponse.<ProjectTeamDTO>builder()

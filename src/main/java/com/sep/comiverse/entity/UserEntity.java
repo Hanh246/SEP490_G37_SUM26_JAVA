@@ -43,11 +43,20 @@ public class UserEntity extends BaseEntity {
     @Column(name = "avatar_url")
     private String avatarUrl;
 
+    @Column(name = "background_image_url")
+    private String backgroundImageUrl;
+
     @Column(name = "reset_token")
     private String resetToken;
 
     @Column(name = "reset_token_expires_at")
     private LocalDateTime resetTokenExpiresAt;
+
+    @Column(name = "email_verification_token")
+    private String emailVerificationToken;
+
+    @Column(name = "email_verification_expires_at")
+    private LocalDateTime emailVerificationExpiresAt;
 
     @Column(name = "premium_plan")
     private String premiumPlan;

@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -38,6 +39,16 @@ public class GlobalExceptionHandler {
                         .success(false)
                         .message("Validation failed")
                         .errors(errors)
+                        .build());
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<BaseResponse<Object>> handleArgumentTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        String parameterName = ex.getName() == null ? "parameter" : ex.getName();
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(BaseResponse.builder()
+                        .success(false)
+                        .message("Invalid " + parameterName + " format")
                         .build());
     }
 

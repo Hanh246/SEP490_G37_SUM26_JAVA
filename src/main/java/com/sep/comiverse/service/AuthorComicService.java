@@ -45,6 +45,7 @@ public class AuthorComicService {
     private final IChapterRepository chapterRepository;
     private final ISubmissionRepository submissionRepository;
     private final IComicMetricSnapshotRepository metricSnapshotRepository;
+    private final NotificationService notificationService;
 
     @Transactional
     public AuthorComicResponse createComic(AuthorComicCreateRequest request) {
@@ -269,6 +270,12 @@ public class AuthorComicService {
                 .cover(comic.getCover())
                 .content("Comic profile is waiting for moderator review.")
                 .build());
+        notificationService.notifyRoles(
+                List.of("MODERATOR"),
+                "New comic review",
+                comic.getTitle() + " was submitted by an author for moderation.",
+                "UPDATE"
+        );
     }
 
     private AuthorComicResponse toComicResponse(ComicEntity comic) {

@@ -18,6 +18,7 @@ public class ProjectTeamDTO {
     private Integer chaptersCount;
     private Integer progress;
     private String leaderName;
+    private UUID leaderId;
     private String leaderInitials;
     private String deadline;
     private String sourceLang;
@@ -28,5 +29,7 @@ public class ProjectTeamDTO {
     private String notes;
     private String comicTitle;
     private Boolean assignedToMe;
+    private Boolean isRecruiting;
+    private Integer maxMembers;
     private List<ChapterDTO> chaptersList;
 }

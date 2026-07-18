@@ -33,6 +33,7 @@ public class ComicController {
     private final ComicCrudPlugin comicCrudPlugin;
     private final RecommendationService recommendationService;
     private final JwtTokenUtil jwtTokenUtil;
+    private final com.sep.comiverse.service.AuditLogService auditLogService;
 
     @GetMapping
     @Operation(summary = "Retrieve a paginated public collection of published comics")
@@ -111,6 +112,7 @@ public class ComicController {
                 .build());
     }
 
+
     @GetMapping("/explore")
     @Operation(summary = "Explore published catalog using optimized cursor pagination with filters and dynamic sorting")
     public ResponseEntity<BaseResponse<CursorResponseDTO<ComicDTO>>> getExploreComics(
@@ -128,6 +130,13 @@ public class ComicController {
                 .build());
     }
 
+    /**
+     * Public comic detail.
+     *
+     * Quan trọng:
+     * comicCrudPlugin.getComicDetail(id) phải chỉ trả comic đã PUBLISHED.
+     * Không được trả comic PENDING / DRAFT / REJECTED ra public.
+     */
     @GetMapping("/{id}")
     @Operation(summary = "Get public comic detail")
     public ResponseEntity<BaseResponse<ComicDTO>> findById(
@@ -143,6 +152,10 @@ public class ComicController {
                 .build());
     }
 
+    /**
+     * ADMIN CRUD - tạo comic trực tiếp.
+     * Author nên tạo comic qua AuthorComicController.
+     */
     @PostMapping
     @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<BaseResponse<ComicDTO>> create(
@@ -157,6 +170,9 @@ public class ComicController {
                         .build());
     }
 
+    /**
+     * ADMIN CRUD - sửa comic trực tiếp.
+     */
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<BaseResponse<ComicDTO>> update(
@@ -164,6 +180,7 @@ public class ComicController {
             @RequestBody ComicDTO dto
     ) {
         ComicDTO updated = comicCrudPlugin.update(id, dto);
+        auditLogService.log("COMIC_MANAGEMENT", "Updated comic metadata: " + updated.getTitle());
 
         return ResponseEntity.ok(BaseResponse.<ComicDTO>builder()
                 .success(true)
@@ -172,12 +189,19 @@ public class ComicController {
     }
 
     /**
-     * ADMIN CRUD - xóa comic trực tiếp.
+     * ADMIN/MODERATOR CRUD - xóa comic trực tiếp.
      */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'MODERATOR')")
     public ResponseEntity<BaseResponse<Void>> delete(@PathVariable UUID id) {
+        String title = "Unknown Title";
+        try {
+            title = comicCrudPlugin.read(id).map(ComicDTO::getTitle).orElse("Unknown Title");
+        } catch (Exception e) {
+            // ignore
+        }
         comicCrudPlugin.delete(id);
+        auditLogService.log("COMIC_MANAGEMENT", "Archived comic profile: " + title);
 
         return ResponseEntity.ok(BaseResponse.<Void>builder()
                 .success(true)

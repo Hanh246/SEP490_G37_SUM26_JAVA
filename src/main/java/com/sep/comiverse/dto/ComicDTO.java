@@ -37,12 +37,12 @@ public class ComicDTO {
     private Double ratingAverage;
     private Integer ratingCount;
     private String latestChapterNumber;
-    private Instant lastChapterUpdatedAt;
-    private Integer chapterCount;
 
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Instant createdAt;
 
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Instant updatedAt;
+    private Integer chapterCount;
+    private java.time.Instant lastChapterUpdatedAt;
 }

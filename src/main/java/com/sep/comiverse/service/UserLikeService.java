@@ -25,6 +25,7 @@ public class UserLikeService {
 
     @Transactional
     public boolean toggleLikeComic(UUID comicId, UUID userId) {
+        if(userId == null) return false;
         String comicIdStr = comicId.toString();
         boolean isLiked = isComicLikedByUser(comicId, userId);
 

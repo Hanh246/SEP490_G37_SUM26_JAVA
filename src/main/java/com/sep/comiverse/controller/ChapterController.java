@@ -11,7 +11,6 @@ import com.sep.comiverse.security.JwtTokenUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -24,11 +23,15 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/chapters")
-@RequiredArgsConstructor
 public class ChapterController {
 
     private final ChapterCrudPlugin chapterCrudPlugin;
     private final JwtTokenUtil jwtTokenUtil;
+    
+    public ChapterController(ChapterCrudPlugin chapterCrudPlugin, JwtTokenUtil jwtTokenUtil) {
+        this.chapterCrudPlugin = chapterCrudPlugin;
+        this.jwtTokenUtil = jwtTokenUtil;
+    }
 
     /**
      * ADMIN CRUD - tạo chapter trực tiếp.
@@ -55,7 +58,7 @@ public class ChapterController {
     @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<BaseResponse<ChapterDTO>> findById(@PathVariable UUID id) {
         return chapterCrudPlugin.read(id)
-                .map(dto -> ResponseEntity.ok(
+                .<ResponseEntity<BaseResponse<ChapterDTO>>>map(dto -> ResponseEntity.ok(
                         BaseResponse.<ChapterDTO>builder()
                                 .success(true)
                                 .data(dto)
@@ -113,7 +116,7 @@ public class ChapterController {
      * ADMIN CRUD - xóa chapter trực tiếp.
      */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'MODERATOR')")
     public ResponseEntity<BaseResponse<Void>> delete(@PathVariable UUID id) {
         chapterCrudPlugin.delete(id);
 

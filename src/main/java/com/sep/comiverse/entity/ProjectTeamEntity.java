@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Data
 @Entity
@@ -36,6 +37,9 @@ public class ProjectTeamEntity extends BaseEntity {
     @Column(name = "leader_name")
     private String leaderName;
 
+    @Column(name = "leader_id")
+    private UUID leaderId;
+
     @Column(name = "leader_initials")
     private String leaderInitials;
 
@@ -60,10 +64,24 @@ public class ProjectTeamEntity extends BaseEntity {
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
 
-    @Column(name = "assigned_to_me")
-    private Boolean assignedToMe; // simple indicator flag for frontend display
+    @ManyToMany
+    @JoinTable(
+            name = "team_members",
+            joinColumns = @JoinColumn(name = "team_id"),
+            inverseJoinColumns = @JoinColumn(name = "user_id")
+    )
+    private List<UserEntity> members = new ArrayList<>();
+
+    @Column(name = "is_recruiting")
+    @Builder.Default
+    private Boolean isRecruiting = false;
+
+    @Column(name = "max_members")
+    @Builder.Default
+    private Integer maxMembers = 5;
 
     @OneToMany(mappedBy = "projectTeam", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @org.hibernate.annotations.BatchSize(size = 100)
     @Builder.Default
     private List<ChapterEntity> chaptersList = new ArrayList<>();
 }

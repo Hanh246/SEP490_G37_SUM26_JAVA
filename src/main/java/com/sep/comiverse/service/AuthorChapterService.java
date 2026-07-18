@@ -53,6 +53,7 @@ public class AuthorChapterService {
     private final IChapterRepository chapterRepository;
     private final ISubmissionRepository submissionRepository;
     private final CloudinaryStorageService cloudinaryStorageService;
+    private final NotificationService notificationService;
 
     @Value("${author.chapter.max-pages:200}")
     private int maxPages;
@@ -150,6 +151,7 @@ public class AuthorChapterService {
                 .content("Chapter " + chapter.getChapterNumber() + " has " + resolvePageCount(chapter) + " image pages waiting for moderation review.")
                 .build();
         submissionRepository.save(submission);
+        notifyModeratorsAboutChapter(comic, chapter);
         chapter.setModerationStatus(ChapterStatus.SUBMITTED_FOR_REVIEW);
         chapterRepository.save(chapter);
 
@@ -307,7 +309,18 @@ public class AuthorChapterService {
                 .cover(comic.getCover())
                 .content("Chapter " + chapter.getChapterNumber() + " has " + resolvePageCount(chapter) + " image pages waiting for moderation review.")
                 .build();
-        return submissionRepository.save(submission);
+        SubmissionEntity saved = submissionRepository.save(submission);
+        notifyModeratorsAboutChapter(comic, chapter);
+        return saved;
+    }
+
+    private void notifyModeratorsAboutChapter(ComicEntity comic, ChapterEntity chapter) {
+        notificationService.notifyRoles(
+                List.of("MODERATOR"),
+                "New chapter review",
+                comic.getTitle() + " - Chapter " + chapter.getChapterNumber() + " is waiting for moderation.",
+                "UPDATE"
+        );
     }
 
     private ChapterEntity getOwnedChapter(UUID comicId, UUID chapterId, UUID authorId) {

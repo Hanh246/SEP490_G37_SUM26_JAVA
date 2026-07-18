@@ -2,14 +2,19 @@ package com.sep.comiverse.service;
 
 import com.sep.comiverse.dto.response.NotificationResponse;
 import com.sep.comiverse.entity.NotificationEntity;
+import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.INotificationRepository;
+import com.sep.comiverse.repository.IUserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -18,6 +23,50 @@ import java.util.stream.Collectors;
 public class NotificationService {
 
     private final INotificationRepository notificationRepository;
+    private final IUserRepository userRepository;
+
+    @Transactional
+    public boolean notifyUser(UUID userId, String title, String message, String type) {
+        if (userId == null) {
+            return false;
+        }
+
+        return userRepository.findByIdWithRole(userId)
+                .filter(this::canReceiveNotifications)
+                .map(user -> {
+                    notificationRepository.save(buildWorkflowNotification(user, title, message, type, null));
+                    return true;
+                })
+                .orElse(false);
+    }
+
+    @Transactional
+    public int notifyRoles(Collection<String> roles, String title, String message, String type) {
+        if (roles == null || roles.isEmpty()) {
+            return 0;
+        }
+
+        List<String> normalizedRoles = roles.stream()
+                .filter(role -> role != null && !role.isBlank())
+                .map(role -> role.trim().toUpperCase(Locale.ROOT))
+                .distinct()
+                .toList();
+        if (normalizedRoles.isEmpty()) {
+            return 0;
+        }
+
+        Specification<UserEntity> spec = (root, query, cb) -> cb.and(
+                cb.or(cb.isNull(root.get("deleted")), cb.isFalse(root.get("deleted"))),
+                cb.or(cb.isNull(root.get("status")), cb.equal(cb.upper(root.get("status")), "ACTIVE")),
+                cb.upper(root.get("role").get("roleName")).in(normalizedRoles)
+        );
+        List<UserEntity> recipients = userRepository.findAll(spec);
+        String targetRoles = String.join(", ", normalizedRoles);
+        notificationRepository.saveAll(recipients.stream()
+                .map(user -> buildWorkflowNotification(user, title, message, type, targetRoles))
+                .toList());
+        return recipients.size();
+    }
 
     public List<NotificationResponse> getNotificationsForUser(UUID userId) {
         List<NotificationEntity> notifications = notificationRepository.findByUserId(userId);
@@ -63,6 +112,29 @@ public class NotificationService {
                 .type(entity.getType())
                 .isRead(entity.getIsRead())
                 .createdAt(entity.getCreatedAt())
+                .build();
+    }
+
+    private boolean canReceiveNotifications(UserEntity user) {
+        return user != null
+                && !Boolean.TRUE.equals(user.getDeleted())
+                && (user.getStatus() == null || "ACTIVE".equalsIgnoreCase(user.getStatus()));
+    }
+
+    private NotificationEntity buildWorkflowNotification(
+            UserEntity user,
+            String title,
+            String message,
+            String type,
+            String targetRoles
+    ) {
+        return NotificationEntity.builder()
+                .user(user)
+                .title(title == null ? "ComiVerse update" : title.trim())
+                .message(message == null ? "You have a new workflow update." : message.trim())
+                .type(type == null ? "INFO" : type.trim().toUpperCase(Locale.ROOT))
+                .targetRoles(targetRoles)
+                .isRead(false)
                 .build();
     }
 }
