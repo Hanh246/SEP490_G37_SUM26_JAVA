@@ -33,4 +33,10 @@ public class TeamJoinRequestEntity {
 
     @Column(name = "avatar")
     private String avatar;
+
+    @Column(name = "cv_url", length = 512)
+    private String cvUrl;
+
+    @Column(name = "cv_file_name")
+    private String cvFileName;
 }

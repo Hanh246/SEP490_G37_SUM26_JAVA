@@ -82,4 +82,27 @@ public class CloudinaryService {
             throw new RuntimeException("Image size is too large! Maximum limit is 5MB.");
         }
     }
+
+    public String uploadFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new RuntimeException("Please select a file to upload.");
+        }
+
+        if (file.getSize() > 5 * 1024 * 1024) {
+            throw new RuntimeException("File size is too large! Maximum limit is 5MB.");
+        }
+
+        try {
+            Map<?, ?> result = cloudinary.uploader().upload(
+                    file.getBytes(),
+                    ObjectUtils.asMap(
+                            "folder", "comiverse-files",
+                            "resource_type", "raw"
+                    )
+            );
+            return result.get("secure_url").toString();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to upload file to Cloudinary", e);
+        }
+    }
 }
