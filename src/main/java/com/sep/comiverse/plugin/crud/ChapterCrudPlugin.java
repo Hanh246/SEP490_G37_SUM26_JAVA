@@ -217,6 +217,38 @@ public class ChapterCrudPlugin
         }).toList();
     }
 
+    @Override
+    @Transactional
+    public ChapterDTO create(ChapterDTO dto) throws RuntimeException {
+        ChapterDTO created = super.create(dto);
+        if (created.getComicId() != null) {
+            evictChaptersCache(created.getComicId());
+        }
+        return created;
+    }
+
+    @Override
+    @Transactional
+    public ChapterDTO update(UUID id, ChapterDTO dto) {
+        ChapterDTO updated = super.update(id, dto);
+        if (updated.getComicId() != null) {
+            evictChaptersCache(updated.getComicId());
+            evictChapterDetailCache(updated.getId());
+        }
+        return updated;
+    }
+
+    @Override
+    @Transactional
+    public void delete(UUID id) {
+        ChapterEntity chapter = chapterRepository.findById(id).orElse(null);
+        super.delete(id);
+        if (chapter != null && chapter.getComic() != null) {
+            evictChaptersCache(chapter.getComic().getId());
+            evictChapterDetailCache(id);
+        }
+    }
+
     public void evictChaptersCache(UUID comicId) {
         String cacheKey = COMIC_CHAPTERS_LIST_CACHE_PREFIX + comicId.toString();
         try {

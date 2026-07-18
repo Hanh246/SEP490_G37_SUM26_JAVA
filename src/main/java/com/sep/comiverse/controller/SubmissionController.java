@@ -51,6 +51,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
     private IUserRepository userRepository;
 
     @Autowired
+    private com.sep.comiverse.plugin.crud.ChapterCrudPlugin chapterCrudPlugin;
     private com.sep.comiverse.service.NotificationService notificationService;
 
     private static final Pattern CHAPTER_NUMBER_PATTERN =
@@ -96,6 +97,10 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 handleAuthorApproval(submission);
             } else if ("translator".equalsIgnoreCase(submission.getQueueType())) {
                 handleTranslatorApproval(submission);
+            }
+            ComicEntity comic = resolveComic(submission);
+            if (comic != null) {
+                chapterCrudPlugin.evictChaptersCache(comic.getId());
             }
             notifySubmissionOwner(submission, true, null);
         }
@@ -353,6 +358,11 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             auditLogService.log("REVIEW_QUEUE", "Rejected " + targetDesc + " of " + submission.getTitle() + " (Reason: " + reason + ")");
             handleSubmissionRejected(submission);
             notifySubmissionOwner(submission, false, reason);
+        }
+
+        ComicEntity comic = resolveComic(submission);
+        if (comic != null) {
+            chapterCrudPlugin.evictChaptersCache(comic.getId());
         }
 
         return ResponseEntity.ok(BaseResponse.<SubmissionDTO>builder()

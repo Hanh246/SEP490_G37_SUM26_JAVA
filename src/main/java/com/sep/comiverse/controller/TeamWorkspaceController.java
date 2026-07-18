@@ -248,7 +248,16 @@ public class TeamWorkspaceController {
         return ResponseEntity.ok(joinRequestRepository.findByProjectTeamId(teamId));
     }
 
+    @GetMapping("/requests/by-name")
+    public ResponseEntity<List<TeamJoinRequestEntity>> getRequestsByName(@RequestParam String name) {
+        return ResponseEntity.ok(joinRequestRepository.findByName(name));
+    }
+
     @PostMapping("/{teamId}/requests")
+    public ResponseEntity<?> createRequest(@PathVariable UUID teamId, @RequestBody TeamJoinRequestEntity request) {
+        if (request.getName() != null && joinRequestRepository.existsByNameAndProjectTeamId(request.getName(), teamId)) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("message", "You have already applied to this team!"));
+        }
     public ResponseEntity<TeamJoinRequestEntity> createRequest(
             @PathVariable UUID teamId,
             @RequestBody TeamJoinRequestEntity request,
@@ -300,6 +309,24 @@ public class TeamWorkspaceController {
         );
         joinRequestRepository.deleteById(id);
         return ResponseEntity.ok(request);
+    }
+
+    @PutMapping("/requests/{id}/decision")
+    public ResponseEntity<Void> decideRequest(@PathVariable UUID id, @RequestBody java.util.Map<String, String> body) {
+        String decision = body.get("decision");
+        return joinRequestRepository.findById(id).map(req -> {
+            if ("approved".equalsIgnoreCase(decision)) {
+                projectTeamRepository.findById(req.getProjectTeamId()).ifPresent(team -> {
+                    if (team.getMembersCount() == null) {
+                        team.setMembersCount(1);
+                    }
+                    team.setMembersCount(team.getMembersCount() + 1);
+                    projectTeamRepository.save(team);
+                });
+            }
+            joinRequestRepository.deleteById(id);
+            return ResponseEntity.ok().<Void>build();
+        }).orElse(ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/requests/{id}")
