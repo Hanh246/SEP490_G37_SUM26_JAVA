@@ -19,6 +19,8 @@ public class ComiverseApplication {
 	public static void main(String[] args) {
 		Dotenv dotenv = Dotenv.configure()
 				.filename("key.env")
+				.ignoreIfMissing()
+				.ignoreIfMalformed()
 				.load();
 
 		dotenv.entries().forEach(entry ->
