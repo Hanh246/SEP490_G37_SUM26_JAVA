@@ -18,5 +18,12 @@ public interface IProjectTeamRepository extends AbstractCrudRepository<ProjectTe
     List<ProjectTeamEntity> findByMemberId(@Param("userId") UUID userId);
 
     Optional<ProjectTeamEntity> findByComicName(String comicName);
+
+    @Query("SELECT pt FROM ProjectTeamEntity pt WHERE LOWER(pt.title) = LOWER(:title) AND pt.deleted = false")
+    Optional<ProjectTeamEntity> findByTitleIgnoreCase(@Param("title") String title);
+
+    @Query("SELECT pt FROM ProjectTeamEntity pt WHERE LOWER(pt.comicName) = LOWER(:comicName) AND pt.deleted = false")
+    Optional<ProjectTeamEntity> findByComicNameIgnoreCase(@Param("comicName") String comicName);
+
     org.springframework.data.domain.Page<ProjectTeamEntity> findByStatusAndDeletedFalse(String status, org.springframework.data.domain.Pageable pageable);
 }
