@@ -119,10 +119,8 @@ public class SubmissionMapperPlugin extends AbstractMapperPlugin<SubmissionEntit
                 }
             } else {
                 final String lookup = subBy;
-                var user = userRepository.findAll().stream()
-                    .filter(u -> u.getUsername().equalsIgnoreCase(lookup) || (u.getFullName() != null && u.getFullName().equalsIgnoreCase(lookup)))
-                    .findFirst()
-                    .orElse(null);
+                var userList = userRepository.findByUsernameOrFullNameIgnoreCase(lookup);
+                var user = userList.isEmpty() ? null : userList.get(0);
                 if (user != null) {
                     String displayName = user.getFullName() != null && !user.getFullName().trim().isEmpty()
                         ? user.getFullName()
