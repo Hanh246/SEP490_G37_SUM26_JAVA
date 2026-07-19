@@ -51,4 +51,7 @@ public interface IUserRepository extends AbstractCrudRepository<UserEntity, UUID
                    "  EXISTS (SELECT 1 FROM reading_histories r WHERE r.user_id = u.id AND r.update_at > u.vector_updated_at)" +
                    ")", nativeQuery = true)
     List<UUID> findUserIdsWithPendingVectorUpdate();
+
+    @Query("SELECT u FROM UserEntity u WHERE (LOWER(u.username) = LOWER(:lookup) OR LOWER(u.fullName) = LOWER(:lookup)) AND u.deleted = false")
+    List<UserEntity> findByUsernameOrFullNameIgnoreCase(@Param("lookup") String lookup);
 }
