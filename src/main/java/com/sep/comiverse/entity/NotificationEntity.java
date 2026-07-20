@@ -31,6 +31,9 @@ public class NotificationEntity extends BaseEntity {
     @Column(name = "target_roles", length = 100)
     private String targetRoles; // e.g. "ADMIN,STAFF" or "ALL"
 
+    @Column(name = "action_url", length = 500)
+    private String actionUrl;
+
     @Builder.Default
     @Column(name = "is_read", nullable = false)
     private Boolean isRead = false;

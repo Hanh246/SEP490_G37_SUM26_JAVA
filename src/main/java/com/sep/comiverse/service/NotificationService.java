@@ -27,6 +27,11 @@ public class NotificationService {
 
     @Transactional
     public boolean notifyUser(UUID userId, String title, String message, String type) {
+        return notifyUser(userId, title, message, type, null);
+    }
+
+    @Transactional
+    public boolean notifyUser(UUID userId, String title, String message, String type, String actionUrl) {
         if (userId == null) {
             return false;
         }
@@ -34,7 +39,7 @@ public class NotificationService {
         return userRepository.findByIdWithRole(userId)
                 .filter(this::canReceiveNotifications)
                 .map(user -> {
-                    notificationRepository.save(buildWorkflowNotification(user, title, message, type, null));
+                    notificationRepository.save(buildWorkflowNotification(user, title, message, type, null, actionUrl));
                     return true;
                 })
                 .orElse(false);
@@ -63,7 +68,7 @@ public class NotificationService {
         List<UserEntity> recipients = userRepository.findAll(spec);
         String targetRoles = String.join(", ", normalizedRoles);
         notificationRepository.saveAll(recipients.stream()
-                .map(user -> buildWorkflowNotification(user, title, message, type, targetRoles))
+                .map(user -> buildWorkflowNotification(user, title, message, type, targetRoles, null))
                 .toList());
         return recipients.size();
     }
@@ -110,6 +115,7 @@ public class NotificationService {
                 .title(entity.getTitle())
                 .message(entity.getMessage())
                 .type(entity.getType())
+                .actionUrl(entity.getActionUrl())
                 .isRead(entity.getIsRead())
                 .createdAt(entity.getCreatedAt())
                 .build();
@@ -126,7 +132,8 @@ public class NotificationService {
             String title,
             String message,
             String type,
-            String targetRoles
+            String targetRoles,
+            String actionUrl
     ) {
         return NotificationEntity.builder()
                 .user(user)
@@ -134,6 +141,7 @@ public class NotificationService {
                 .message(message == null ? "You have a new workflow update." : message.trim())
                 .type(type == null ? "INFO" : type.trim().toUpperCase(Locale.ROOT))
                 .targetRoles(targetRoles)
+                .actionUrl(actionUrl == null || actionUrl.isBlank() ? null : actionUrl.trim())
                 .isRead(false)
                 .build();
     }
