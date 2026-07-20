@@ -39,10 +39,8 @@ public class DbInitializer implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) throws Exception {
-        // Correct legacy lowercase/mixedcase enum values in existing comics table
-        jdbcTemplate.execute("UPDATE comics SET status = 'ONGOING' WHERE status = 'Ongoing' OR status = 'ongoing'");
-        jdbcTemplate.execute("UPDATE comics SET status = 'COMPLETED' WHERE status = 'Completed' OR status = 'completed'");
-        jdbcTemplate.execute("UPDATE comics SET status = 'PAUSED' WHERE status = 'Paused' OR status = 'paused'");
+        // ComicEntity no longer has the legacy `status` column.
+        // Publication lifecycle is stored in `publication_status`.
         jdbcTemplate.execute("UPDATE comics SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
         jdbcTemplate.execute("UPDATE chapters SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
         migrateLegacyChapterPagesIntoChapterImages();
@@ -364,8 +362,7 @@ public class DbInitializer implements CommandLineRunner {
                         .comicId(comic.getId())
                         .authorId(comic.getAuthorId())
                         .viewCount(comic.getViewCount() == null ? 0L : comic.getViewCount())
-                        .followCount(comic.getSaveCount() == null ? 0L : comic.getSaveCount().longValue())
-                        .favoriteCount(comic.getSaveCount() == null ? 0L : comic.getSaveCount().longValue())
+                        .savedCount(comic.getSaveCount() == null ? 0L : comic.getSaveCount().longValue())
                         .likeCount(comic.getLikeCount() == null ? 0L : comic.getLikeCount().longValue())
                         .estimatedRevenue(BigDecimal.valueOf((comic.getViewCount() == null ? 0L : comic.getViewCount()) * 0.01))
                         .build());

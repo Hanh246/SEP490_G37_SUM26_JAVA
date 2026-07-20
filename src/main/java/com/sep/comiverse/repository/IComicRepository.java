@@ -120,8 +120,6 @@ public interface IComicRepository
 
     Optional<ComicEntity> findByTitleIgnoreCase(String title);
 
-    Optional<ComicEntity> findBySlug(String slug);
-
     Optional<ComicEntity> findByIdAndAuthorIdAndDeletedFalse(
             UUID id,
             UUID authorId
@@ -133,18 +131,9 @@ public interface IComicRepository
             ComicModerationStatus moderationStatus
     );
 
-    boolean existsByAuthorIdAndSlugAndDeletedFalse(
-            UUID authorId,
-            String slug
-    );
-
-    boolean existsBySlugAndDeletedFalse(String slug);
-
     List<ComicEntity> findAllByTitle(String title);
 
     List<ComicEntity> findAllByTitleIgnoreCase(String title);
-
-    List<ComicEntity> findAllBySlug(String slug);
 
     // =========================================================
     // PUBLIC COMIC LIST
@@ -202,7 +191,6 @@ public interface IComicRepository
     /*
      * Tìm comic public theo:
      * - title
-     * - slug
      * - genre
      * - tên hiển thị của author
      */
@@ -216,8 +204,6 @@ public interface IComicRepository
                     :search IS NULL
                     OR :search = ''
                     OR LOWER(c.title)
-                        LIKE LOWER(CONCAT('%', :search, '%'))
-                    OR LOWER(COALESCE(c.slug, ''))
                         LIKE LOWER(CONCAT('%', :search, '%'))
                     OR LOWER(COALESCE(g.name, ''))
                         LIKE LOWER(CONCAT('%', :search, '%'))
@@ -261,12 +247,13 @@ public interface IComicRepository
             Pageable pageable
     );
 
+    List<ComicEntity> findAllByAuthorIdAndDeletedFalseOrderByCreatedAtAsc(UUID authorId);
+
     /*
      * Chỉ dùng khi search khác null và không rỗng.
      *
      * Giữ:
      * - title
-     * - slug
      * - genre name
      * - author display name
      */
@@ -278,8 +265,6 @@ public interface IComicRepository
               AND c.authorId = :authorId
               AND (
                     LOWER(c.title)
-                        LIKE LOWER(CONCAT('%', :search, '%'))
-                    OR LOWER(COALESCE(c.slug, ''))
                         LIKE LOWER(CONCAT('%', :search, '%'))
                     OR LOWER(COALESCE(g.name, ''))
                         LIKE LOWER(CONCAT('%', :search, '%'))

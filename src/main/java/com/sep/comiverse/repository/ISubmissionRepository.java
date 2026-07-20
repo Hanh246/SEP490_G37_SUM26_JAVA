@@ -1,6 +1,9 @@
 package com.sep.comiverse.repository;
 
 import com.sep.comiverse.entity.SubmissionEntity;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -47,5 +50,14 @@ public interface ISubmissionRepository extends AbstractCrudRepository<Submission
             String queueType,
             String status
     );
+
+    List<SubmissionEntity> findAllByAuthorIdAndQueueTypeIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(
+            UUID authorId,
+            String queueType
+    );
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM SubmissionEntity s WHERE s.chapterId = :chapterId")
+    void hardDeleteAllByChapterId(@Param("chapterId") UUID chapterId);
 }
 

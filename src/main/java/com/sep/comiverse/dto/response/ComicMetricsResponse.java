@@ -20,6 +20,9 @@ public class ComicMetricsResponse {
     private Long followCount;
     private Long favoriteCount;
     private Long likeCount;
+    private Integer chapterCount;
+    private Double ratingAverage;
+    private Integer ratingCount;
     private BigDecimal estimatedRevenue;
     private Date snapshotAt;
 }

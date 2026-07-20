@@ -151,7 +151,7 @@ public class AuthorChapterController {
     }
 
     @DeleteMapping("/{chapterId}")
-    @Operation(summary = "Permanently delete own chapter", description = "Hard-deletes an owned chapter record and removes it from the comic immediately")
+    @Operation(summary = "Permanently delete own chapter", description = "Hard-deletes the owned chapter and removes its dependent task, reading-history, and submission records")
     public ResponseEntity<BaseResponse<Void>> deleteChapter(
             @PathVariable UUID comicId,
             @PathVariable UUID chapterId,

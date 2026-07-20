@@ -21,6 +21,9 @@ public class ComicDTO {
     private String summary;
     private Integer minimumAge;
     private UUID authorId;
+
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String authorName;
     private ComicPublicationStatus publicationStatus;
     private ComicModerationStatus moderationStatus;
     private String cover;
