@@ -147,7 +147,7 @@ public class AuthorChapterService {
                 .priority("Medium")
                 .flags(0)
                 .status("pending")
-                .cover(firstNonBlank(comic.getThumbnail(), comic.getCover()))
+                .cover(comic.getCover())
                 .content("Chapter " + chapter.getChapterNumber() + " has " + resolvePageCount(chapter) + " image pages waiting for moderation review.")
                 .build();
         submissionRepository.save(submission);
@@ -202,9 +202,9 @@ public class AuthorChapterService {
     public void deleteChapter(UUID comicId, UUID chapterId, UUID authorId) {
         ComicEntity comic = authorComicService.getOwnedComic(comicId, authorId);
         ChapterEntity chapter = getOwnedChapter(comicId, chapterId, authorId);
-        chapter.setDeleted(true);
-        chapterRepository.save(chapter);
         cancelPendingChapterSubmissions(chapterId, authorId);
+        chapterRepository.delete(chapter);
+        chapterRepository.flush();
         refreshComicChapterMetadata(comic);
     }
 
@@ -306,7 +306,7 @@ public class AuthorChapterService {
                 .priority("Medium")
                 .flags(0)
                 .status("pending")
-                .cover(firstNonBlank(comic.getThumbnail(), comic.getCover()))
+                .cover(comic.getCover())
                 .content("Chapter " + chapter.getChapterNumber() + " has " + resolvePageCount(chapter) + " image pages waiting for moderation review.")
                 .build();
         SubmissionEntity saved = submissionRepository.save(submission);
