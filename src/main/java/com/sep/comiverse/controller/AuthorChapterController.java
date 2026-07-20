@@ -151,7 +151,7 @@ public class AuthorChapterController {
     }
 
     @DeleteMapping("/{chapterId}")
-    @Operation(summary = "Soft-delete own chapter", description = "Marks an owned chapter and its stored pages as deleted")
+    @Operation(summary = "Permanently delete own chapter", description = "Hard-deletes an owned chapter record and removes it from the comic immediately")
     public ResponseEntity<BaseResponse<Void>> deleteChapter(
             @PathVariable UUID comicId,
             @PathVariable UUID chapterId,
@@ -162,7 +162,7 @@ public class AuthorChapterController {
         authorChapterService.deleteChapter(comicId, chapterId, resolvedAuthorId);
         return ResponseEntity.ok(BaseResponse.<Void>builder()
                 .success(true)
-                .message("Chapter deleted")
+                .message("Chapter permanently deleted")
                 .build());
     }
     @PutMapping(value = "/{chapterId}/replace-cbz", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

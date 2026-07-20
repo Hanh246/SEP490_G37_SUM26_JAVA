@@ -254,7 +254,87 @@ public class DbInitializer implements CommandLineRunner {
     }
 
     private void createComics() {
-        // Disabled mock seeding
+        if (comicRepository.findAll().isEmpty()) {
+            UserEntity author = userRepository.findByUsername("author1")
+                    .orElseThrow(() -> new RuntimeException("author1 not found"));
+            java.util.UUID authorId = author.getId();
+
+            java.util.List<GenreEntity> allGenres = genreRepository.findAll();
+            java.util.Set<GenreEntity> genres1 = pickGenres(allGenres, "Action", "Fantasy");
+            java.util.Set<GenreEntity> genres2 = pickGenres(allGenres, "Adventure", "Mystery");
+            java.util.Set<GenreEntity> genres3 = pickGenres(allGenres, "Fantasy", "Drama");
+            java.util.Set<GenreEntity> genres4 = pickGenres(allGenres, "Cultivation", "Action");
+
+            comicRepository.save(ComicEntity.builder()
+                    .title("Invincible Sword God")
+                    .summary("A legendary sword cultivator reincarnates and rebuilds his power from the lowest rank.")
+                    .authorId(authorId)
+                    .publicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.ONGOING)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
+                    .genres(genres1)
+                    .genreIds(toGenreIds(genres1))
+                    .cover("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg")
+                    .viewCount(125000L)
+                    .saveCount(4300)
+                    .likeCount(9800)
+                    .ratingAverage(4.6)
+                    .ratingCount(1280)
+                    .latestChapterNumber("45")
+                    .build());
+
+            comicRepository.save(ComicEntity.builder()
+                    .title("Spirit Recovery")
+                    .summary("An urban student discovers that spiritual energy is returning to the modern world.")
+                    .authorId(authorId)
+                    .publicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.ONGOING)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
+                    .genres(genres2)
+                    .genreIds(toGenreIds(genres2))
+                    .cover("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg")
+                    .viewCount(89000L)
+                    .saveCount(2100)
+                    .likeCount(6200)
+                    .ratingAverage(4.3)
+                    .ratingCount(870)
+                    .latestChapterNumber("32")
+                    .build());
+
+            comicRepository.save(ComicEntity.builder()
+                    .title("Demon King Reborn")
+                    .summary("The fallen Demon Monarch wakes up in a rival kingdom and plans a second rise.")
+                    .authorId(authorId)
+                    .publicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.HIATUS)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
+                    .genres(genres3)
+                    .genreIds(toGenreIds(genres3))
+                    .cover("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg")
+                    .viewCount(54000L)
+                    .saveCount(1200)
+                    .likeCount(3900)
+                    .ratingAverage(4.1)
+                    .ratingCount(540)
+                    .latestChapterNumber("18")
+                    .build());
+
+            comicRepository.save(ComicEntity.builder()
+                    .title("Heavenly Dao")
+                    .summary("A young cultivator studies the rules of heaven and challenges the order of the realms.")
+                    .authorId(authorId)
+                    .publicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.COMPLETED)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
+                    .genres(genres4)
+                    .genreIds(toGenreIds(genres4))
+                    .cover("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg")
+                    .viewCount(210000L)
+                    .saveCount(7600)
+                    .likeCount(14500)
+                    .ratingAverage(4.8)
+                    .ratingCount(2100)
+                    .latestChapterNumber("60")
+                    .build());
+
+            System.out.println("✅ Sample author comics initialized in DB.");
+        }
     }
 
     private Set<GenreEntity> pickGenres(List<GenreEntity> allGenres, String... names) {
