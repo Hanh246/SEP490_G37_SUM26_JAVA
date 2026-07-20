@@ -1,6 +1,5 @@
 package com.sep.comiverse.entity;
 
-import com.sep.comiverse.constants.ComicStatus;
 import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.entity.enums.ComicPublicationStatus;
 import jakarta.persistence.*;
@@ -20,7 +19,6 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 @Table(name = "comics", indexes = {
-        @Index(name = "idx_comics_slug_deleted", columnList = "slug, deleted"),
         @Index(name = "idx_comics_moderation_deleted", columnList = "moderation_status, deleted"),
         @Index(name = "idx_comics_author_deleted", columnList = "author_id, deleted")
 })

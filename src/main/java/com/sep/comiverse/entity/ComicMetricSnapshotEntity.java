@@ -30,11 +30,8 @@ public class ComicMetricSnapshotEntity extends BaseEntity {
     @Column(name = "view_count")
     private Long viewCount;
 
-    @Column(name = "follow_count")
-    private Long followCount;
-
-    @Column(name = "favorite_count")
-    private Long favoriteCount;
+    @Column(name = "saved_count")
+    private Long savedCount;
 
     @Column(name = "like_count")
     private Long likeCount;
