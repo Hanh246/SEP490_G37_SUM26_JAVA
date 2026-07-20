@@ -24,7 +24,7 @@ public class ProjectTeamMapperPlugin extends AbstractMapperPlugin<ProjectTeamEnt
         ProjectTeamDTO dto = super.toDto(model);
         dto.setComicTitle(model.getComicName());
         dto.setNotes(model.getNotes());
-        if (model.getChaptersList() != null) {
+        if (model.getChaptersList() != null && org.hibernate.Hibernate.isInitialized(model.getChaptersList())) {
             dto.setChaptersList(model.getChaptersList().stream()
                     .map(chap -> {
                         var chapDto = new com.sep.comiverse.dto.ChapterDTO();

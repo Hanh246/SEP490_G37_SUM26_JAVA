@@ -1,12 +1,10 @@
 package com.sep.comiverse.controller;
 
-import com.sep.comiverse.dto.CreateTaskRequest;
+import com.sep.comiverse.dto.request.CreateTaskRequest;
 import com.sep.comiverse.dto.TeamMemberDto;
 import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.entity.*;
 import com.sep.comiverse.repository.*;
-import com.sep.comiverse.security.UserPrincipal;
-import com.sep.comiverse.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +13,12 @@ import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.NotificationService;
 import org.springframework.web.bind.annotation.*;
 
+import com.sep.comiverse.security.UserPrincipal;
+import com.sep.comiverse.service.NotificationService;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -25,6 +29,7 @@ import java.util.stream.Collectors;
 public class TeamWorkspaceController {
 
     private final ITeamAnnouncementRepository announcementRepository;
+    private final ITeamPostCommentRepository postCommentRepository;
     private final ITeamMessageRepository messageRepository;
     private final ITeamTaskRepository taskRepository;
     private final ITeamJoinRequestRepository joinRequestRepository;
@@ -51,10 +56,82 @@ public class TeamWorkspaceController {
     }
 
     @PutMapping("/announcements/{id}/like")
-    public ResponseEntity<TeamAnnouncementEntity> likeAnnouncement(@PathVariable UUID id) {
+    public ResponseEntity<TeamAnnouncementEntity> likeAnnouncement(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        if (principal == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        UUID userId = principal.getId();
         return announcementRepository.findById(id).map(ann -> {
-            ann.setLikes(ann.getLikes() + 1);
+            String likedBy = ann.getLikedByUsers();
+            if (likedBy == null) {
+                likedBy = "";
+            }
+            String userIdStr = userId.toString();
+            List<String> list = new ArrayList<>(Arrays.asList(likedBy.split(",")));
+            list.removeIf(String::isEmpty);
+            
+            if (list.contains(userIdStr)) {
+                list.remove(userIdStr);
+                ann.setLikes(Math.max(0, (ann.getLikes() == null ? 0 : ann.getLikes()) - 1));
+            } else {
+                list.add(userIdStr);
+                ann.setLikes((ann.getLikes() == null ? 0 : ann.getLikes()) + 1);
+            }
+            ann.setLikedByUsers(String.join(",", list));
             return ResponseEntity.ok(announcementRepository.save(ann));
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @PutMapping("/announcements/{id}/pin")
+    public ResponseEntity<TeamAnnouncementEntity> pinAnnouncement(@PathVariable UUID id) {
+        return announcementRepository.findById(id).map(ann -> {
+            ann.setIsPinned(ann.getIsPinned() == null ? true : !ann.getIsPinned());
+            return ResponseEntity.ok(announcementRepository.save(ann));
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/announcements/{announcementId}/comments")
+    public ResponseEntity<List<TeamPostCommentEntity>> getComments(@PathVariable UUID announcementId) {
+        return ResponseEntity.ok(postCommentRepository.findByAnnouncementIdOrderByTimeAsc(announcementId));
+    }
+
+    @PostMapping("/announcements/{announcementId}/comments")
+    public ResponseEntity<TeamPostCommentEntity> createComment(@PathVariable UUID announcementId, @RequestBody TeamPostCommentEntity comment) {
+        comment.setAnnouncementId(announcementId);
+        if (comment.getLikes() == null) {
+            comment.setLikes(0);
+        }
+        return ResponseEntity.ok(postCommentRepository.save(comment));
+    }
+
+    @PutMapping("/comments/{id}/like")
+    public ResponseEntity<TeamPostCommentEntity> likeComment(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        if (principal == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        UUID userId = principal.getId();
+        return postCommentRepository.findById(id).map(comm -> {
+            String likedBy = comm.getLikedByUsers();
+            if (likedBy == null) {
+                likedBy = "";
+            }
+            String userIdStr = userId.toString();
+            List<String> list = new ArrayList<>(Arrays.asList(likedBy.split(",")));
+            list.removeIf(String::isEmpty);
+            
+            if (list.contains(userIdStr)) {
+                list.remove(userIdStr);
+                comm.setLikes(Math.max(0, (comm.getLikes() == null ? 0 : comm.getLikes()) - 1));
+            } else {
+                list.add(userIdStr);
+                comm.setLikes((comm.getLikes() == null ? 0 : comm.getLikes()) + 1);
+            }
+            comm.setLikedByUsers(String.join(",", list));
+            return ResponseEntity.ok(postCommentRepository.save(comm));
         }).orElse(ResponseEntity.notFound().build());
     }
 
@@ -246,12 +323,20 @@ public class TeamWorkspaceController {
         return ResponseEntity.ok(joinRequestRepository.findByProjectTeamId(teamId));
     }
 
+    @GetMapping("/requests/by-name")
+    public ResponseEntity<List<TeamJoinRequestEntity>> getRequestsByName(@RequestParam String name) {
+        return ResponseEntity.ok(joinRequestRepository.findByName(name));
+    }
+
     @PostMapping("/{teamId}/requests")
-    public ResponseEntity<TeamJoinRequestEntity> createRequest(
+    public ResponseEntity<?> createRequest(
             @PathVariable UUID teamId,
             @RequestBody TeamJoinRequestEntity request,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
+        if (request.getName() != null && joinRequestRepository.existsByNameAndProjectTeamId(request.getName(), teamId)) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("message", "You have already applied to this team!"));
+        }
         request.setProjectTeamId(teamId);
         if (principal != null) {
             request.setRequesterId(principal.getId());
@@ -269,7 +354,7 @@ public class TeamWorkspaceController {
     }
 
     @PutMapping("/requests/{id}/decision")
-    public ResponseEntity<TeamJoinRequestEntity> decideRequest(
+    public ResponseEntity<?> decideRequest(
             @PathVariable UUID id,
             @RequestBody Map<String, String> body
     ) {

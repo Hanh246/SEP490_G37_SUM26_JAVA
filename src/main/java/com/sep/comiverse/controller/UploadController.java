@@ -41,4 +41,35 @@ public class UploadController {
                 .data(url)
                 .build());
     }
+
+    @PostMapping(value = "/file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<BaseResponse<String>> uploadFile(
+            @RequestParam("file") MultipartFile file) {
+        String url = cloudinaryService.uploadFile(file);
+        return ResponseEntity.ok(BaseResponse.<String>builder()
+                .success(true)
+                .data(url)
+                .build());
+    }
+
+    @org.springframework.web.bind.annotation.GetMapping("/download")
+    public ResponseEntity<byte[]> downloadFile(
+            @RequestParam("url") String fileUrl,
+            @RequestParam(value = "name", required = false) String name) {
+        try {
+            java.net.URL url = new java.net.URL(fileUrl);
+            java.io.InputStream in = url.openStream();
+            byte[] bytes = in.readAllBytes();
+            in.close();
+
+            String fileName = (name != null && !name.trim().isEmpty()) ? name : fileUrl.substring(fileUrl.lastIndexOf("/") + 1);
+
+            return ResponseEntity.ok()
+                    .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
+                    .contentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM)
+                    .body(bytes);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
 }

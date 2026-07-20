@@ -9,15 +9,15 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Table(name = "team_announcements")
-public class TeamAnnouncementEntity {
+@Table(name = "team_post_comments")
+public class TeamPostCommentEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;
 
-    @Column(name = "project_team_id", nullable = false)
-    private UUID projectTeamId;
+    @Column(name = "announcement_id", nullable = false)
+    private UUID announcementId;
 
     @Column(name = "author")
     private String author;
@@ -28,21 +28,18 @@ public class TeamAnnouncementEntity {
     @Column(name = "avatar")
     private String avatar;
 
-    @Column(name = "time")
-    private String time;
-
     @Column(name = "content", columnDefinition = "TEXT")
     private String content;
 
-    @Column(name = "likes")
-    private Integer likes;
+    @Column(name = "time")
+    private String time;
+
+    @Column(name = "parent_id")
+    private UUID parentId;
 
     @Builder.Default
-    @Column(name = "is_pinned", nullable = false, columnDefinition = "boolean default false")
-    private Boolean isPinned = false;
-
-    @Column(name = "image_url", length = 512)
-    private String imageUrl;
+    @Column(name = "likes")
+    private Integer likes = 0;
 
     @Column(name = "liked_by_users", columnDefinition = "TEXT")
     private String likedByUsers;

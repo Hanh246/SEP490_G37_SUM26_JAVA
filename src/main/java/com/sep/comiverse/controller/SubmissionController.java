@@ -51,6 +51,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
     private IUserRepository userRepository;
 
     @Autowired
+    private com.sep.comiverse.plugin.crud.ChapterCrudPlugin chapterCrudPlugin;
     private com.sep.comiverse.service.NotificationService notificationService;
 
     private static final Pattern CHAPTER_NUMBER_PATTERN =
@@ -96,6 +97,10 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 handleAuthorApproval(submission);
             } else if ("translator".equalsIgnoreCase(submission.getQueueType())) {
                 handleTranslatorApproval(submission);
+            }
+            ComicEntity comic = resolveComic(submission);
+            if (comic != null) {
+                chapterCrudPlugin.evictChaptersCache(comic.getId());
             }
             notifySubmissionOwner(submission, true, null);
         }
@@ -355,6 +360,11 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             notifySubmissionOwner(submission, false, reason);
         }
 
+        ComicEntity comic = resolveComic(submission);
+        if (comic != null) {
+            chapterCrudPlugin.evictChaptersCache(comic.getId());
+        }
+
         return ResponseEntity.ok(BaseResponse.<SubmissionDTO>builder()
                 .success(true)
                 .data(crudPlugin.getPlugin().toDto(savedSubmission))
@@ -387,13 +397,15 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         }
         String teamName = submission.getSubmittedBy();
         String comicTitle = submission.getTitle();
-        return projectTeamRepository.findAll().stream()
-                .filter(team -> teamName != null && team.getTitle() != null && team.getTitle().equalsIgnoreCase(teamName))
-                .findFirst()
-                .orElseGet(() -> projectTeamRepository.findAll().stream()
-                        .filter(team -> comicTitle != null && team.getComicName() != null
-                                && team.getComicName().equalsIgnoreCase(comicTitle))
-                        .findFirst()
-                        .orElse(null));
+        if (teamName != null) {
+            var teamOpt = projectTeamRepository.findByTitleIgnoreCase(teamName);
+            if (teamOpt.isPresent()) {
+                return teamOpt.get();
+            }
+        }
+        if (comicTitle != null) {
+            return projectTeamRepository.findByComicNameIgnoreCase(comicTitle).orElse(null);
+        }
+        return null;
     }
 }

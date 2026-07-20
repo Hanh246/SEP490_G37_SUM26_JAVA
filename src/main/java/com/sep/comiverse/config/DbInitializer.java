@@ -94,6 +94,18 @@ public class DbInitializer implements CommandLineRunner {
         } catch (Exception e) {
             System.err.println("⚠️ Warning: Failed to create HNSW index on users table: " + e.getMessage());
         }
+
+        // Create standard indexes for project_team_id foreign keys to optimize workspace lookups
+        try {
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_chapters_project_team_id ON chapters (project_team_id)");
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_team_tasks_project_team_id ON team_tasks (project_team_id)");
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_team_join_requests_project_team_id ON team_join_requests (project_team_id)");
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_team_announcements_project_team_id ON team_announcements (project_team_id)");
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_team_messages_project_team_id ON team_messages (project_team_id)");
+            System.out.println("✅ Database Setup: Foreign key indexes created/verified");
+        } catch (Exception e) {
+            System.err.println("⚠️ Warning: Failed to create foreign key indexes: " + e.getMessage());
+        }
     }
 
     private void migrateLegacyChapterPagesIntoChapterImages() {

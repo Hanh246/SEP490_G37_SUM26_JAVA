@@ -1,5 +1,6 @@
 package com.sep.comiverse.repository;
 
+import com.sep.comiverse.dto.UserSnapshot;
 import com.sep.comiverse.entity.UserEntity;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,6 +12,14 @@ import java.util.UUID;
 
 @Repository
 public interface IUserRepository extends AbstractCrudRepository<UserEntity, UUID> {
+    @Query("""
+        SELECT new com.sep.comiverse.dto.UserSnapshot(u.id, u.username, u.avatarUrl)
+        FROM UserEntity u
+        WHERE u.id = :id
+        AND u.deleted = false
+        """)
+    Optional<UserSnapshot> findUserSnapshotById(@Param("id") UUID id);
+
     @Query("SELECT u FROM UserEntity u LEFT JOIN FETCH u.role WHERE u.id = :id AND u.deleted = false")
     Optional<UserEntity> findByIdWithRole(@Param("id") UUID id);
 
@@ -51,4 +60,7 @@ public interface IUserRepository extends AbstractCrudRepository<UserEntity, UUID
                    "  EXISTS (SELECT 1 FROM reading_histories r WHERE r.user_id = u.id AND r.update_at > u.vector_updated_at)" +
                    ")", nativeQuery = true)
     List<UUID> findUserIdsWithPendingVectorUpdate();
+
+    @Query("SELECT u FROM UserEntity u WHERE (LOWER(u.username) = LOWER(:lookup) OR LOWER(u.fullName) = LOWER(:lookup)) AND u.deleted = false")
+    List<UserEntity> findByUsernameOrFullNameIgnoreCase(@Param("lookup") String lookup);
 }
