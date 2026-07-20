@@ -1,0 +1,194 @@
+package com.sep.comiverse.service;
+
+import com.sep.comiverse.dto.ChapterCommentDTO;
+import com.sep.comiverse.dto.ComicCommentDTO;
+import com.sep.comiverse.dto.UserSnapshot;
+import com.sep.comiverse.dto.request.CreateChapterCommentRequest;
+import com.sep.comiverse.dto.request.CreateComicCommentRequest;
+import com.sep.comiverse.entity.ChapterCommentEntity;
+import com.sep.comiverse.entity.ComicCommentEntity;
+import com.sep.comiverse.exception.CustomException;
+import com.sep.comiverse.repository.IChapterCommentRepository;
+import com.sep.comiverse.repository.IChapterRepository;
+import com.sep.comiverse.repository.IComicCommentRepository;
+import com.sep.comiverse.repository.IComicRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+public class CommentService {
+
+    private final IComicCommentRepository comicCommentRepository;
+    private final IChapterCommentRepository chapterCommentRepository;
+    private final IComicRepository comicRepository;
+    private final IChapterRepository chapterRepository;
+    private final UserService userService;
+
+    @Transactional
+    public ComicCommentDTO createComicComment(CreateComicCommentRequest request, UUID userId) {
+        // 1. Verify user is authenticated
+        if (userId == null) {
+            throw new CustomException(401, "UNAUTHORIZED", HttpStatus.UNAUTHORIZED);
+        }
+
+        // 2. Verify Comic exists
+        if (!comicRepository.existsById(request.getComicId())) {
+            throw new CustomException(404, "Comic not found", HttpStatus.NOT_FOUND);
+        }
+
+        UUID finalParentId = null;
+        UUID reqParentId = request.getParentId();
+
+        // 3. Process 2-level comment nesting logic
+        if (reqParentId != null) {
+            ComicCommentEntity parentComment = comicCommentRepository.findById(reqParentId)
+                    .orElseThrow(() -> new CustomException(400, "Parent comment not found", HttpStatus.BAD_REQUEST));
+
+            // Verify the parent comment is on the same comic
+            if (!parentComment.getComicId().equals(request.getComicId())) {
+                throw new CustomException(400, "Parent comment belongs to a different comic", HttpStatus.BAD_REQUEST);
+            }
+
+            if (parentComment.getParentId() == null) {
+                // Case 1: Parent comment is a root comment (parentId is null)
+                // -> Reply comment gets the parent comment's ID as its parentId
+                finalParentId = parentComment.getId();
+            } else {
+                // Case 2: Parent comment is already a sub-comment (parentId is not null, let's say X)
+                // -> Reply comment also gets X as its parentId (flattened to level 2)
+                finalParentId = parentComment.getParentId();
+            }
+        }
+
+        ComicCommentEntity newComment = ComicCommentEntity.builder()
+                .userId(userId)
+                .comicId(request.getComicId())
+                .content(request.getContent())
+                .parentId(finalParentId)
+                .mentionId(request.getMentionId())
+                .build();
+
+        ComicCommentEntity saved = comicCommentRepository.save(newComment);
+
+        //TODO add notification down here
+
+        return mapToComicCommentDTO(saved);
+    }
+
+    @Transactional
+    public ChapterCommentDTO createChapterComment(CreateChapterCommentRequest request, UUID userId) {
+        // 1. Verify user is authenticated
+        if (userId == null) {
+            throw new CustomException(401, "UNAUTHORIZED", HttpStatus.UNAUTHORIZED);
+        }
+
+        // 2. Verify Chapter exists
+        if (!chapterRepository.existsById(request.getChapterId())) {
+            throw new CustomException(404, "Chapter not found", HttpStatus.NOT_FOUND);
+        }
+
+        UUID finalParentId = null;
+        UUID reqParentId = request.getParentId();
+
+        // 3. Process 2-level comment nesting logic
+        if (reqParentId != null) {
+            ChapterCommentEntity parentComment = chapterCommentRepository.findById(reqParentId)
+                    .orElseThrow(() -> new CustomException(400, "Parent comment not found", HttpStatus.BAD_REQUEST));
+
+            // Verify the parent comment is on the same chapter
+            if (!parentComment.getChapterId().equals(request.getChapterId())) {
+                throw new CustomException(400, "Parent comment belongs to a different chapter", HttpStatus.BAD_REQUEST);
+            }
+
+            if (parentComment.getParentId() == null) {
+                // Case 1: Parent comment is a root comment (parentId is null)
+                // -> Reply comment gets the parent comment's ID as its parentId
+                finalParentId = parentComment.getId();
+            } else {
+                // Case 2: Parent comment is already a sub-comment (parentId is not null, let's say X)
+                // -> Reply comment also gets X as its parentId (flattened to level 2)
+                finalParentId = parentComment.getParentId();
+            }
+        }
+
+        ChapterCommentEntity newComment = ChapterCommentEntity.builder()
+                .userId(userId)
+                .chapterId(request.getChapterId())
+                .content(request.getContent())
+                .parentId(finalParentId)
+                .mentionId(request.getMentionId())
+                .build();
+
+        ChapterCommentEntity saved = chapterCommentRepository.save(newComment);
+
+        //TODO add notification down here
+
+        return mapToChapterCommentDTO(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ComicCommentDTO> getComicComments(UUID comicId, UUID parentId, Pageable pageable) {
+        if (!comicRepository.existsById(comicId)) {
+            throw new CustomException(404, "Comic not found", HttpStatus.NOT_FOUND);
+        }
+        return comicCommentRepository.findByComicIdAndParentId(comicId, parentId, pageable)
+                .map(this::mapToComicCommentDTO);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ChapterCommentDTO> getChapterComments(UUID chapterId, UUID parentId, Pageable pageable) {
+        if (!chapterRepository.existsById(chapterId)) {
+            throw new CustomException(404, "Chapter not found", HttpStatus.NOT_FOUND);
+        }
+        return chapterCommentRepository.findByChapterIdAndParentId(chapterId, parentId, pageable)
+                .map(this::mapToChapterCommentDTO);
+    }
+
+    private ComicCommentDTO mapToComicCommentDTO(ComicCommentEntity entity) {
+        UserSnapshot userSnapshot = getUserById(entity.getUserId());
+        UserSnapshot mentionSnapShot = getUserById(entity.getMentionId());
+        return ComicCommentDTO.builder()
+                .id(entity.getId())
+                .userId(entity.getUserId())
+                .userName(userSnapshot != null ? userSnapshot.getUserName() : null)
+                .userAvatar(userSnapshot != null ? userSnapshot.getAvatarURL() : null)
+                .comicId(entity.getComicId())
+                .content(entity.getContent())
+                .parentId(entity.getParentId())
+                .mentionId(entity.getMentionId())
+                .mentionName(mentionSnapShot != null ? mentionSnapShot.getUserName() : null)
+                .createdAt(entity.getCreatedAt())
+                .updatedAt(entity.getUpdatedAt())
+                .build();
+    }
+
+    private ChapterCommentDTO mapToChapterCommentDTO(ChapterCommentEntity entity) {
+        UserSnapshot userSnapshot = getUserById(entity.getUserId());
+        UserSnapshot mentionSnapShot = getUserById(entity.getMentionId());
+        return ChapterCommentDTO.builder()
+                .id(entity.getId())
+                .userId(entity.getUserId())
+                .userName(userSnapshot != null ? userSnapshot.getUserName() : null)
+                .userAvatar(userSnapshot != null ? userSnapshot.getAvatarURL() : null)
+                .chapterId(entity.getChapterId())
+                .content(entity.getContent())
+                .parentId(entity.getParentId())
+                .mentionId(entity.getMentionId())
+                .mentionName(mentionSnapShot != null ? mentionSnapShot.getUserName() : null)
+                .createdAt(entity.getCreatedAt())
+                .updatedAt(entity.getUpdatedAt())
+                .build();
+    }
+
+    private UserSnapshot getUserById(UUID userId){
+        if (userId == null) return null;
+        return userService.findUserById(userId);
+    }
+}
