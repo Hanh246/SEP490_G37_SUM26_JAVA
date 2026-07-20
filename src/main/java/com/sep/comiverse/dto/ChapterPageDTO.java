@@ -15,4 +15,6 @@ public class ChapterPageDTO {
     private String imageUrl;
     private PageStatus status;
     private String bubbles;
+    private String reviewBaselineBubbles;
+
 }
