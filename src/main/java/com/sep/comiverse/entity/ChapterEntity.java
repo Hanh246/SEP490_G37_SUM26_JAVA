@@ -36,7 +36,7 @@ public class ChapterEntity extends BaseEntity {
     @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "moderation_status", nullable = false, length = 32)
-    private ChapterStatus moderationStatus = ChapterStatus.PREVIEW_READY;
+    private ChapterStatus moderationStatus = ChapterStatus.DRAFT;
 
     /**
      * PostgreSQL text[] column storing chapter image URLs in reading order.

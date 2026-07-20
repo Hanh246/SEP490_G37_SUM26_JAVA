@@ -39,7 +39,6 @@ public class AuthorProfileService {
         author.setDisplayName(requiredTrim(request.getDisplayName(), "Display name is required"));
         author.setLegalName(trimToNull(request.getLegalName()));
         author.setBio(trimToNull(request.getBio()));
-        author.setLanguage(trimToNull(request.getLanguage()));
         author.setAvatarUrl(trimToNull(request.getAvatarUrl()));
         author.setContactEmail(firstNonBlank(request.getContactEmail(), author.getUser().getEmail()));
         author.setExternalProfileRef(trimToNull(request.getExternalProfileRef()));
@@ -85,7 +84,6 @@ public class AuthorProfileService {
                 .displayName(author.getDisplayName())
                 .legalName(author.getLegalName())
                 .bio(author.getBio())
-                .language(author.getLanguage())
                 .avatarUrl(author.getAvatarUrl())
                 .contactEmail(author.getContactEmail())
                 .externalProfileRef(author.getExternalProfileRef())

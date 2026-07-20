@@ -23,14 +23,11 @@ public class ComicSpecification {
             predicates.add(criteriaBuilder.equal(root.get("deleted"), false));
             predicates.add(criteriaBuilder.equal(root.get("moderationStatus"), ComicModerationStatus.PUBLISHED));
 
-            if (request.getPublicationStatus() != null) {
-                predicates.add(criteriaBuilder.equal(
-                        root.get("publicationStatus"),
-                        request.getPublicationStatus()
-                ));
+            if (request.getStatus() != null) {
+                predicates.add(criteriaBuilder.equal(root.get("status"), request.getStatus()));
             }
 
-            if (!CollectionUtils.isEmpty(request.getGenres())) {
+            if (!CollectionUtils.isEmpty(request.getGenres()) && !request.getGenres().contains("All")) {
                 for (UUID genreId : request.getGenres()) {
                     Join<ComicEntity, GenreEntity> genreJoin = root.join("genres");
                     predicates.add(criteriaBuilder.equal(genreJoin.get("id"), genreId));

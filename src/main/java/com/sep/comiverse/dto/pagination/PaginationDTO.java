@@ -3,7 +3,6 @@ package com.sep.comiverse.dto.pagination;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.sep.comiverse.entity.BaseEntity;
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -15,7 +14,6 @@ public class PaginationDTO {
 
     private final static int DEFAULT_PAGE_SIZE = 10;
     private final static int DEFAULT_PAGE = 1;
-    private final static int MAX_PAGE_SIZE = 100;
 
     @Schema(description = "Page index", example = "1", defaultValue = "1")
     @Min(value = 1, message = "Page index must be greater than or equal to 1")
@@ -24,13 +22,12 @@ public class PaginationDTO {
 
     @Schema(description = "Page size", example = "10", defaultValue = "10")
     @Min(value = 1, message = "Page size must have at least 1 item")
-    @Max(value = MAX_PAGE_SIZE, message = "Page size must not exceed 100")
     @JsonProperty("size")
     private Integer size = DEFAULT_PAGE_SIZE;
 
     public PaginationDTO(Integer page, Integer size) {
         this.page = page != null && page >= 1 ? page : DEFAULT_PAGE;
-        this.size = size != null && size >= 1 && size <= MAX_PAGE_SIZE ? size : DEFAULT_PAGE_SIZE;
+        this.size = size != null && size >= 1 ? size : DEFAULT_PAGE_SIZE;
     }
 
     public PageRequest toPageRequest() {
