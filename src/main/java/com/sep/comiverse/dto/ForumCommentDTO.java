@@ -1,4 +1,4 @@
-package com.sep.comiverse.dto.response;
+package com.sep.comiverse.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -12,12 +12,13 @@ import java.util.UUID;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class NotificationResponse {
+public class ForumCommentDTO {
     private UUID id;
-    private String title;
-    private String message;
-    private String type;
-    private String actionUrl;
-    private Boolean isRead;
+    private UUID threadId;
+    private UUID userId;
+    private String author;
+    private String avatarUrl;
+    private String content;
+    private UUID parentId;
     private Instant createdAt;
 }
