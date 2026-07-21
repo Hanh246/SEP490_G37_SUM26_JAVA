@@ -17,6 +17,7 @@ public class NotificationResponse {
     private String title;
     private String message;
     private String type;
+    private String actionUrl;
     private Boolean isRead;
     private Instant createdAt;
 }

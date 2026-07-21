@@ -1,5 +1,6 @@
 package com.sep.comiverse.repository;
 
+import com.sep.comiverse.dto.UserSnapshot;
 import com.sep.comiverse.entity.UserEntity;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,6 +12,14 @@ import java.util.UUID;
 
 @Repository
 public interface IUserRepository extends AbstractCrudRepository<UserEntity, UUID> {
+    @Query("""
+        SELECT new com.sep.comiverse.dto.UserSnapshot(u.id, u.username, u.avatarUrl)
+        FROM UserEntity u
+        WHERE u.id = :id
+        AND u.deleted = false
+        """)
+    Optional<UserSnapshot> findUserSnapshotById(@Param("id") UUID id);
+
     @Query("SELECT u FROM UserEntity u LEFT JOIN FETCH u.role WHERE u.id = :id AND u.deleted = false")
     Optional<UserEntity> findByIdWithRole(@Param("id") UUID id);
 

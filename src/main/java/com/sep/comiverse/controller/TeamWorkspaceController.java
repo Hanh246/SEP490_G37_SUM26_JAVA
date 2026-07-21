@@ -9,6 +9,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import com.sep.comiverse.security.UserPrincipal;
+import com.sep.comiverse.service.NotificationService;
 import org.springframework.web.bind.annotation.*;
 
 import com.sep.comiverse.security.UserPrincipal;
@@ -390,5 +392,24 @@ public class TeamWorkspaceController {
             return ResponseEntity.ok().build();
         }
         return ResponseEntity.notFound().build();
+    }
+
+    @PutMapping("/tasks/{taskId}/submit-for-review")
+    public ResponseEntity<?> submitForReview(@PathVariable UUID taskId) {
+        TeamTaskEntity task = taskRepository.findById(taskId).orElse(null);
+        if (task == null) {
+            return ResponseEntity.status(404).body(Map.of("success", false, "message", "Task not found"));
+        }
+
+        task.setStatus("under_review");
+        taskRepository.save(task);
+
+        List<PageTranslationEntity> pages = iPageTranslationRepository.findByTaskId_IdOrderByPageNumberAsc(taskId);
+        for (PageTranslationEntity page : pages) {
+            page.setReviewBaselineBubbles(page.getBubbles());
+        }
+        iPageTranslationRepository.saveAll(pages);
+
+        return ResponseEntity.ok(Map.of("success", true));
     }
 }

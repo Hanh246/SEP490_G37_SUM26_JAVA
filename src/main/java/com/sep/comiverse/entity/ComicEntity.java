@@ -1,6 +1,5 @@
 package com.sep.comiverse.entity;
 
-import com.sep.comiverse.constants.ComicStatus;
 import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.entity.enums.ComicPublicationStatus;
 import jakarta.persistence.*;
@@ -20,8 +19,8 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 @Table(name = "comics", indexes = {
-        @Index(name = "idx_comics_slug_deleted", columnList = "slug, deleted"),
-        @Index(name = "idx_comics_moderation_deleted", columnList = "moderation_status, deleted")
+        @Index(name = "idx_comics_moderation_deleted", columnList = "moderation_status, deleted"),
+        @Index(name = "idx_comics_author_deleted", columnList = "author_id, deleted")
 })
 @EqualsAndHashCode(callSuper = true, exclude = "genres")
 @ToString(exclude = "genres")
@@ -29,9 +28,6 @@ public class ComicEntity extends BaseEntity {
 
     @Column(name = "title", nullable = false)
     private String title;
-
-    @Column(name = "slug")
-    private String slug;
 
     @Column(name = "summary", columnDefinition = "TEXT")
     private String summary;
@@ -41,10 +37,6 @@ public class ComicEntity extends BaseEntity {
 
     @Column(name = "author_id")
     private UUID authorId;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false)
-    private ComicStatus status;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "publication_status")
@@ -57,9 +49,6 @@ public class ComicEntity extends BaseEntity {
 
     @Column(name = "cover")
     private String cover;
-
-    @Column(name = "thumbnail")
-    private String thumbnail;
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
@@ -108,7 +97,7 @@ public class ComicEntity extends BaseEntity {
     @Column(name = "summary_vector", columnDefinition = "vector(768)")
     private float[] summaryVector;
 
-   @PrePersist
+    @PrePersist
     protected void ensureModerationDefaults() {
         if (this.moderationStatus == null) {
             this.moderationStatus = ComicModerationStatus.DRAFT;

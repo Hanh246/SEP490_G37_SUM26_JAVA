@@ -5,6 +5,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.*;
 
+import java.util.UUID;
+
 @Data
 @Entity
 @NoArgsConstructor
@@ -19,6 +21,9 @@ public class ForumThreadEntity extends BaseEntity {
 
     @Column(name = "author")
     private String author;
+
+    @Column(name = "author_id")
+    private UUID authorId;
 
     @Column(name = "category")
     private String category;
