@@ -196,9 +196,9 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
         ProjectTeamEntity team = findSubmissionTeam(submission);
 
-            ComicEntity comic = comicRepository.findAllByTitle(comicTitle).stream().findFirst()
-                    .or(() -> comicRepository.findAllByTitleIgnoreCase(comicTitle).stream().findFirst())
-                    .orElse(null);
+        ComicEntity comic = comicRepository.findAllByTitle(comicTitle).stream().findFirst()
+                .or(() -> comicRepository.findAllByTitleIgnoreCase(comicTitle).stream().findFirst())
+                .orElse(null);
 
         if (team != null) {
             team.setChaptersCount(team.getChaptersCount() == null ? 1 : team.getChaptersCount() + 1);
@@ -319,19 +319,6 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 comicRepository.save(comic);
             });
         }
-    }
-
-    private String buildSafeSlug(String title) {
-        String baseSlug = title == null ? "comic" : title.toLowerCase().replaceAll("[^a-z0-9]+", "-").replaceAll("^-|-$", "");
-        if (baseSlug.isBlank()) {
-            baseSlug = "comic";
-        }
-        String slug = baseSlug;
-        int suffix = 2;
-        while (comicRepository.existsBySlugAndDeletedFalse(slug)) {
-            slug = baseSlug + "-" + suffix++;
-        }
-        return slug;
     }
 
     @PutMapping("/{id}/reject")

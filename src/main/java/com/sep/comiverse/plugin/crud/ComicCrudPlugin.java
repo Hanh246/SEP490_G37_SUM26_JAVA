@@ -69,26 +69,23 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         if (dto.getTitle() != null) {
             existing.setTitle(dto.getTitle());
         }
-        if (dto.getSlug() != null) {
-            existing.setSlug(dto.getSlug());
-        }
         if (dto.getSummary() != null) {
             existing.setSummary(dto.getSummary());
+        }
+        if (dto.getMinimumAge() != null) {
+            existing.setMinimumAge(dto.getMinimumAge());
         }
         if (dto.getAuthorId() != null) {
             existing.setAuthorId(dto.getAuthorId());
         }
-        if (dto.getStatus() != null) {
-            existing.setStatus(dto.getStatus());
+        if (dto.getPublicationStatus() != null) {
+            existing.setPublicationStatus(dto.getPublicationStatus());
         }
         if (dto.getModerationStatus() != null) {
             existing.setModerationStatus(dto.getModerationStatus());
         }
         if (dto.getCover() != null) {
             existing.setCover(dto.getCover());
-        }
-        if (dto.getThumbnail() != null) {
-            existing.setThumbnail(dto.getThumbnail());
         }
         if (dto.getViewCount() != null) {
             existing.setViewCount(dto.getViewCount());

@@ -3,6 +3,7 @@ package com.sep.comiverse.repository;
 import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
+import com.sep.comiverse.repository.projection.ComicChapterCountProjection;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Query;
@@ -39,6 +40,17 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
     );
 
     List<ChapterEntity> findAllByComic_IdAndDeletedFalse(UUID comicId);
+
+    List<ChapterEntity> findAllByComic_AuthorIdAndDeletedFalseOrderByCreatedAtAsc(UUID authorId);
+
+    @Query("""
+        SELECT c.comic.id AS comicId, COUNT(c.id) AS chapterCount
+        FROM ChapterEntity c
+        WHERE c.comic.id IN :comicIds
+          AND c.deleted = false
+        GROUP BY c.comic.id
+        """)
+    List<ComicChapterCountProjection> countActiveChaptersByComicIds(@Param("comicIds") List<UUID> comicIds);
 
     List<ChapterEntity> findAllByComic_IdAndDeletedFalseAndModerationStatus(
             UUID comicId,

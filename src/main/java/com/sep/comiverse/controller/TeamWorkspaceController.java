@@ -393,4 +393,23 @@ public class TeamWorkspaceController {
         }
         return ResponseEntity.notFound().build();
     }
+
+    @PutMapping("/tasks/{taskId}/submit-for-review")
+    public ResponseEntity<?> submitForReview(@PathVariable UUID taskId) {
+        TeamTaskEntity task = taskRepository.findById(taskId).orElse(null);
+        if (task == null) {
+            return ResponseEntity.status(404).body(Map.of("success", false, "message", "Task not found"));
+        }
+
+        task.setStatus("under_review");
+        taskRepository.save(task);
+
+        List<PageTranslationEntity> pages = iPageTranslationRepository.findByTaskId_IdOrderByPageNumberAsc(taskId);
+        for (PageTranslationEntity page : pages) {
+            page.setReviewBaselineBubbles(page.getBubbles());
+        }
+        iPageTranslationRepository.saveAll(pages);
+
+        return ResponseEntity.ok(Map.of("success", true));
+    }
 }
