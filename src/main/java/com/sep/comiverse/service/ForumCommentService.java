@@ -68,7 +68,7 @@ public class ForumCommentService {
         thread.setReplies((thread.getReplies() == null ? 0 : thread.getReplies()) + 1);
         forumThreadRepository.save(thread);
 
-        UUID recipientId = parent == null ? thread.getAuthorId() : parent.getUserId();
+        UUID recipientId = resolveRecipientId(thread, parent);
         if (recipientId != null && !recipientId.equals(actorId)) {
             String actorName = displayName(actor);
             String notificationTitle = parent == null
@@ -103,6 +103,34 @@ public class ForumCommentService {
                 .parentId(comment.getParentId())
                 .createdAt(comment.getCreatedAt())
                 .build();
+    }
+
+    private UUID resolveRecipientId(ForumThreadEntity thread, ForumCommentEntity parent) {
+        if (parent != null) {
+            return parent.getUserId();
+        }
+        if (thread.getAuthorId() != null) {
+            return thread.getAuthorId();
+        }
+
+        String legacyAuthor = thread.getAuthor();
+        if (legacyAuthor == null || legacyAuthor.isBlank()) {
+            return null;
+        }
+
+        UserEntity owner = userRepository.findByUsername(legacyAuthor.trim()).orElse(null);
+        if (owner == null) {
+            List<UserEntity> matches = userRepository.findByUsernameOrFullNameIgnoreCase(legacyAuthor.trim());
+            if (matches.size() == 1) {
+                owner = matches.get(0);
+            }
+        }
+        if (owner == null) {
+            return null;
+        }
+
+        thread.setAuthorId(owner.getId());
+        return owner.getId();
     }
 
     private String displayName(UserEntity user) {
