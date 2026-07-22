@@ -17,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -113,6 +114,57 @@ class ForumCommentServiceTest {
         verify(notificationService).notifyUser(
                 commentOwnerId,
                 "New reply to your forum comment",
+                "Reply User replied in \"Thread title\".",
+                "FORUM",
+                "/forum/thread/" + threadId + "?comment=" + savedId
+        );
+    }
+
+    @Test
+    void createTopLevelCommentResolvesLegacyThreadOwnerByStoredAuthor() {
+        UUID savedId = UUID.randomUUID();
+        ForumThreadEntity thread = thread(null);
+        thread.setAuthor("legacy-owner");
+        UserEntity owner = user(ownerId, "Legacy Owner");
+
+        when(forumThreadRepository.findById(threadId)).thenReturn(Optional.of(thread));
+        when(userRepository.findByIdWithRole(actorId)).thenReturn(Optional.of(user(actorId, "Reply User")));
+        when(userRepository.findByUsername("legacy-owner")).thenReturn(Optional.of(owner));
+        when(forumCommentRepository.save(any(ForumCommentEntity.class)))
+                .thenAnswer(invocation -> savedComment(invocation.getArgument(0), savedId));
+
+        forumCommentService.createComment(threadId, request("Reply to a legacy thread", null), actorId);
+
+        assertEquals(ownerId, thread.getAuthorId());
+        verify(notificationService).notifyUser(
+                ownerId,
+                "New reply to your forum post",
+                "Reply User replied in \"Thread title\".",
+                "FORUM",
+                "/forum/thread/" + threadId + "?comment=" + savedId
+        );
+    }
+
+    @Test
+    void createTopLevelCommentResolvesLegacyThreadOwnerByUniqueFullName() {
+        UUID savedId = UUID.randomUUID();
+        ForumThreadEntity thread = thread(null);
+        thread.setAuthor("Legacy Owner");
+        UserEntity owner = user(ownerId, "Legacy Owner");
+
+        when(forumThreadRepository.findById(threadId)).thenReturn(Optional.of(thread));
+        when(userRepository.findByIdWithRole(actorId)).thenReturn(Optional.of(user(actorId, "Reply User")));
+        when(userRepository.findByUsername("Legacy Owner")).thenReturn(Optional.empty());
+        when(userRepository.findByUsernameOrFullNameIgnoreCase("Legacy Owner")).thenReturn(List.of(owner));
+        when(forumCommentRepository.save(any(ForumCommentEntity.class)))
+                .thenAnswer(invocation -> savedComment(invocation.getArgument(0), savedId));
+
+        forumCommentService.createComment(threadId, request("Reply to a legacy thread", null), actorId);
+
+        assertEquals(ownerId, thread.getAuthorId());
+        verify(notificationService).notifyUser(
+                ownerId,
+                "New reply to your forum post",
                 "Reply User replied in \"Thread title\".",
                 "FORUM",
                 "/forum/thread/" + threadId + "?comment=" + savedId
