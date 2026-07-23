@@ -13,6 +13,7 @@ public class ForumThreadDTO {
     private UUID id;
     private String title;
     private String author;
+    private UUID authorId;
     private String category;
     private String content;
     private Boolean isPinned;

@@ -41,6 +41,10 @@ public class PageTranslationEntity extends BaseEntity{
     @Column(name = "bubbles", columnDefinition = "jsonb")
     private String bubbles = "[]";
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "review_baseline_bubbles", columnDefinition = "jsonb")
+    private String reviewBaselineBubbles;
+
     protected void ensureDefaults() {
         if (status == null) {
             status = PageStatus.TODO;
