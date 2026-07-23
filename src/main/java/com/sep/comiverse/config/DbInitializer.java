@@ -43,6 +43,7 @@ public class DbInitializer implements CommandLineRunner {
         // Publication lifecycle is stored in `publication_status`.
         jdbcTemplate.execute("UPDATE comics SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
         jdbcTemplate.execute("UPDATE chapters SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
+        migrateAuthorLanguageToComics();
         migrateLegacyChapterPagesIntoChapterImages();
         splitCommaJoinedChapterImageArrays();
         jdbcTemplate.execute("UPDATE chapters SET images = ARRAY[]::text[] WHERE images IS NULL");
@@ -104,6 +105,42 @@ public class DbInitializer implements CommandLineRunner {
         } catch (Exception e) {
             System.err.println("⚠️ Warning: Failed to create foreign key indexes: " + e.getMessage());
         }
+    }
+
+    /**
+     * Moves the legacy author-level language to each owned comic once, then
+     * removes the obsolete authors.language column. New comics own this value.
+     */
+    private void migrateAuthorLanguageToComics() {
+        jdbcTemplate.execute("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'authors' AND column_name = 'language'
+                    ) AND EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'comics' AND column_name = 'language'
+                    ) THEN
+                        EXECUTE $sql$
+                            UPDATE comics c
+                            SET language = CASE
+                                WHEN c.language IS NULL
+                                  OR BTRIM(c.language) = ''
+                                  OR LOWER(BTRIM(c.language)) = 'unknown'
+                                THEN COALESCE(NULLIF(BTRIM(a.language), ''), 'Unknown')
+                                ELSE BTRIM(c.language)
+                            END
+                            FROM authors a
+                            WHERE a.id = c.author_id OR a.user_id = c.author_id
+                        $sql$;
+                        ALTER TABLE authors DROP COLUMN IF EXISTS language;
+                    END IF;
+                END $$;
+                """);
+        jdbcTemplate.execute("UPDATE comics SET language = 'Unknown' WHERE language IS NULL OR BTRIM(language) = ''");
+        jdbcTemplate.execute("ALTER TABLE comics ALTER COLUMN language SET DEFAULT 'Unknown'");
+        jdbcTemplate.execute("ALTER TABLE comics ALTER COLUMN language SET NOT NULL");
     }
 
     private void migrateLegacyChapterPagesIntoChapterImages() {
@@ -266,6 +303,7 @@ public class DbInitializer implements CommandLineRunner {
             comicRepository.save(ComicEntity.builder()
                     .title("Invincible Sword God")
                     .summary("A legendary sword cultivator reincarnates and rebuilds his power from the lowest rank.")
+                    .language("Chinese")
                     .authorId(authorId)
                     .publicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.ONGOING)
                     .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
@@ -283,6 +321,7 @@ public class DbInitializer implements CommandLineRunner {
             comicRepository.save(ComicEntity.builder()
                     .title("Spirit Recovery")
                     .summary("An urban student discovers that spiritual energy is returning to the modern world.")
+                    .language("Chinese")
                     .authorId(authorId)
                     .publicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.ONGOING)
                     .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
@@ -300,6 +339,7 @@ public class DbInitializer implements CommandLineRunner {
             comicRepository.save(ComicEntity.builder()
                     .title("Demon King Reborn")
                     .summary("The fallen Demon Monarch wakes up in a rival kingdom and plans a second rise.")
+                    .language("Korean")
                     .authorId(authorId)
                     .publicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.HIATUS)
                     .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
@@ -317,6 +357,7 @@ public class DbInitializer implements CommandLineRunner {
             comicRepository.save(ComicEntity.builder()
                     .title("Heavenly Dao")
                     .summary("A young cultivator studies the rules of heaven and challenges the order of the realms.")
+                    .language("Chinese")
                     .authorId(authorId)
                     .publicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.COMPLETED)
                     .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)

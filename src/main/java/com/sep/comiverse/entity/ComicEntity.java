@@ -32,6 +32,11 @@ public class ComicEntity extends BaseEntity {
     @Column(name = "summary", columnDefinition = "TEXT")
     private String summary;
 
+    /** Original/source language of this comic, not the author's personal language. */
+    @Builder.Default
+    @Column(name = "language", nullable = false, length = 100, columnDefinition = "varchar(100) default 'Unknown'")
+    private String language = "Unknown";
+
     @Column(name = "minimum_age")
     private Integer minimumAge;
 
@@ -101,6 +106,9 @@ public class ComicEntity extends BaseEntity {
     protected void ensureModerationDefaults() {
         if (this.moderationStatus == null) {
             this.moderationStatus = ComicModerationStatus.DRAFT;
+        }
+        if (this.language == null || this.language.isBlank()) {
+            this.language = "Unknown";
         }
     }
 }

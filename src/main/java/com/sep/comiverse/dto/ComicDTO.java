@@ -19,6 +19,7 @@ public class ComicDTO {
     private UUID id;
     private String title;
     private String summary;
+    private String language;
     private Integer minimumAge;
     private UUID authorId;
 
