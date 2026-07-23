@@ -13,7 +13,7 @@ import java.util.UUID;
 @Repository
 public interface IUserRepository extends AbstractCrudRepository<UserEntity, UUID> {
     @Query("""
-        SELECT new com.sep.comiverse.dto.UserSnapshot(u.id, u.username, u.avatarUrl)
+        SELECT new com.sep.comiverse.dto.UserSnapshot(u.id, u.fullName, u.avatarUrl)
         FROM UserEntity u
         WHERE u.id = :id
         AND u.deleted = false

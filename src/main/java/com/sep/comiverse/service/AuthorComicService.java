@@ -61,6 +61,7 @@ public class AuthorComicService {
                 .authorId(request.getAuthorId())
                 .title(request.getTitle().trim())
                 .summary(trimToNull(request.getSummary()))
+                .language(normalizeRequiredLanguage(request.getLanguage()))
                 .minimumAge(normalizeMinimumAge(request.getMinimumAge()))
                 .cover(trimToNull(request.getCover()))
                 .publicationStatus(publicationStatus)
@@ -138,6 +139,11 @@ public class AuthorComicService {
             String summary = trimToNull(request.getSummary());
             requiresModerationReview |= differentString(comic.getSummary(), summary);
             comic.setSummary(summary);
+        }
+        if (request.getLanguage() != null) {
+            String language = normalizeRequiredLanguage(request.getLanguage());
+            requiresModerationReview |= differentString(comic.getLanguage(), language);
+            comic.setLanguage(language);
         }
         if (request.getMinimumAge() != null) {
             Integer minimumAge = normalizeMinimumAge(request.getMinimumAge());
@@ -349,6 +355,7 @@ public class AuthorComicService {
                 .authorId(comic.getAuthorId())
                 .title(comic.getTitle())
                 .summary(comic.getSummary())
+                .language(comic.getLanguage())
                 .minimumAge(comic.getMinimumAge())
                 .cover(comic.getCover())
                 .genres(genreNames)
@@ -377,9 +384,23 @@ public class AuthorComicService {
         if (!StringUtils.hasText(request.getTitle())) {
             throw new CustomException(400, "Title is required", HttpStatus.BAD_REQUEST);
         }
+        if (!StringUtils.hasText(request.getLanguage())) {
+            throw new CustomException(400, "Comic language is required", HttpStatus.BAD_REQUEST);
+        }
         if (!StringUtils.hasText(request.getCover())) {
             throw new CustomException(400, "Cover image is required", HttpStatus.BAD_REQUEST);
         }
+    }
+
+    private String normalizeRequiredLanguage(String language) {
+        String normalized = trimToNull(language);
+        if (normalized == null) {
+            throw new CustomException(400, "Comic language is required", HttpStatus.BAD_REQUEST);
+        }
+        if (normalized.length() > 100) {
+            throw new CustomException(400, "Comic language must not exceed 100 characters", HttpStatus.BAD_REQUEST);
+        }
+        return normalized;
     }
 
     private Integer normalizeMinimumAge(Integer minimumAge) {

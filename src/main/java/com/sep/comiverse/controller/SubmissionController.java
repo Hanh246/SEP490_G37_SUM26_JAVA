@@ -52,12 +52,15 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
     @Autowired
     private com.sep.comiverse.plugin.crud.ChapterCrudPlugin chapterCrudPlugin;
+
+    @Autowired
     private com.sep.comiverse.service.NotificationService notificationService;
+
+    @Autowired
+    private ITeamTaskRepository teamTaskRepository;
 
     private static final Pattern CHAPTER_NUMBER_PATTERN =
             Pattern.compile("(?i)chapter\\s+([0-9]+(?:[,.][0-9]+)?)");
-    @Autowired
-    private com.sep.comiverse.repository.ITeamTaskRepository teamTaskRepository;
 
     @Autowired
     public SubmissionController(SubmissionCrudPlugin crud) {
