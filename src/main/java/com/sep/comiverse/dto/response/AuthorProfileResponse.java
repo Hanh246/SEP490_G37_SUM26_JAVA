@@ -22,7 +22,6 @@ public class AuthorProfileResponse {
     private String displayName;
     private String legalName;
     private String bio;
-    private String language;
     private String avatarUrl;
     private String contactEmail;
     private String externalProfileRef;

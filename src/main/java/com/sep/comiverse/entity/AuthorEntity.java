@@ -42,9 +42,6 @@ public class AuthorEntity extends BaseEntity {
     @Column(name = "bio", columnDefinition = "TEXT")
     private String bio;
 
-    @Column(name = "language", length = 100)
-    private String language;
-
     @Column(name = "avatar_url", length = 500)
     private String avatarUrl;
 
