@@ -152,11 +152,12 @@ public class ChapterController {
     @GetMapping("/comic/{comicId}")
     @Operation(summary = "Get list of chapters by comic ID")
     public ResponseEntity<BaseResponse<List<ChapterLiteDTO>>> getChaptersByComicId(
-            @PathVariable UUID comicId
+            @PathVariable UUID comicId,
+            @RequestParam(value = "includeAll", required = false, defaultValue = "false") boolean includeAll
     ) {
         return ResponseEntity.ok(BaseResponse.<List<ChapterLiteDTO>>builder()
                 .success(true)
-                .data(chapterCrudPlugin.getChaptersByComicId(comicId))
+                .data(chapterCrudPlugin.getChaptersByComicId(comicId, includeAll))
                 .build());
     }
 }
