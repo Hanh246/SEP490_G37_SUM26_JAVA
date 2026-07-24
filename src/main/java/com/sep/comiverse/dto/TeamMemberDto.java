@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Data
@@ -16,4 +17,6 @@ public class TeamMemberDto {
     private String name;
     private String role;
     private String avatar;
+    private Boolean online;
+    private Instant lastSeenAt;
 }
