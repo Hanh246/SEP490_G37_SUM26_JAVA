@@ -1,6 +1,5 @@
 package com.sep.comiverse.service;
 
-import com.sep.comiverse.constants.ComicStatus;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.dto.request.AuthorComicCreateRequest;
 import com.sep.comiverse.dto.request.AuthorComicUpdateRequest;
@@ -9,15 +8,16 @@ import com.sep.comiverse.dto.response.ComicMetricsResponse;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.ComicMetricSnapshotEntity;
 import com.sep.comiverse.entity.GenreEntity;
-import com.sep.comiverse.entity.enums.ComicPublicationStatus;
-import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.entity.SubmissionEntity;
+import com.sep.comiverse.entity.enums.ComicModerationStatus;
+import com.sep.comiverse.entity.enums.ComicPublicationStatus;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IComicMetricSnapshotRepository;
 import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.repository.IGenreRepository;
 import com.sep.comiverse.repository.ISubmissionRepository;
+import com.sep.comiverse.repository.projection.ComicChapterCountProjection;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -32,6 +32,7 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -51,25 +52,20 @@ public class AuthorComicService {
     public AuthorComicResponse createComic(AuthorComicCreateRequest request) {
         validateCreateRequest(request);
 
-        String slug = normalizeSlug(StringUtils.hasText(request.getSlug()) ? request.getSlug() : request.getTitle());
-        if (comicRepository.existsBySlugAndDeletedFalse(slug)) {
-            throw new CustomException(409, "Slug already exists", HttpStatus.CONFLICT);
-        }
-
-        String coverImageUrl = trimToNull(request.getCoverImageUrl());
         Set<GenreEntity> genres = resolveGenres(request.getGenres());
+        ComicPublicationStatus publicationStatus = request.getPublicationStatus() == null
+                ? ComicPublicationStatus.ONGOING
+                : request.getPublicationStatus();
 
         ComicEntity comic = ComicEntity.builder()
                 .authorId(request.getAuthorId())
                 .title(request.getTitle().trim())
-                .slug(slug)
-                .summary(trimToNull(request.getDescription()))
+                .summary(trimToNull(request.getSummary()))
+                .language(normalizeRequiredLanguage(request.getLanguage()))
                 .minimumAge(normalizeMinimumAge(request.getMinimumAge()))
-                .cover(coverImageUrl)
-                .thumbnail(coverImageUrl)
-                .status(normalizePublicationStatus(request.getPublicationStatus()))
-                .publicationStatus(normalizePublicationStatusEntity(request.getPublicationStatus()))
-                .moderationStatus(ComicModerationStatus.SUBMITTED_FOR_REVIEW)
+                .cover(trimToNull(request.getCover()))
+                .publicationStatus(publicationStatus)
+                .moderationStatus(ComicModerationStatus.DRAFT)
                 .genres(genres)
                 .genreIds(genres.stream().map(GenreEntity::getId).toList())
                 .viewCount(0L)
@@ -78,12 +74,10 @@ public class AuthorComicService {
                 .ratingAverage(0.0)
                 .ratingCount(0)
                 .chapterCount(0)
-                .lastChapterUpdatedAt(Instant.now())
+                .lastChapterUpdatedAt(null)
                 .build();
 
-        ComicEntity savedComic = comicRepository.save(comic);
-        createComicProfileReviewSubmission(savedComic);
-        return toComicResponse(savedComic);
+        return toComicResponse(comicRepository.save(comic));
     }
 
     @Transactional(readOnly = true)
@@ -92,15 +86,41 @@ public class AuthorComicService {
     }
 
     @Transactional(readOnly = true)
-    public Page<AuthorComicResponse> listOwnComics(UUID authorId, PaginationSearchDTO pagination) {
+    public Page<AuthorComicResponse> listOwnComics(
+            UUID authorId,
+            PaginationSearchDTO pagination
+    ) {
         if (authorId == null) {
-            throw new CustomException(400, "Author id is required", HttpStatus.BAD_REQUEST);
+            throw new CustomException(
+                    400,
+                    "Author id is required",
+                    HttpStatus.BAD_REQUEST
+            );
         }
-        PaginationSearchDTO safePagination = pagination != null ? pagination : new PaginationSearchDTO();
-        return comicRepository.findAuthorComics(authorId, safePagination.getSearch(), safePagination.toPageRequest())
-                .map(this::toComicResponse);
-    }
 
+        PaginationSearchDTO safePagination =
+                pagination != null
+                        ? pagination
+                        : new PaginationSearchDTO();
+
+        String search = safePagination.getSearch();
+
+        // Fast path (no JOIN on genres, no DISTINCT, no correlated subquery) for the
+        // common case where the author just opens the list without a search keyword.
+        // The full search query is only used when a keyword is actually provided.
+        Page<ComicEntity> comicPage = StringUtils.hasText(search)
+                ? comicRepository.searchAuthorComics(authorId, search, safePagination.toPageRequest())
+                : comicRepository.findByAuthorIdAndDeletedFalse(authorId, safePagination.toPageRequest());
+
+        Map<UUID, String> genreNamesById = loadGenreNamesById(comicPage.getContent());
+        Map<UUID, Integer> chapterCountsByComicId = loadChapterCountsByComicId(comicPage.getContent());
+
+        return comicPage.map(comic -> toComicSummaryResponse(
+                comic,
+                genreNamesById,
+                chapterCountsByComicId.getOrDefault(comic.getId(), 0)
+        ));
+    }
     @Transactional
     public AuthorComicResponse updateComic(UUID comicId, AuthorComicUpdateRequest request) {
         if (request == null || request.getAuthorId() == null) {
@@ -108,56 +128,83 @@ public class AuthorComicService {
         }
 
         ComicEntity comic = getOwnedComic(comicId, request.getAuthorId());
-
         boolean requiresModerationReview = false;
-
-        if (StringUtils.hasText(request.getSlug())) {
-            String slug = normalizeSlug(request.getSlug());
-            boolean duplicateSlug = comicRepository.existsBySlugAndDeletedFalse(slug) && !slug.equals(comic.getSlug());
-            if (duplicateSlug) {
-                throw new CustomException(409, "Slug already exists", HttpStatus.CONFLICT);
-            }
-            requiresModerationReview |= !slug.equals(comic.getSlug());
-            comic.setSlug(slug);
-        }
 
         if (StringUtils.hasText(request.getTitle())) {
             String title = request.getTitle().trim();
             requiresModerationReview |= differentString(comic.getTitle(), title);
             comic.setTitle(title);
         }
-        if (request.getDescription() != null) {
-            String summary = trimToNull(request.getDescription());
+        if (request.getSummary() != null) {
+            String summary = trimToNull(request.getSummary());
             requiresModerationReview |= differentString(comic.getSummary(), summary);
             comic.setSummary(summary);
+        }
+        if (request.getLanguage() != null) {
+            String language = normalizeRequiredLanguage(request.getLanguage());
+            requiresModerationReview |= differentString(comic.getLanguage(), language);
+            comic.setLanguage(language);
         }
         if (request.getMinimumAge() != null) {
             Integer minimumAge = normalizeMinimumAge(request.getMinimumAge());
             requiresModerationReview |= differentInteger(comic.getMinimumAge(), minimumAge);
             comic.setMinimumAge(minimumAge);
         }
-        if (request.getCoverImageUrl() != null) {
-            String coverImageUrl = trimToNull(request.getCoverImageUrl());
-            requiresModerationReview |= differentString(comic.getCover(), coverImageUrl) || differentString(comic.getThumbnail(), coverImageUrl);
-            comic.setCover(coverImageUrl);
-            comic.setThumbnail(coverImageUrl);
+        if (request.getCover() != null) {
+            String cover = trimToNull(request.getCover());
+            requiresModerationReview |= differentString(comic.getCover(), cover);
+            comic.setCover(cover);
         }
         if (request.getGenres() != null) {
             Set<GenreEntity> genres = resolveGenres(request.getGenres());
+            Set<UUID> currentGenreIds = comic.getGenreIds() == null
+                    ? Set.of()
+                    : new HashSet<>(comic.getGenreIds());
+            Set<UUID> requestedGenreIds = genres.stream()
+                    .map(GenreEntity::getId)
+                    .collect(Collectors.toSet());
+            requiresModerationReview |= !currentGenreIds.equals(requestedGenreIds);
             comic.setGenres(genres);
-            comic.setGenreIds(genres.stream().map(GenreEntity::getId).toList());
+            comic.setGenreIds(requestedGenreIds.stream().toList());
         }
-        if (StringUtils.hasText(request.getPublicationStatus())) {
-            comic.setStatus(normalizePublicationStatus(request.getPublicationStatus()));
-            comic.setPublicationStatus(normalizePublicationStatusEntity(request.getPublicationStatus()));
+        if (request.getPublicationStatus() != null) {
+            comic.setPublicationStatus(request.getPublicationStatus());
         }
 
         if (requiresModerationReview) {
-            comic.setModerationStatus(ComicModerationStatus.SUBMITTED_FOR_REVIEW);
-            if (!hasPendingComicProfileSubmission(comic)) {
-                createComicProfileReviewSubmission(comic);
-            }
+            // Any profile content change invalidates the currently pending/approved
+            // moderation result. Cancel only the Author profile submission; chapter
+            // submissions are independent and remain untouched.
+            cancelPendingComicSubmissions(comicId, request.getAuthorId());
+            comic.setModerationStatus(ComicModerationStatus.DRAFT);
         }
+
+        return toComicResponse(comicRepository.save(comic));
+    }
+
+    @Transactional
+    public AuthorComicResponse submitForReview(UUID comicId, UUID authorId) {
+        ComicEntity comic = getOwnedComic(comicId, authorId);
+
+        long chapterCount = chapterRepository.countByComic_IdAndDeletedFalse(comicId);
+        if (chapterCount < 1) {
+            throw new CustomException(
+                    400,
+                    "Comic must have at least one chapter before it can be submitted for review",
+                    HttpStatus.BAD_REQUEST
+            );
+        }
+
+        if (comic.getModerationStatus() == ComicModerationStatus.PUBLISHED) {
+            throw new CustomException(409, "Published comics cannot be submitted again", HttpStatus.CONFLICT);
+        }
+        if (hasPendingComicProfileSubmission(comic)
+                || comic.getModerationStatus() == ComicModerationStatus.SUBMITTED_FOR_REVIEW) {
+            throw new CustomException(409, "Comic has already been submitted for review", HttpStatus.CONFLICT);
+        }
+
+        createComicProfileReviewSubmission(comic);
+        comic.setModerationStatus(ComicModerationStatus.SUBMITTED_FOR_REVIEW);
         return toComicResponse(comicRepository.save(comic));
     }
 
@@ -172,6 +219,45 @@ public class AuthorComicService {
         cancelPendingComicSubmissions(comicId, authorId);
         comic.setDeleted(true);
         comicRepository.save(comic);
+    }
+
+    @Transactional(readOnly = true)
+    public ComicMetricsResponse getComicMetrics(UUID comicId, UUID authorId) {
+        ComicEntity comic = getOwnedComic(comicId, authorId);
+        ComicMetricSnapshotEntity snapshot = metricSnapshotRepository
+                .findTopByComicIdAndAuthorIdAndDeletedFalseOrderByCreatedAtDesc(comicId, authorId)
+                .orElse(null);
+
+        long savedCount = defaultInteger(comic.getSaveCount()).longValue();
+        return ComicMetricsResponse.builder()
+                .comicId(comicId)
+                .authorId(authorId)
+                .viewCount(defaultLong(comic.getViewCount()))
+                .followCount(savedCount)
+                .favoriteCount(savedCount)
+                .likeCount(defaultInteger(comic.getLikeCount()).longValue())
+                .chapterCount(Math.toIntExact(chapterRepository.countByComic_IdAndDeletedFalse(comicId)))
+                .ratingAverage(comic.getRatingAverage() == null ? 0.0 : comic.getRatingAverage())
+                .ratingCount(defaultInteger(comic.getRatingCount()))
+                .estimatedRevenue(snapshot == null || snapshot.getEstimatedRevenue() == null
+                        ? BigDecimal.ZERO
+                        : snapshot.getEstimatedRevenue())
+                .snapshotAt(snapshot == null ? new Date() : toDate(snapshot.getCreatedAt()))
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public ComicEntity getOwnedComic(UUID comicId, UUID authorId) {
+        if (comicId == null || authorId == null) {
+            throw new CustomException(400, "Comic id and author id are required", HttpStatus.BAD_REQUEST);
+        }
+
+        return comicRepository.findByIdAndAuthorIdAndDeletedFalse(comicId, authorId)
+                .orElseThrow(() -> new CustomException(
+                        404,
+                        "Comic not found or does not belong to this author",
+                        HttpStatus.NOT_FOUND
+                ));
     }
 
     private void cancelPendingComicSubmissions(UUID comicId, UUID authorId) {
@@ -194,33 +280,6 @@ public class AuthorComicService {
                 });
     }
 
-    @Transactional(readOnly = true)
-    public ComicMetricsResponse getComicMetrics(UUID comicId, UUID authorId) {
-        getOwnedComic(comicId, authorId);
-        return metricSnapshotRepository.findTopByComicIdAndAuthorIdAndDeletedFalseOrderByCreatedAtDesc(comicId, authorId)
-                .map(this::toMetricsResponse)
-                .orElseGet(() -> ComicMetricsResponse.builder()
-                        .comicId(comicId)
-                        .authorId(authorId)
-                        .viewCount(0L)
-                        .followCount(0L)
-                        .favoriteCount(0L)
-                        .likeCount(0L)
-                        .estimatedRevenue(BigDecimal.ZERO)
-                        .snapshotAt(new Date())
-                        .build());
-    }
-
-    @Transactional(readOnly = true)
-    public ComicEntity getOwnedComic(UUID comicId, UUID authorId) {
-        if (comicId == null || authorId == null) {
-            throw new CustomException(400, "Comic id and author id are required", HttpStatus.BAD_REQUEST);
-        }
-
-        return comicRepository.findByIdAndAuthorIdAndDeletedFalse(comicId, authorId)
-                .orElseThrow(() -> new CustomException(404, "Comic not found or does not belong to this author", HttpStatus.NOT_FOUND));
-    }
-
     private void createComicProfileReviewSubmission(ComicEntity comic) {
         Date now = new Date();
         submissionRepository.save(SubmissionEntity.builder()
@@ -237,7 +296,7 @@ public class AuthorComicService {
                 .priority("Medium")
                 .flags(0)
                 .status("pending")
-                .cover(firstNonBlank(comic.getThumbnail(), comic.getCover()))
+                .cover(comic.getCover())
                 .content("Comic profile is waiting for moderator review.")
                 .build());
         notificationService.notifyRoles(
@@ -249,38 +308,69 @@ public class AuthorComicService {
     }
 
     private AuthorComicResponse toComicResponse(ComicEntity comic) {
-        ComicModerationStatus moderationStatus = resolveComicProfileModerationStatus(comic);
+        return buildComicResponse(comic, resolveComicProfileModerationStatus(comic));
+    }
+
+    /**
+     * Lightweight mapper for the author list. It avoids the submission lookup
+     * performed by the detail mapper and uses only fields mapped by ComicEntity.
+     */
+    private AuthorComicResponse toComicSummaryResponse(
+            ComicEntity comic,
+            Map<UUID, String> genreNamesById,
+            int chapterCount
+    ) {
+        ComicModerationStatus moderationStatus = comic.getModerationStatus() == null
+                ? ComicModerationStatus.DRAFT
+                : comic.getModerationStatus();
+
+        return buildComicResponse(
+                comic,
+                moderationStatus,
+                toGenreNames(comic.getGenreIds(), genreNamesById),
+                chapterCount
+        );
+    }
+
+    private AuthorComicResponse buildComicResponse(
+            ComicEntity comic,
+            ComicModerationStatus moderationStatus
+    ) {
+        return buildComicResponse(
+                comic,
+                moderationStatus,
+                toGenreNames(comic.getGenres()),
+                Math.toIntExact(chapterRepository.countByComic_IdAndDeletedFalse(comic.getId()))
+        );
+    }
+
+    private AuthorComicResponse buildComicResponse(
+            ComicEntity comic,
+            ComicModerationStatus moderationStatus,
+            List<String> genreNames,
+            int chapterCount
+    ) {
         return AuthorComicResponse.builder()
                 .id(comic.getId())
                 .authorId(comic.getAuthorId())
                 .title(comic.getTitle())
-                .slug(comic.getSlug())
-                .description(comic.getSummary())
+                .summary(comic.getSummary())
+                .language(comic.getLanguage())
                 .minimumAge(comic.getMinimumAge())
-                .coverImageUrl(firstNonBlank(comic.getThumbnail(), comic.getCover()))
-                .genres(toGenreNames(comic.getGenres()))
-                .publicationStatus(formatPublicationStatus(comic.getStatus()))
-                .status(moderationStatus)
+                .cover(comic.getCover())
+                .genres(genreNames)
+                .publicationStatus(comic.getPublicationStatus())
                 .moderationStatus(moderationStatus)
-                .moderationNote(resolveComicProfileModerationNote(comic))
-                .chapters(countChapters(comic.getId()))
-                .views(String.valueOf(defaultLong(comic.getViewCount())))
-                .publishedAt(moderationStatus == ComicModerationStatus.PUBLISHED ? toDate(comic.getCreatedAt()) : null)
-                .createdAt(toDate(comic.getCreatedAt()))
-                .updatedAt(toDate(comic.getUpdatedAt()))
-                .build();
-    }
-
-    private ComicMetricsResponse toMetricsResponse(ComicMetricSnapshotEntity entity) {
-        return ComicMetricsResponse.builder()
-                .comicId(entity.getComicId())
-                .authorId(entity.getAuthorId())
-                .viewCount(defaultLong(entity.getViewCount()))
-                .followCount(defaultLong(entity.getFollowCount()))
-                .favoriteCount(defaultLong(entity.getFavoriteCount()))
-                .likeCount(defaultLong(entity.getLikeCount()))
-                .estimatedRevenue(entity.getEstimatedRevenue() == null ? BigDecimal.ZERO : entity.getEstimatedRevenue())
-                .snapshotAt(toDate(entity.getCreatedAt()))
+                .viewCount(defaultLong(comic.getViewCount()))
+                .saveCount(defaultInteger(comic.getSaveCount()))
+                .likeCount(defaultInteger(comic.getLikeCount()))
+                .ratingAverage(comic.getRatingAverage() == null ? 0.0 : comic.getRatingAverage())
+                .ratingCount(defaultInteger(comic.getRatingCount()))
+                .latestChapterNumber(comic.getLatestChapterNumber())
+                .lastChapterUpdatedAt(comic.getLastChapterUpdatedAt())
+                .chapterCount(chapterCount)
+                .createdAt(comic.getCreatedAt())
+                .updatedAt(comic.getUpdatedAt())
                 .build();
     }
 
@@ -294,6 +384,23 @@ public class AuthorComicService {
         if (!StringUtils.hasText(request.getTitle())) {
             throw new CustomException(400, "Title is required", HttpStatus.BAD_REQUEST);
         }
+        if (!StringUtils.hasText(request.getLanguage())) {
+            throw new CustomException(400, "Comic language is required", HttpStatus.BAD_REQUEST);
+        }
+        if (!StringUtils.hasText(request.getCover())) {
+            throw new CustomException(400, "Cover image is required", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private String normalizeRequiredLanguage(String language) {
+        String normalized = trimToNull(language);
+        if (normalized == null) {
+            throw new CustomException(400, "Comic language is required", HttpStatus.BAD_REQUEST);
+        }
+        if (normalized.length() > 100) {
+            throw new CustomException(400, "Comic language must not exceed 100 characters", HttpStatus.BAD_REQUEST);
+        }
+        return normalized;
     }
 
     private Integer normalizeMinimumAge(Integer minimumAge) {
@@ -304,59 +411,6 @@ public class AuthorComicService {
             throw new CustomException(400, "Minimum age must be between 0 and 21", HttpStatus.BAD_REQUEST);
         }
         return minimumAge;
-    }
-
-    private ComicPublicationStatus normalizePublicationStatusEntity(String value) {
-        ComicStatus normalized = normalizePublicationStatus(value);
-        return switch (normalized) {
-            case ONGOING -> ComicPublicationStatus.ONGOING;
-            case COMPLETED -> ComicPublicationStatus.COMPLETED;
-            case PAUSED -> ComicPublicationStatus.HIATUS;
-            case ARCHIVED -> ComicPublicationStatus.CANCEL;
-        };
-    }
-
-    private String normalizeSlug(String rawSlug) {
-        if (!StringUtils.hasText(rawSlug)) {
-            throw new CustomException(400, "Slug is required", HttpStatus.BAD_REQUEST);
-        }
-        String normalized = Normalizer.normalize(rawSlug.trim(), Normalizer.Form.NFD)
-                .replaceAll("\\p{M}", "")
-                .toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9-]", "-")
-                .replaceAll("-+", "-")
-                .replaceAll("^-|-$", "");
-
-        if (!StringUtils.hasText(normalized)) {
-            throw new CustomException(400, "Slug is invalid", HttpStatus.BAD_REQUEST);
-        }
-        return normalized;
-    }
-
-    private ComicStatus normalizePublicationStatus(String value) {
-        if (!StringUtils.hasText(value)) {
-            return ComicStatus.ONGOING;
-        }
-        String normalized = value.trim().replace(" ", "_").replace("-", "_").toUpperCase(Locale.ROOT);
-        return switch (normalized) {
-            case "ONGOING", "ON_GOING" -> ComicStatus.ONGOING;
-            case "COMPLETED", "COMPLETE" -> ComicStatus.COMPLETED;
-            case "PAUSED", "HIATUS" -> ComicStatus.PAUSED;
-            case "ARCHIVED", "CANCEL", "CANCELLED" -> ComicStatus.ARCHIVED;
-            default -> throw new CustomException(400, "Publication status must be Ongoing, Completed, Paused/Hiatus, or Archived", HttpStatus.BAD_REQUEST);
-        };
-    }
-
-    private String formatPublicationStatus(ComicStatus status) {
-        if (status == null) {
-            return "Ongoing";
-        }
-        return switch (status) {
-            case ONGOING -> "Ongoing";
-            case COMPLETED -> "Completed";
-            case PAUSED -> "Hiatus";
-            case ARCHIVED -> "Archived";
-        };
     }
 
     private Set<GenreEntity> resolveGenres(List<String> genreNames) {
@@ -379,8 +433,87 @@ public class AuthorComicService {
     private GenreEntity createGenre(String name) {
         GenreEntity genre = new GenreEntity();
         genre.setName(name);
-        genre.setSlug(normalizeSlug(name));
+        genre.setSlug(normalizeGenreSlug(name));
         return genreRepository.save(genre);
+    }
+
+    private String normalizeGenreSlug(String value) {
+        String normalized = Normalizer.normalize(value.trim(), Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9-]", "-")
+                .replaceAll("-+", "-")
+                .replaceAll("^-|-$", "");
+
+        if (!StringUtils.hasText(normalized)) {
+            throw new CustomException(400, "Genre name is invalid", HttpStatus.BAD_REQUEST);
+        }
+        return normalized;
+    }
+
+    private Map<UUID, Integer> loadChapterCountsByComicId(List<ComicEntity> comics) {
+        if (comics == null || comics.isEmpty()) {
+            return Map.of();
+        }
+
+        List<UUID> comicIds = comics.stream()
+                .map(ComicEntity::getId)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        if (comicIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return chapterRepository.countActiveChaptersByComicIds(comicIds).stream()
+                .filter(item -> item.getComicId() != null)
+                .collect(Collectors.toMap(
+                        ComicChapterCountProjection::getComicId,
+                        item -> item.getChapterCount() == null ? 0 : Math.toIntExact(item.getChapterCount()),
+                        (first, ignored) -> first
+                ));
+    }
+
+    private Map<UUID, String> loadGenreNamesById(List<ComicEntity> comics) {
+        if (comics == null || comics.isEmpty()) {
+            return Map.of();
+        }
+
+        Set<UUID> genreIds = comics.stream()
+                .filter(java.util.Objects::nonNull)
+                .flatMap(comic -> comic.getGenreIds() == null
+                        ? java.util.stream.Stream.<UUID>empty()
+                        : comic.getGenreIds().stream())
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        if (genreIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return genreRepository.findAllById(genreIds).stream()
+                .filter(genre -> genre.getId() != null && StringUtils.hasText(genre.getName()))
+                .collect(Collectors.toMap(
+                        GenreEntity::getId,
+                        GenreEntity::getName,
+                        (first, ignored) -> first
+                ));
+    }
+
+    private List<String> toGenreNames(
+            List<UUID> genreIds,
+            Map<UUID, String> genreNamesById
+    ) {
+        if (genreIds == null || genreIds.isEmpty()
+                || genreNamesById == null || genreNamesById.isEmpty()) {
+            return List.of();
+        }
+
+        return genreIds.stream()
+                .map(genreNamesById::get)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .toList();
     }
 
     private List<String> toGenreNames(Set<GenreEntity> genres) {
@@ -401,12 +534,6 @@ public class AuthorComicService {
         return findLatestComicProfileSubmission(comic)
                 .map(this::mapSubmissionStatusToComicStatus)
                 .orElse(ComicModerationStatus.DRAFT);
-    }
-
-    private String resolveComicProfileModerationNote(ComicEntity comic) {
-        return findLatestComicProfileSubmission(comic)
-                .map(SubmissionEntity::getRejectionReason)
-                .orElse(null);
     }
 
     private boolean hasPendingComicProfileSubmission(ComicEntity comic) {
@@ -443,14 +570,6 @@ public class AuthorComicService {
         return !java.util.Objects.equals(current, next);
     }
 
-    private Integer countChapters(UUID comicId) {
-        if (comicId == null) {
-            return 0;
-        }
-        long count = chapterRepository.countByComic_IdAndDeletedFalse(comicId);
-        return count > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) count;
-    }
-
     private Date toDate(Instant instant) {
         return instant == null ? null : Date.from(instant);
     }
@@ -459,11 +578,12 @@ public class AuthorComicService {
         return StringUtils.hasText(value) ? value.trim() : null;
     }
 
-    private String firstNonBlank(String first, String second) {
-        return StringUtils.hasText(first) ? first : second;
-    }
-
     private Long defaultLong(Long value) {
         return value == null ? 0L : value;
     }
+
+    private Integer defaultInteger(Integer value) {
+        return value == null ? 0 : value;
+    }
+
 }

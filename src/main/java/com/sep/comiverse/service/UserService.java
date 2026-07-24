@@ -36,7 +36,7 @@ public class UserService {
             snapshot = userRepository.findUserSnapshotById(userId)
                     .orElseThrow(() -> new CustomException(400, "User not found", HttpStatus.BAD_REQUEST));
             try {
-                redisTemplate.opsForValue().set(cacheKey, snapshot, Duration.ofHours(24));
+                redisTemplate.opsForValue().set(cacheKey, snapshot, Duration.ofHours(1));
             } catch (Exception e) {
                 // Ignore Redis set errors
             }

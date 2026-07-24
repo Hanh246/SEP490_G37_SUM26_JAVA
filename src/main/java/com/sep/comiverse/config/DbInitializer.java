@@ -39,12 +39,11 @@ public class DbInitializer implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) throws Exception {
-        // Correct legacy lowercase/mixedcase enum values in existing comics table
-        jdbcTemplate.execute("UPDATE comics SET status = 'ONGOING' WHERE status = 'Ongoing' OR status = 'ongoing'");
-        jdbcTemplate.execute("UPDATE comics SET status = 'COMPLETED' WHERE status = 'Completed' OR status = 'completed'");
-        jdbcTemplate.execute("UPDATE comics SET status = 'PAUSED' WHERE status = 'Paused' OR status = 'paused'");
+        // ComicEntity no longer has the legacy `status` column.
+        // Publication lifecycle is stored in `publication_status`.
         jdbcTemplate.execute("UPDATE comics SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
         jdbcTemplate.execute("UPDATE chapters SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
+        migrateAuthorLanguageToComics();
         migrateLegacyChapterPagesIntoChapterImages();
         splitCommaJoinedChapterImageArrays();
         jdbcTemplate.execute("UPDATE chapters SET images = ARRAY[]::text[] WHERE images IS NULL");
@@ -106,6 +105,42 @@ public class DbInitializer implements CommandLineRunner {
         } catch (Exception e) {
             System.err.println("⚠️ Warning: Failed to create foreign key indexes: " + e.getMessage());
         }
+    }
+
+    /**
+     * Moves the legacy author-level language to each owned comic once, then
+     * removes the obsolete authors.language column. New comics own this value.
+     */
+    private void migrateAuthorLanguageToComics() {
+        jdbcTemplate.execute("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'authors' AND column_name = 'language'
+                    ) AND EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'comics' AND column_name = 'language'
+                    ) THEN
+                        EXECUTE $sql$
+                            UPDATE comics c
+                            SET language = CASE
+                                WHEN c.language IS NULL
+                                  OR BTRIM(c.language) = ''
+                                  OR LOWER(BTRIM(c.language)) = 'unknown'
+                                THEN COALESCE(NULLIF(BTRIM(a.language), ''), 'Unknown')
+                                ELSE BTRIM(c.language)
+                            END
+                            FROM authors a
+                            WHERE a.id = c.author_id OR a.user_id = c.author_id
+                        $sql$;
+                        ALTER TABLE authors DROP COLUMN IF EXISTS language;
+                    END IF;
+                END $$;
+                """);
+        jdbcTemplate.execute("UPDATE comics SET language = 'Unknown' WHERE language IS NULL OR BTRIM(language) = ''");
+        jdbcTemplate.execute("ALTER TABLE comics ALTER COLUMN language SET DEFAULT 'Unknown'");
+        jdbcTemplate.execute("ALTER TABLE comics ALTER COLUMN language SET NOT NULL");
     }
 
     private void migrateLegacyChapterPagesIntoChapterImages() {
@@ -254,7 +289,91 @@ public class DbInitializer implements CommandLineRunner {
     }
 
     private void createComics() {
-        // Disabled mock seeding
+        if (comicRepository.findAll().isEmpty()) {
+            UserEntity author = userRepository.findByUsername("author1")
+                    .orElseThrow(() -> new RuntimeException("author1 not found"));
+            java.util.UUID authorId = author.getId();
+
+            java.util.List<GenreEntity> allGenres = genreRepository.findAll();
+            java.util.Set<GenreEntity> genres1 = pickGenres(allGenres, "Action", "Fantasy");
+            java.util.Set<GenreEntity> genres2 = pickGenres(allGenres, "Adventure", "Mystery");
+            java.util.Set<GenreEntity> genres3 = pickGenres(allGenres, "Fantasy", "Drama");
+            java.util.Set<GenreEntity> genres4 = pickGenres(allGenres, "Cultivation", "Action");
+
+            comicRepository.save(ComicEntity.builder()
+                    .title("Invincible Sword God")
+                    .summary("A legendary sword cultivator reincarnates and rebuilds his power from the lowest rank.")
+                    .language("Chinese")
+                    .authorId(authorId)
+                    .publicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.ONGOING)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
+                    .genres(genres1)
+                    .genreIds(toGenreIds(genres1))
+                    .cover("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg")
+                    .viewCount(125000L)
+                    .saveCount(4300)
+                    .likeCount(9800)
+                    .ratingAverage(4.6)
+                    .ratingCount(1280)
+                    .latestChapterNumber("45")
+                    .build());
+
+            comicRepository.save(ComicEntity.builder()
+                    .title("Spirit Recovery")
+                    .summary("An urban student discovers that spiritual energy is returning to the modern world.")
+                    .language("Chinese")
+                    .authorId(authorId)
+                    .publicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.ONGOING)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
+                    .genres(genres2)
+                    .genreIds(toGenreIds(genres2))
+                    .cover("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg")
+                    .viewCount(89000L)
+                    .saveCount(2100)
+                    .likeCount(6200)
+                    .ratingAverage(4.3)
+                    .ratingCount(870)
+                    .latestChapterNumber("32")
+                    .build());
+
+            comicRepository.save(ComicEntity.builder()
+                    .title("Demon King Reborn")
+                    .summary("The fallen Demon Monarch wakes up in a rival kingdom and plans a second rise.")
+                    .language("Korean")
+                    .authorId(authorId)
+                    .publicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.HIATUS)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
+                    .genres(genres3)
+                    .genreIds(toGenreIds(genres3))
+                    .cover("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg")
+                    .viewCount(54000L)
+                    .saveCount(1200)
+                    .likeCount(3900)
+                    .ratingAverage(4.1)
+                    .ratingCount(540)
+                    .latestChapterNumber("18")
+                    .build());
+
+            comicRepository.save(ComicEntity.builder()
+                    .title("Heavenly Dao")
+                    .summary("A young cultivator studies the rules of heaven and challenges the order of the realms.")
+                    .language("Chinese")
+                    .authorId(authorId)
+                    .publicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.COMPLETED)
+                    .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
+                    .genres(genres4)
+                    .genreIds(toGenreIds(genres4))
+                    .cover("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg")
+                    .viewCount(210000L)
+                    .saveCount(7600)
+                    .likeCount(14500)
+                    .ratingAverage(4.8)
+                    .ratingCount(2100)
+                    .latestChapterNumber("60")
+                    .build());
+
+            System.out.println("✅ Sample author comics initialized in DB.");
+        }
     }
 
     private Set<GenreEntity> pickGenres(List<GenreEntity> allGenres, String... names) {
@@ -284,8 +403,7 @@ public class DbInitializer implements CommandLineRunner {
                         .comicId(comic.getId())
                         .authorId(comic.getAuthorId())
                         .viewCount(comic.getViewCount() == null ? 0L : comic.getViewCount())
-                        .followCount(comic.getSaveCount() == null ? 0L : comic.getSaveCount().longValue())
-                        .favoriteCount(comic.getSaveCount() == null ? 0L : comic.getSaveCount().longValue())
+                        .savedCount(comic.getSaveCount() == null ? 0L : comic.getSaveCount().longValue())
                         .likeCount(comic.getLikeCount() == null ? 0L : comic.getLikeCount().longValue())
                         .estimatedRevenue(BigDecimal.valueOf((comic.getViewCount() == null ? 0L : comic.getViewCount()) * 0.01))
                         .build());

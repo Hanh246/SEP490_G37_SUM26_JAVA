@@ -1,5 +1,6 @@
 package com.sep.comiverse.dto.request;
 
+import com.sep.comiverse.entity.enums.ComicPublicationStatus;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.AllArgsConstructor;
@@ -15,15 +16,17 @@ import java.util.UUID;
 public class AuthorComicUpdateRequest {
 
     private UUID authorId;
-
     private String title;
-    private String slug;
-    private String description;
+    private String summary;
+
+    @jakarta.validation.constraints.Size(max = 100, message = "Comic language must not exceed 100 characters")
+    private String language;
 
     @Min(value = 0, message = "Minimum age cannot be negative")
     @Max(value = 21, message = "Minimum age cannot be greater than 21")
     private Integer minimumAge;
-    private String coverImageUrl;
+
+    private String cover;
     private List<String> genres;
-    private String publicationStatus;
+    private ComicPublicationStatus publicationStatus;
 }

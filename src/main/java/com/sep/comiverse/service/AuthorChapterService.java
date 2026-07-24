@@ -1,5 +1,6 @@
 package com.sep.comiverse.service;
 
+import com.sep.comiverse.dto.ReadingHistoryCacheDTO;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.dto.request.ChapterUploadRequest;
 import com.sep.comiverse.dto.response.ChapterPageResponse;
@@ -10,13 +11,19 @@ import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
 import com.sep.comiverse.exception.CustomException;
+import com.sep.comiverse.plugin.crud.ChapterCrudPlugin;
+import com.sep.comiverse.plugin.crud.ComicCrudPlugin;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IComicRepository;
+import com.sep.comiverse.repository.IReadingHistoryRepository;
 import com.sep.comiverse.repository.ISubmissionRepository;
+import com.sep.comiverse.repository.ITeamTaskRepository;
+import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -52,6 +59,11 @@ public class AuthorChapterService {
     private final IComicRepository comicRepository;
     private final IChapterRepository chapterRepository;
     private final ISubmissionRepository submissionRepository;
+    private final IReadingHistoryRepository readingHistoryRepository;
+    private final ITeamTaskRepository teamTaskRepository;
+    private final ChapterCrudPlugin chapterCrudPlugin;
+    private final ComicCrudPlugin comicCrudPlugin;
+    private final RedisTemplate<String, Object> redisTemplate;
     private final CloudinaryStorageService cloudinaryStorageService;
     private final NotificationService notificationService;
 
@@ -147,7 +159,7 @@ public class AuthorChapterService {
                 .priority("Medium")
                 .flags(0)
                 .status("pending")
-                .cover(firstNonBlank(comic.getThumbnail(), comic.getCover()))
+                .cover(comic.getCover())
                 .content("Chapter " + chapter.getChapterNumber() + " has " + resolvePageCount(chapter) + " image pages waiting for moderation review.")
                 .build();
         submissionRepository.save(submission);
@@ -189,7 +201,11 @@ public class AuthorChapterService {
             }
         }
 
-        if (changed && chapter.getModerationStatus() != ChapterStatus.PUBLISHED) {
+        if (changed) {
+            // Metadata shown to readers is moderation-sensitive. Editing a pending or
+            // published chapter therefore cancels the stale review and returns the
+            // chapter to preview so the author can submit the updated version again.
+            cancelPendingChapterSubmissions(chapterId, authorId);
             chapter.setModerationStatus(hasImages(chapter) ? ChapterStatus.PREVIEW_READY : ChapterStatus.DRAFT);
         }
 
@@ -202,10 +218,49 @@ public class AuthorChapterService {
     public void deleteChapter(UUID comicId, UUID chapterId, UUID authorId) {
         ComicEntity comic = authorComicService.getOwnedComic(comicId, authorId);
         ChapterEntity chapter = getOwnedChapter(comicId, chapterId, authorId);
-        chapter.setDeleted(true);
-        chapterRepository.save(chapter);
-        cancelPendingChapterSubmissions(chapterId, authorId);
+
+        // Author deletion is intentionally a HARD DELETE. Remove dependent rows
+        // first so the chapter row can be physically deleted without FK errors
+        // and without leaving orphaned histories or moderation submissions.
+        removeQueuedReadingHistory(chapterId);
+        teamTaskRepository.hardDeleteAllByChapterId(chapterId);
+        readingHistoryRepository.hardDeleteAllByChapterId(chapterId);
+        submissionRepository.hardDeleteAllByChapterId(chapterId);
+        chapterRepository.delete(chapter);
+        chapterRepository.flush();
+
+        evictDeletedChapterCaches(comicId, chapterId);
         refreshComicChapterMetadata(comic);
+    }
+
+    private void evictDeletedChapterCaches(UUID comicId, UUID chapterId) {
+        chapterCrudPlugin.evictChaptersCache(comicId);
+        chapterCrudPlugin.evictChapterDetailCache(chapterId);
+        comicCrudPlugin.evictComicCache(comicId);
+        try {
+            redisTemplate.opsForHash().delete(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString());
+            removeQueuedReadingHistory(chapterId);
+        } catch (Exception ignored) {
+            // Redis must not prevent the database hard delete from completing.
+        }
+    }
+
+    private void removeQueuedReadingHistory(UUID chapterId) {
+        try {
+            Set<Object> queuedEntries = redisTemplate.opsForSet()
+                    .members(ReadingHistoryService.READING_HISTORY_SYNC_QUEUE);
+            if (queuedEntries == null || queuedEntries.isEmpty()) {
+                return;
+            }
+            queuedEntries.stream()
+                    .filter(ReadingHistoryCacheDTO.class::isInstance)
+                    .map(ReadingHistoryCacheDTO.class::cast)
+                    .filter(entry -> chapterId.equals(entry.getChapterId()))
+                    .forEach(entry -> redisTemplate.opsForSet()
+                            .remove(ReadingHistoryService.READING_HISTORY_SYNC_QUEUE, entry));
+        } catch (Exception ignored) {
+            // Redis cleanup is best-effort; database consistency remains primary.
+        }
     }
 
     @Transactional
@@ -306,7 +361,7 @@ public class AuthorChapterService {
                 .priority("Medium")
                 .flags(0)
                 .status("pending")
-                .cover(firstNonBlank(comic.getThumbnail(), comic.getCover()))
+                .cover(comic.getCover())
                 .content("Chapter " + chapter.getChapterNumber() + " has " + resolvePageCount(chapter) + " image pages waiting for moderation review.")
                 .build();
         SubmissionEntity saved = submissionRepository.save(submission);

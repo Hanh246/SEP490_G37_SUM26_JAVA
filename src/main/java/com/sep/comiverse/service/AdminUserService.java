@@ -6,6 +6,7 @@ import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.util.EmailUtil;
+import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -24,7 +25,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AdminUserService {
 
-    private static final String DEFAULT_ADMIN_RESET_PASSWORD = "abcd1234";
+    private static final String DEFAULT_ADMIN_RESET_PASSWORD = "123456";
 
     private final IUserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -150,6 +151,11 @@ public class AdminUserService {
 
     private Specification<UserEntity> buildUserSpecification(AdminUserSearchDTO searchDTO) {
         return (root, query, cb) -> {
+            // Avoid N+1 query problem by fetch joining role entity
+            if (Long.class != query.getResultType() && long.class != query.getResultType()) {
+                root.fetch("role", JoinType.LEFT);
+            }
+
             List<Predicate> predicates = new ArrayList<>();
 
             // Only non-deleted users

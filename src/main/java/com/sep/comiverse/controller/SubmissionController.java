@@ -52,12 +52,15 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
     @Autowired
     private com.sep.comiverse.plugin.crud.ChapterCrudPlugin chapterCrudPlugin;
+
+    @Autowired
     private com.sep.comiverse.service.NotificationService notificationService;
+
+    @Autowired
+    private ITeamTaskRepository teamTaskRepository;
 
     private static final Pattern CHAPTER_NUMBER_PATTERN =
             Pattern.compile("(?i)chapter\\s+([0-9]+(?:[,.][0-9]+)?)");
-    @Autowired
-    private com.sep.comiverse.repository.ITeamTaskRepository teamTaskRepository;
 
     @Autowired
     public SubmissionController(SubmissionCrudPlugin crud) {
@@ -146,6 +149,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
          * Khi moderator approve comic submission:
          * - lấy đúng ComicEntity theo submission.comicId
          * - set moderationStatus = PUBLISHED
+         * - publish các chapter đi kèm nếu có
          */
         if (submission.getComicId() != null) {
             ComicEntity comic = comicRepository.findById(submission.getComicId())
@@ -154,6 +158,16 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                     ));
 
             comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+            List<ChapterEntity> comicChapters = chapterRepository.findAllByComic_IdAndDeletedFalse(comic.getId());
+            for (ChapterEntity ch : comicChapters) {
+                if (ch.getModerationStatus() != ChapterStatus.PUBLISHED) {
+                    ch.setModerationStatus(ChapterStatus.PUBLISHED);
+                    chapterRepository.save(ch);
+                }
+            }
+            if (!comicChapters.isEmpty()) {
+                refreshComicMetadataAfterPublishedChapter(comic, comicChapters.get(0));
+            }
             comicRepository.save(comic);
 
             return;
@@ -167,6 +181,16 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         ComicEntity comic = resolveComic(submission);
         if (comic != null) {
             comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+            List<ChapterEntity> comicChapters = chapterRepository.findAllByComic_IdAndDeletedFalse(comic.getId());
+            for (ChapterEntity ch : comicChapters) {
+                if (ch.getModerationStatus() != ChapterStatus.PUBLISHED) {
+                    ch.setModerationStatus(ChapterStatus.PUBLISHED);
+                    chapterRepository.save(ch);
+                }
+            }
+            if (!comicChapters.isEmpty()) {
+                refreshComicMetadataAfterPublishedChapter(comic, comicChapters.get(0));
+            }
             comicRepository.save(comic);
         }
     }
@@ -196,9 +220,9 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
         ProjectTeamEntity team = findSubmissionTeam(submission);
 
-            ComicEntity comic = comicRepository.findAllByTitle(comicTitle).stream().findFirst()
-                    .or(() -> comicRepository.findAllByTitleIgnoreCase(comicTitle).stream().findFirst())
-                    .orElse(null);
+        ComicEntity comic = comicRepository.findAllByTitle(comicTitle).stream().findFirst()
+                .or(() -> comicRepository.findAllByTitleIgnoreCase(comicTitle).stream().findFirst())
+                .orElse(null);
 
         if (team != null) {
             team.setChaptersCount(team.getChaptersCount() == null ? 1 : team.getChaptersCount() + 1);
@@ -319,19 +343,6 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 comicRepository.save(comic);
             });
         }
-    }
-
-    private String buildSafeSlug(String title) {
-        String baseSlug = title == null ? "comic" : title.toLowerCase().replaceAll("[^a-z0-9]+", "-").replaceAll("^-|-$", "");
-        if (baseSlug.isBlank()) {
-            baseSlug = "comic";
-        }
-        String slug = baseSlug;
-        int suffix = 2;
-        while (comicRepository.existsBySlugAndDeletedFalse(slug)) {
-            slug = baseSlug + "-" + suffix++;
-        }
-        return slug;
     }
 
     @PutMapping("/{id}/reject")

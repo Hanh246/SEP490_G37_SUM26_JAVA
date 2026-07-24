@@ -26,4 +26,7 @@ public interface IProjectTeamRepository extends AbstractCrudRepository<ProjectTe
     Optional<ProjectTeamEntity> findByComicNameIgnoreCase(@Param("comicName") String comicName);
 
     org.springframework.data.domain.Page<ProjectTeamEntity> findByStatusAndDeletedFalse(String status, org.springframework.data.domain.Pageable pageable);
+
+    @Query("SELECT CASE WHEN COUNT(pt) > 0 THEN true ELSE false END FROM ProjectTeamEntity pt JOIN pt.members m WHERE pt.id = :teamId AND m.id = :userId AND pt.deleted = false")
+    boolean isUserMemberOfTeam(@Param("teamId") UUID teamId, @Param("userId") UUID userId);
 }

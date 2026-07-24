@@ -18,15 +18,23 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+
 @Service
 @RequiredArgsConstructor
 public class NotificationService {
 
     private final INotificationRepository notificationRepository;
     private final IUserRepository userRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @Transactional
     public boolean notifyUser(UUID userId, String title, String message, String type) {
+        return notifyUser(userId, title, message, type, null);
+    }
+
+    @Transactional
+    public boolean notifyUser(UUID userId, String title, String message, String type, String actionUrl) {
         if (userId == null) {
             return false;
         }
@@ -34,7 +42,10 @@ public class NotificationService {
         return userRepository.findByIdWithRole(userId)
                 .filter(this::canReceiveNotifications)
                 .map(user -> {
-                    notificationRepository.save(buildWorkflowNotification(user, title, message, type, null));
+                    NotificationEntity entity = buildWorkflowNotification(user, title, message, type, null, actionUrl);
+                    NotificationEntity saved = notificationRepository.save(entity);
+                    NotificationResponse response = toResponse(saved);
+                    messagingTemplate.convertAndSend("/topic/notifications/" + user.getId(), response);
                     return true;
                 })
                 .orElse(false);
@@ -62,9 +73,16 @@ public class NotificationService {
         );
         List<UserEntity> recipients = userRepository.findAll(spec);
         String targetRoles = String.join(", ", normalizedRoles);
-        notificationRepository.saveAll(recipients.stream()
-                .map(user -> buildWorkflowNotification(user, title, message, type, targetRoles))
+
+        List<NotificationEntity> savedList = notificationRepository.saveAll(recipients.stream()
+                .map(user -> buildWorkflowNotification(user, title, message, type, targetRoles, null))
                 .toList());
+
+        for (NotificationEntity saved : savedList) {
+            NotificationResponse response = toResponse(saved);
+            messagingTemplate.convertAndSend("/topic/notifications/" + saved.getUser().getId(), response);
+        }
+
         return recipients.size();
     }
 
@@ -110,6 +128,7 @@ public class NotificationService {
                 .title(entity.getTitle())
                 .message(entity.getMessage())
                 .type(entity.getType())
+                .actionUrl(entity.getActionUrl())
                 .isRead(entity.getIsRead())
                 .createdAt(entity.getCreatedAt())
                 .build();
@@ -126,7 +145,8 @@ public class NotificationService {
             String title,
             String message,
             String type,
-            String targetRoles
+            String targetRoles,
+            String actionUrl
     ) {
         return NotificationEntity.builder()
                 .user(user)
@@ -134,6 +154,7 @@ public class NotificationService {
                 .message(message == null ? "You have a new workflow update." : message.trim())
                 .type(type == null ? "INFO" : type.trim().toUpperCase(Locale.ROOT))
                 .targetRoles(targetRoles)
+                .actionUrl(actionUrl == null || actionUrl.isBlank() ? null : actionUrl.trim())
                 .isRead(false)
                 .build();
     }

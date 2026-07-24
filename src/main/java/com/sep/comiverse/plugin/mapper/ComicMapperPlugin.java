@@ -5,6 +5,7 @@ import com.sep.comiverse.dto.GenreDTO;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.GenreEntity;
 import com.sep.comiverse.plugin.AbstractMapperPlugin;
+import com.sep.comiverse.repository.IAuthorRepository;
 import com.sep.comiverse.repository.IGenreRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import org.modelmapper.ModelMapper;
@@ -17,13 +18,18 @@ import java.util.stream.Collectors;
 @Component
 public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDTO, UUID> {
     private final IGenreRepository genreRepository;
+    private final IAuthorRepository authorRepository;
     private final IUserRepository userRepository;
     private final Map<UUID, String> authorNameCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Autowired
-    public ComicMapperPlugin(ModelMapper modelMapper, IGenreRepository genreRepository, IUserRepository userRepository) {
+    public ComicMapperPlugin(ModelMapper modelMapper,
+                             IGenreRepository genreRepository,
+                             IAuthorRepository authorRepository,
+                             IUserRepository userRepository) {
         super(ComicEntity.class, ComicDTO.class, UUID.class, modelMapper);
         this.genreRepository = genreRepository;
+        this.authorRepository = authorRepository;
         this.userRepository = userRepository;
 
         // Skip mapping genres from DTO to Entity to prevent ModelMapper map exceptions
@@ -35,32 +41,43 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
     public ComicDTO toDto(ComicEntity model) {
         if (model == null) return null;
 
-        // Auto-pause if last chapter update was > 30 days ago and currently ONGOING
-        if (model.getStatus() == com.sep.comiverse.constants.ComicStatus.ONGOING && model.getLastChapterUpdatedAt() != null) {
-            java.time.Instant thirtyDaysAgo = java.time.Instant.now().minus(30, java.time.temporal.ChronoUnit.DAYS);
+        // Keep the old inactivity rule, but use the current ComicEntity field.
+        // PAUSED was removed together with ComicStatus; HIATUS is the matching
+        // value in ComicPublicationStatus.
+        if (model.getPublicationStatus() == com.sep.comiverse.entity.enums.ComicPublicationStatus.ONGOING
+                && model.getLastChapterUpdatedAt() != null) {
+            java.time.Instant thirtyDaysAgo = java.time.Instant.now()
+                    .minus(30, java.time.temporal.ChronoUnit.DAYS);
             if (model.getLastChapterUpdatedAt().isBefore(thirtyDaysAgo)) {
-                model.setStatus(com.sep.comiverse.constants.ComicStatus.PAUSED);
-                // JPA dirty checking will update this status to DB during transaction commit
+                model.setPublicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.HIATUS);
             }
         }
 
         ComicDTO dto = super.toDto(model);
 
-        // Resolve author name using cache to prevent connection pool exhaustion deadlocks
+        // ComicEntity.authorId currently stores the author user's UUID. Some legacy
+        // records may store AuthorEntity.id, so resolve both forms. Public search also
+        // uses AuthorEntity.displayName; returning the same value keeps Library,
+        // Moderator and search results consistent.
         if (model.getAuthorId() != null) {
-            String cachedName = authorNameCache.get(model.getAuthorId());
+            UUID authorId = model.getAuthorId();
+            String cachedName = authorNameCache.get(authorId);
             if (cachedName != null) {
                 dto.setAuthorName(cachedName);
             } else {
-                userRepository.findById(model.getAuthorId()).ifPresentOrElse(user -> {
-                    String name = user.getFullName() != null && !user.getFullName().isBlank() 
-                            ? user.getFullName() 
-                            : user.getUsername();
-                    authorNameCache.put(model.getAuthorId(), name);
-                    dto.setAuthorName(name);
-                }, () -> {
-                    dto.setAuthorName("Unknown Author");
-                });
+                String resolvedName = authorRepository.findById(authorId)
+                        .or(() -> authorRepository.findByUserIdAndDeletedFalse(authorId))
+                        .map(author -> author.getDisplayName())
+                        .filter(name -> name != null && !name.isBlank())
+                        .orElseGet(() -> userRepository.findById(authorId)
+                                .map(user -> user.getFullName() != null && !user.getFullName().isBlank()
+                                        ? user.getFullName()
+                                        : user.getUsername())
+                                .filter(name -> name != null && !name.isBlank())
+                                .orElse("Unknown Author"));
+
+                authorNameCache.put(authorId, resolvedName);
+                dto.setAuthorName(resolvedName);
             }
         } else {
             dto.setAuthorName("Unknown Author");
@@ -97,6 +114,6 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
 
     @Override
     public List<String> getSearchableFieldNames() {
-        return List.of("title", "authorName");
+        return List.of("title", "author", "language");
     }
 }
