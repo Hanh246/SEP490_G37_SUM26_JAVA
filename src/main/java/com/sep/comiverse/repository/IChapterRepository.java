@@ -117,7 +117,6 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
         FROM chapters c
         WHERE c.id = :chapterId
           AND c.deleted = false
-          AND c.moderation_status = 'PUBLISHED'
         """, nativeQuery = true)
     List<String> findImagesByChapterIdAndStatus(@Param("chapterId") UUID chapterId);
 
