@@ -7,12 +7,16 @@ import jakarta.persistence.Table;
 import java.util.UUID;
 import lombok.*;
 
+import jakarta.persistence.Index;
+
 @Data
 @Entity
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Table(name = "submissions")
+@Table(name = "submissions", indexes = {
+        @Index(name = "idx_submissions_author_queue_deleted", columnList = "author_id, queue_type, deleted")
+})
 @EqualsAndHashCode(callSuper = true)
 public class SubmissionEntity extends BaseEntity {
 
