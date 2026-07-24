@@ -52,12 +52,15 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
     @Autowired
     private com.sep.comiverse.plugin.crud.ChapterCrudPlugin chapterCrudPlugin;
+
+    @Autowired
     private com.sep.comiverse.service.NotificationService notificationService;
+
+    @Autowired
+    private ITeamTaskRepository teamTaskRepository;
 
     private static final Pattern CHAPTER_NUMBER_PATTERN =
             Pattern.compile("(?i)chapter\\s+([0-9]+(?:[,.][0-9]+)?)");
-    @Autowired
-    private com.sep.comiverse.repository.ITeamTaskRepository teamTaskRepository;
 
     @Autowired
     public SubmissionController(SubmissionCrudPlugin crud) {
@@ -146,6 +149,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
          * Khi moderator approve comic submission:
          * - lấy đúng ComicEntity theo submission.comicId
          * - set moderationStatus = PUBLISHED
+         * - publish các chapter đi kèm nếu có
          */
         if (submission.getComicId() != null) {
             ComicEntity comic = comicRepository.findById(submission.getComicId())
@@ -154,6 +158,16 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                     ));
 
             comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+            List<ChapterEntity> comicChapters = chapterRepository.findAllByComic_IdAndDeletedFalse(comic.getId());
+            for (ChapterEntity ch : comicChapters) {
+                if (ch.getModerationStatus() != ChapterStatus.PUBLISHED) {
+                    ch.setModerationStatus(ChapterStatus.PUBLISHED);
+                    chapterRepository.save(ch);
+                }
+            }
+            if (!comicChapters.isEmpty()) {
+                refreshComicMetadataAfterPublishedChapter(comic, comicChapters.get(0));
+            }
             comicRepository.save(comic);
 
             return;
@@ -167,6 +181,16 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         ComicEntity comic = resolveComic(submission);
         if (comic != null) {
             comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+            List<ChapterEntity> comicChapters = chapterRepository.findAllByComic_IdAndDeletedFalse(comic.getId());
+            for (ChapterEntity ch : comicChapters) {
+                if (ch.getModerationStatus() != ChapterStatus.PUBLISHED) {
+                    ch.setModerationStatus(ChapterStatus.PUBLISHED);
+                    chapterRepository.save(ch);
+                }
+            }
+            if (!comicChapters.isEmpty()) {
+                refreshComicMetadataAfterPublishedChapter(comic, comicChapters.get(0));
+            }
             comicRepository.save(comic);
         }
     }

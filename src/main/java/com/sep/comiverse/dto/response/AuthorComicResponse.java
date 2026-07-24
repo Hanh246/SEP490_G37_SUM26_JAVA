@@ -20,6 +20,7 @@ public class AuthorComicResponse {
     private UUID authorId;
     private String title;
     private String summary;
+    private String language;
     private Integer minimumAge;
     private String cover;
     private List<String> genres;

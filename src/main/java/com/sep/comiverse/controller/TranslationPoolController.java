@@ -6,7 +6,9 @@ import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.dto.pagination.PaginationResponse;
 import com.sep.comiverse.dto.pagination.PaginationMetadata;
+import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.ProjectTeamEntity;
+import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.repository.IProjectTeamRepository;
 import com.sep.comiverse.plugin.mapper.ProjectTeamMapperPlugin;
 import com.sep.comiverse.service.NotificationService;
@@ -15,7 +17,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,12 +35,22 @@ import java.util.stream.Collectors;
 public class TranslationPoolController {
 
     private final IProjectTeamRepository projectTeamRepository;
+    private final IComicRepository comicRepository;
     private final ProjectTeamMapperPlugin projectTeamMapper;
     private final NotificationService notificationService;
 
     @PostMapping("/request")
-    @Operation(summary = "Submit translation requests", description = "Creates a separate unclaimed translation project for each target language")
+    @PreAuthorize("hasAnyAuthority('MODERATOR', 'ADMIN')")
+    @Operation(summary = "Submit translation requests", description = "Creates a separate unclaimed translation project for each target language. Source language and title are loaded from the comic.")
     public ResponseEntity<BaseResponse<String>> requestTranslation(@RequestBody TranslationRequestDTO request) {
+        if (request == null || request.getComicId() == null) {
+            return ResponseEntity.badRequest().body(
+                    BaseResponse.<String>builder()
+                            .success(false)
+                            .message("Comic id is required")
+                            .build()
+            );
+        }
         if (request.getTargetLanguages() == null || request.getTargetLanguages().isEmpty()) {
             return ResponseEntity.badRequest().body(
                     BaseResponse.<String>builder()
@@ -46,10 +60,49 @@ public class TranslationPoolController {
             );
         }
 
-        for (String targetLang : request.getTargetLanguages()) {
+        ComicEntity comic = comicRepository.findById(request.getComicId()).orElse(null);
+        if (comic == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    BaseResponse.<String>builder()
+                            .success(false)
+                            .message("Comic not found")
+                            .build()
+            );
+        }
+
+        String comicTitle = comic.getTitle();
+        String rawSourceLanguage = comic.getLanguage();
+        if (rawSourceLanguage == null || rawSourceLanguage.isBlank()
+                || "Unknown".equalsIgnoreCase(rawSourceLanguage.trim())) {
+            return ResponseEntity.badRequest().body(
+                    BaseResponse.<String>builder()
+                            .success(false)
+                            .message("Comic source language must be configured before requesting translation")
+                            .build()
+            );
+        }
+        final String sourceLanguage = rawSourceLanguage.trim();
+
+        List<String> targetLanguages = request.getTargetLanguages().stream()
+                .filter(java.util.Objects::nonNull)
+                .map(String::trim)
+                .filter(language -> !language.isBlank())
+                .filter(language -> !language.equalsIgnoreCase(sourceLanguage))
+                .distinct()
+                .toList();
+        if (targetLanguages.isEmpty()) {
+            return ResponseEntity.badRequest().body(
+                    BaseResponse.<String>builder()
+                            .success(false)
+                            .message("At least one target language different from the comic language is required")
+                            .build()
+            );
+        }
+
+        for (String targetLang : targetLanguages) {
             ProjectTeamEntity team = ProjectTeamEntity.builder()
-                    .title(request.getComicTitle() + " - (" + targetLang + ")")
-                    .comicName(request.getComicTitle())
+                    .title(comicTitle + " - (" + targetLang + ")")
+                    .comicName(comicTitle)
                     .status("UNCLAIMED")
                     .membersCount(0)
                     .chaptersCount(0)
@@ -57,12 +110,12 @@ public class TranslationPoolController {
                     .leaderName(null)
                     .leaderInitials(null)
                     .deadline(request.getDeadline() != null && !request.getDeadline().isBlank() ? request.getDeadline() : "unspecified")
-                    .sourceLang(request.getSourceLang())
+                    .sourceLang(sourceLanguage)
                     .targetLang(targetLang)
                     .priority(request.getPriority())
                     .notes(request.getNotes())
                     .cover("📚")
-                    .description("Translation project for " + request.getComicTitle() + " from " + request.getSourceLang() + " to " + targetLang + ".")
+                    .description("Translation project for " + comicTitle + " from " + sourceLanguage + " to " + targetLang + ".")
                     .build();
 
             projectTeamRepository.save(team);
@@ -71,15 +124,15 @@ public class TranslationPoolController {
         notificationService.notifyRoles(
                 List.of("TRANSLATOR", "PROJECT_LEADER"),
                 "New translation request",
-                request.getComicTitle() + " needs translation from " + request.getSourceLang()
-                        + " to " + String.join(", ", request.getTargetLanguages()) + ".",
+                comicTitle + " needs translation from " + sourceLanguage
+                        + " to " + String.join(", ", targetLanguages) + ".",
                 "UPDATE"
         );
 
         return ResponseEntity.ok(
                 BaseResponse.<String>builder()
                         .success(true)
-                        .data("Successfully created translation requests for " + request.getTargetLanguages().size() + " languages")
+                        .data("Successfully created translation requests for " + targetLanguages.size() + " languages")
                         .build()
         );
     }
@@ -95,11 +148,11 @@ public class TranslationPoolController {
         if (paginationDTO.getSearch() == null || paginationDTO.getSearch().isBlank()) {
             pageResult = projectTeamRepository.findByStatusAndDeletedFalse("UNCLAIMED", pageable);
         } else {
-            org.springframework.data.jpa.domain.Specification<ProjectTeamEntity> spec = 
-                (root, query, cb) -> cb.and(
-                    cb.equal(cb.upper(root.get("status")), "UNCLAIMED"),
-                    cb.equal(root.get("deleted"), false)
-                );
+            org.springframework.data.jpa.domain.Specification<ProjectTeamEntity> spec =
+                    (root, query, cb) -> cb.and(
+                            cb.equal(cb.upper(root.get("status")), "UNCLAIMED"),
+                            cb.equal(root.get("deleted"), false)
+                    );
             spec = spec.and(projectTeamRepository.contains(List.of("title", "comicName", "sourceLang", "targetLang"), paginationDTO.getSearch()));
             pageResult = projectTeamRepository.findAll(spec, pageable);
         }

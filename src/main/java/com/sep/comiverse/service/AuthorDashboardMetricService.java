@@ -11,6 +11,7 @@ import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IComicMetricSnapshotRepository;
 import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.repository.ISubmissionRepository;
+import com.sep.comiverse.repository.projection.ComicChapterCountProjection;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -60,11 +61,12 @@ public class AuthorDashboardMetricService {
         List<ComicMetricSnapshotEntity> snapshots = metricSnapshotRepository
                 .findAllByAuthorIdAndDeletedFalseOrderByCreatedAtDesc(authorId);
 
-        Map<UUID, Integer> chapterCountByComic = chapters.stream()
-                .filter(chapter -> chapter.getComic() != null && chapter.getComic().getId() != null)
-                .collect(Collectors.groupingBy(
-                        chapter -> chapter.getComic().getId(),
-                        Collectors.collectingAndThen(Collectors.counting(), Long::intValue)
+        Map<UUID, Integer> chapterCountByComic = chapterRepository.countChaptersByComicForAuthor(authorId).stream()
+                .filter(p -> p.getComicId() != null)
+                .collect(Collectors.toMap(
+                        ComicChapterCountProjection::getComicId,
+                        p -> p.getChapterCount() == null ? 0 : p.getChapterCount().intValue(),
+                        (first, ignored) -> first
                 ));
 
         Map<UUID, ComicMetricSnapshotEntity> latestSnapshotByComic = snapshots.stream()

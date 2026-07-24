@@ -18,12 +18,15 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+
 @Service
 @RequiredArgsConstructor
 public class NotificationService {
 
     private final INotificationRepository notificationRepository;
     private final IUserRepository userRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @Transactional
     public boolean notifyUser(UUID userId, String title, String message, String type) {
@@ -39,7 +42,10 @@ public class NotificationService {
         return userRepository.findByIdWithRole(userId)
                 .filter(this::canReceiveNotifications)
                 .map(user -> {
-                    notificationRepository.save(buildWorkflowNotification(user, title, message, type, null, actionUrl));
+                    NotificationEntity entity = buildWorkflowNotification(user, title, message, type, null, actionUrl);
+                    NotificationEntity saved = notificationRepository.save(entity);
+                    NotificationResponse response = toResponse(saved);
+                    messagingTemplate.convertAndSend("/topic/notifications/" + user.getId(), response);
                     return true;
                 })
                 .orElse(false);
@@ -67,9 +73,16 @@ public class NotificationService {
         );
         List<UserEntity> recipients = userRepository.findAll(spec);
         String targetRoles = String.join(", ", normalizedRoles);
-        notificationRepository.saveAll(recipients.stream()
+
+        List<NotificationEntity> savedList = notificationRepository.saveAll(recipients.stream()
                 .map(user -> buildWorkflowNotification(user, title, message, type, targetRoles, null))
                 .toList());
+
+        for (NotificationEntity saved : savedList) {
+            NotificationResponse response = toResponse(saved);
+            messagingTemplate.convertAndSend("/topic/notifications/" + saved.getUser().getId(), response);
+        }
+
         return recipients.size();
     }
 

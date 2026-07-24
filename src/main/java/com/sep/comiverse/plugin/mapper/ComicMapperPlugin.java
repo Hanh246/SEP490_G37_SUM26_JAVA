@@ -114,6 +114,6 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
 
     @Override
     public List<String> getSearchableFieldNames() {
-        return List.of("title", "author");
+        return List.of("title", "author", "language");
     }
 }

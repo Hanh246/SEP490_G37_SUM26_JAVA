@@ -154,4 +154,49 @@ public class ComicCrudPluginTest {
         assertEquals(comicId, result.get(0).getId());
         verify(leaderboardScheduler, times(1)).computeLeaderboards();
     }
+    @Test
+    void testUpdateComic_StoresLanguageOnComicEntity() {
+        ComicEntity existing = new ComicEntity();
+        existing.setId(comicId);
+        existing.setTitle("Existing Comic");
+        existing.setLanguage("Japanese");
+
+        ComicDTO request = new ComicDTO();
+        request.setLanguage(" Korean ");
+
+        ComicDTO mapped = new ComicDTO();
+        mapped.setId(comicId);
+        mapped.setLanguage("Korean");
+
+        when(comicRepository.findById(comicId)).thenReturn(Optional.of(existing));
+        when(comicRepository.save(existing)).thenReturn(existing);
+        when(mapperPlugin.toDto(existing)).thenReturn(mapped);
+
+        ComicDTO result = comicCrudPlugin.update(comicId, request);
+
+        assertEquals("Korean", existing.getLanguage());
+        assertEquals("Korean", result.getLanguage());
+        verify(comicRepository).save(existing);
+    }
+
+    @Test
+    void testUpdateComic_RejectsBlankLanguage() {
+        ComicEntity existing = new ComicEntity();
+        existing.setId(comicId);
+        existing.setLanguage("Japanese");
+
+        ComicDTO request = new ComicDTO();
+        request.setLanguage("   ");
+
+        when(comicRepository.findById(comicId)).thenReturn(Optional.of(existing));
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> comicCrudPlugin.update(comicId, request)
+        );
+
+        assertEquals("Comic language cannot be blank", exception.getMessage());
+        verify(comicRepository, never()).save(any());
+    }
+
 }

@@ -112,35 +112,47 @@ public class ChapterCrudPlugin
             responseDto.setImages(images);
         }
 
-        trackAndIncrementView(responseDto.getComicId(), chapterId, userId, clientIp);
+        try {
+            trackAndIncrementView(responseDto.getComicId(), chapterId, userId, clientIp);
+        } catch (Exception e) {
+            // Ignore view tracking errors if Redis is down
+        }
 
-        Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString());
-        if (rawChapterViews != null) {
-            responseDto.setViewCount(responseDto.getViewCount() + rawChapterViews.intValue());
+        try {
+            Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString());
+            if (rawChapterViews != null && responseDto.getViewCount() != null) {
+                responseDto.setViewCount(responseDto.getViewCount() + rawChapterViews.intValue());
+            }
+        } catch (Exception e) {
+            // Ignore Redis view count lookup errors if Redis is down
         }
 
         return responseDto;
     }
 
     private void trackAndIncrementView(UUID comicId, UUID chapterId, UUID userId, String clientIp) {
-        String userIdentity = (userId != null) ? "user:" + userId : "guest:ip:" + clientIp;
+        if (comicId == null || chapterId == null) return;
+        try {
+            String userIdentity = (userId != null) ? "user:" + userId : "guest:ip:" + clientIp;
+            String lockKey = String.format("view:lock:%s:chapter:%s", userIdentity, chapterId);
 
-        String lockKey = String.format("view:lock:%s:chapter:%s", userIdentity, chapterId);
+            Boolean isFirstTimeIn10Mins = redisTemplate.opsForValue()
+                    .setIfAbsent(lockKey, "1", Duration.ofMinutes(10));
 
-        Boolean isFirstTimeIn10Mins = redisTemplate.opsForValue()
-                .setIfAbsent(lockKey, "1", Duration.ofMinutes(10));
-
-        if (Boolean.TRUE.equals(isFirstTimeIn10Mins)) {
-            redisTemplate.opsForHash().increment(ViewSyncScheduler.COMIC_VIEW_HASH, comicId.toString(), 1);
-            redisTemplate.opsForHash().increment(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString(), 1);
-            if (userId != null) {
-                ReadingHistoryCacheDTO historyDto = ReadingHistoryCacheDTO.builder()
-                        .comicId(comicId)
-                        .chapterId(chapterId)
-                        .userId(userId)
-                        .build();
-                redisTemplate.opsForSet().add(ReadingHistoryService.READING_HISTORY_SYNC_QUEUE, historyDto);
+            if (Boolean.TRUE.equals(isFirstTimeIn10Mins)) {
+                redisTemplate.opsForHash().increment(ViewSyncScheduler.COMIC_VIEW_HASH, comicId.toString(), 1);
+                redisTemplate.opsForHash().increment(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString(), 1);
+                if (userId != null) {
+                    ReadingHistoryCacheDTO historyDto = ReadingHistoryCacheDTO.builder()
+                            .comicId(comicId)
+                            .chapterId(chapterId)
+                            .userId(userId)
+                            .build();
+                    redisTemplate.opsForSet().add(ReadingHistoryService.READING_HISTORY_SYNC_QUEUE, historyDto);
+                }
             }
+        } catch (Exception e) {
+            // Log/ignore Redis tracking error if Redis is unreachable
         }
     }
 
@@ -170,6 +182,26 @@ public class ChapterCrudPlugin
     @SuppressWarnings("unchecked")
     @Transactional(readOnly = true)
     public List<ChapterLiteDTO> getChaptersByComicId(UUID comicId) {
+        return getChaptersByComicId(comicId, false);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Transactional(readOnly = true)
+    public List<ChapterLiteDTO> getChaptersByComicId(UUID comicId, boolean includeAll) {
+        if (includeAll) {
+            List<ChapterEntity> allChapters = chapterRepository.findAllByComic_IdAndDeletedFalse(comicId);
+            return allChapters.stream().map(c -> ChapterLiteDTO.builder()
+                    .id(c.getId())
+                    .comicId(c.getComic() != null ? c.getComic().getId() : comicId)
+                    .chapterNumber(c.getChapterNumber())
+                    .title(c.getTitle())
+                    .viewCount(c.getViewCount() != null ? c.getViewCount() : 0)
+                    .isPremium(c.getIsPremium() != null ? c.getIsPremium() : false)
+                    .createdAt(c.getCreatedAt())
+                    .build()
+            ).sorted((a, b) -> toChapterSortNumber(a.getChapterNumber()).compareTo(toChapterSortNumber(b.getChapterNumber()))).toList();
+        }
+
         String cacheKey = COMIC_CHAPTERS_LIST_CACHE_PREFIX + comicId.toString();
 
         List<ChapterLiteDTO> cachedResults = null;
@@ -209,9 +241,13 @@ public class ChapterCrudPlugin
                     .createdAt(dto.getCreatedAt())
                     .build();
 
-                Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, copy.getId().toString());
-                if (rawChapterViews != null) {
-                    copy.setViewCount(copy.getViewCount() + rawChapterViews.intValue());
+                try {
+                    Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, copy.getId().toString());
+                    if (rawChapterViews != null && copy.getViewCount() != null) {
+                        copy.setViewCount(copy.getViewCount() + rawChapterViews.intValue());
+                    }
+                } catch (Exception e) {
+                    // Ignore Redis error if Redis is down
                 }
             return copy;
         }).toList();
@@ -264,6 +300,17 @@ public class ChapterCrudPlugin
             redisTemplate.delete(cacheKey);
         } catch (Exception e) {
             // Ignore/log error
+        }
+    }
+
+    private java.math.BigDecimal toChapterSortNumber(String chapterNumber) {
+        if (chapterNumber == null || chapterNumber.isBlank()) {
+            return java.math.BigDecimal.ZERO;
+        }
+        try {
+            return new java.math.BigDecimal(chapterNumber.replace(',', '.'));
+        } catch (Exception ex) {
+            return java.math.BigDecimal.ZERO;
         }
     }
 }
