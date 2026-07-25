@@ -77,5 +77,8 @@ public class UserEntity extends BaseEntity {
 
     @Column(name = "vector_updated_at")
     private java.time.Instant vectorUpdatedAt;
+
+    @Column(name = "last_seen_at")
+    private java.time.Instant lastSeenAt;
 }
 

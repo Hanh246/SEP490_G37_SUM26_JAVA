@@ -1,27 +1,40 @@
 package com.sep.comiverse.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sep.comiverse.dto.ChapterPageDTO;
 import com.sep.comiverse.dto.ReviewCommentDTO;
+import com.sep.comiverse.entity.ChapterEntity;
+import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.PageTranslationEntity;
+import com.sep.comiverse.entity.ProjectTeamEntity;
 import com.sep.comiverse.entity.ReviewCommentEntity;
 import com.sep.comiverse.entity.TeamTaskEntity;
 import com.sep.comiverse.entity.UserEntity;
+import com.sep.comiverse.entity.enums.ChapterStatus;
+import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IPageTranslationRepository;
+import com.sep.comiverse.repository.IProjectTeamRepository;
 import com.sep.comiverse.repository.IReviewCommentRepository;
 import com.sep.comiverse.repository.ITeamTaskRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RestController
 @RequestMapping("/review-workspace")
 @RequiredArgsConstructor
@@ -32,6 +45,11 @@ public class ReviewController {
     private final IReviewCommentRepository reviewCommentRepository;
     private final IUserRepository userRepository;
     private final ITeamTaskRepository taskRepository;
+    private final IProjectTeamRepository projectTeamRepository;
+    private final IChapterRepository chapterRepository;
+    private final com.sep.comiverse.repository.IComicRepository comicRepository;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @GetMapping("/{taskId}")
     public ResponseEntity<List<ChapterPageDTO>> getPagesForReview(@PathVariable UUID taskId) {
@@ -80,18 +98,22 @@ public class ReviewController {
         }
 
         String bubbleId = body.get("bubbleId");
+        boolean isPageLevel = bubbleId == null || bubbleId.isBlank();
 
-        if (bubbleId != null && !bubbleId.isBlank()) {
-            boolean alreadyExists = reviewCommentRepository.findByPage_IdAndBubbleId(pageId, bubbleId).isPresent();
-            if (alreadyExists) {
-                return ResponseEntity.status(HttpStatus.CONFLICT)
-                        .body(Map.of("success", false, "message", "This bubble already has a comment. Edit it instead."));
-            }
+        boolean alreadyExists = isPageLevel
+                ? reviewCommentRepository.findByPage_IdAndBubbleIdIsNullAndAuthor_Id(pageId, authorId).isPresent()
+                : reviewCommentRepository.findByPage_IdAndBubbleIdAndAuthor_Id(pageId, bubbleId, authorId).isPresent();
+        if (alreadyExists) {
+            String message = isPageLevel
+                    ? "You already left a page-level review. Edit your existing review instead."
+                    : "You already reviewed this bubble. Edit your existing review instead.";
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("success", false, "message", message));
         }
 
         ReviewCommentEntity comment = ReviewCommentEntity.builder()
                 .page(page)
-                .bubbleId(bubbleId)
+                .bubbleId(isPageLevel ? null : bubbleId)
                 .author(author)
                 .content(body.get("content"))
                 .resolved(false)
@@ -161,22 +183,33 @@ public class ReviewController {
     }
 
     @PutMapping("/tasks/{taskId}/decision")
+    @Transactional
     public ResponseEntity<?> submitDecision(@PathVariable UUID taskId, @RequestBody Map<String, String> body) {
         String decision = body.get("decision");
+        log.info("[submitDecision] taskId={} decision={}", taskId, decision);
 
         TeamTaskEntity task = taskRepository.findById(taskId).orElse(null);
         if (task == null) {
+            log.warn("[submitDecision] task not found for taskId={}", taskId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("success", false, "message", "Task not found"));
         }
 
         if ("approved".equals(decision)) {
             task.setStatus("completed");
+
             List<PageTranslationEntity> pages = pageTranslationRepository.findByTaskId_IdOrderByPageNumberAsc(taskId);
+            log.info("[submitDecision] found {} PageTranslationEntity rows for taskId={}", pages.size(), taskId);
             for (PageTranslationEntity page : pages) {
                 page.setReviewBaselineBubbles(page.getBubbles());
             }
             pageTranslationRepository.saveAll(pages);
+
+            try {
+                publishChapterFromTask(task, pages);
+            } catch (Exception ex) {
+                log.error("[submitDecision] Failed to publish chapter for taskId={}", taskId, ex);
+            }
         } else if ("changes_requested".equals(decision)) {
             task.setStatus("in_progress");
         } else {
@@ -186,6 +219,52 @@ public class ReviewController {
 
         taskRepository.save(task);
         return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    private void publishChapterFromTask(TeamTaskEntity task, List<PageTranslationEntity> pages) {
+        ChapterEntity chapter = task.getChapter();
+        log.info("[publishChapterFromTask] task.getChapter() = {}", chapter);
+        if (chapter == null) {
+            log.warn("[publishChapterFromTask] task has no chapter, nothing to publish for taskId={}", task.getId());
+            return;
+        }
+
+        chapter.setModerationStatus(ChapterStatus.PUBLISHED);
+        ChapterEntity savedChapter = chapterRepository.save(chapter);
+
+        ProjectTeamEntity team = projectTeamRepository.findById(task.getProjectTeamId()).orElse(null);
+        if (team != null) {
+            team.setChaptersCount(team.getChaptersCount() == null ? 1 : team.getChaptersCount() + 1);
+            projectTeamRepository.save(team);
+        }
+
+        ComicEntity comic = savedChapter.getComic();
+        if (comic != null) {
+            comic.setLatestChapterNumber(savedChapter.getChapterNumber());
+            comic.setLastChapterUpdatedAt(Instant.now());
+            long publishedCount = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
+                    comic.getId(), ChapterStatus.PUBLISHED);
+            comic.setChapterCount(publishedCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) publishedCount);
+            comicRepository.save(comic);
+        }
+    }
+
+    private String buildPagesBubblesJson(List<PageTranslationEntity> pages) {
+        try {
+            List<Map<String, Object>> pagePayload = new ArrayList<>();
+            for (PageTranslationEntity page : pages) {
+                Map<String, Object> pageMap = new HashMap<>();
+                pageMap.put("pageId", page.getId());
+                pageMap.put("pageNumber", page.getPageNumber());
+                pageMap.put("imageUrl", page.getImageUrl());
+                pageMap.put("bubbles", page.getBubbles());
+                pagePayload.add(pageMap);
+            }
+            return objectMapper.writeValueAsString(pagePayload);
+        } catch (Exception ex) {
+            log.error("[buildPagesBubblesJson] Failed to serialize pages", ex);
+            return "[]";
+        }
     }
 
     private ReviewCommentDTO toDto(ReviewCommentEntity c) {

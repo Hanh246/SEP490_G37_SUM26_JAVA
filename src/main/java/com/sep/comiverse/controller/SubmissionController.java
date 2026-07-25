@@ -52,15 +52,12 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
     @Autowired
     private com.sep.comiverse.plugin.crud.ChapterCrudPlugin chapterCrudPlugin;
-
-    @Autowired
     private com.sep.comiverse.service.NotificationService notificationService;
-
-    @Autowired
-    private ITeamTaskRepository teamTaskRepository;
 
     private static final Pattern CHAPTER_NUMBER_PATTERN =
             Pattern.compile("(?i)chapter\\s+([0-9]+(?:[,.][0-9]+)?)");
+    @Autowired
+    private com.sep.comiverse.repository.ITeamTaskRepository teamTaskRepository;
 
     @Autowired
     public SubmissionController(SubmissionCrudPlugin crud) {
@@ -98,8 +95,6 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             auditLogService.log("REVIEW_QUEUE", "Approved " + targetDesc + " of " + submission.getTitle());
             if ("author".equalsIgnoreCase(submission.getQueueType())) {
                 handleAuthorApproval(submission);
-            } else if ("translator".equalsIgnoreCase(submission.getQueueType())) {
-                handleTranslatorApproval(submission);
             }
             ComicEntity comic = resolveComic(submission);
             if (comic != null) {
@@ -212,52 +207,6 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                         ? Integer.MAX_VALUE
                         : (int) publishedChapterCount
         );
-    }
-
-    private void handleTranslatorApproval(SubmissionEntity submission) {
-        String teamName = submission.getSubmittedBy();
-        String comicTitle = submission.getTitle();
-
-        ProjectTeamEntity team = findSubmissionTeam(submission);
-
-        ComicEntity comic = comicRepository.findAllByTitle(comicTitle).stream().findFirst()
-                .or(() -> comicRepository.findAllByTitleIgnoreCase(comicTitle).stream().findFirst())
-                .orElse(null);
-
-        if (team != null) {
-            team.setChaptersCount(team.getChaptersCount() == null ? 1 : team.getChaptersCount() + 1);
-
-            if (comic != null) {
-                String chapterNumber = extractChapterNumber(submission.getChapter());
-                if (chapterNumber == null) {
-                    chapterNumber = "1";
-                }
-                if (!chapterRepository.existsByComic_IdAndChapterNumberAndDeletedFalse(comic.getId(), chapterNumber)) {
-                    ChapterEntity chapter = ChapterEntity.builder()
-                            .chapterNumber(chapterNumber)
-                            .title(submission.getChapter() != null ? submission.getChapter() : "Chapter " + chapterNumber)
-                            .images(List.of("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg"))
-                            .moderationStatus(ChapterStatus.PUBLISHED)
-                            .comic(comic)
-                            .projectTeam(team)
-                            .build();
-                    chapterRepository.save(chapter);
-                }
-                comic.setLatestChapterNumber(chapterNumber);
-                comic.setLastChapterUpdatedAt(Instant.now());
-                long chapterCount = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(comic.getId(), ChapterStatus.PUBLISHED);
-                comic.setChapterCount(chapterCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) chapterCount);
-                comicRepository.save(comic);
-            }
-            projectTeamRepository.save(team);
-        } else if (comic != null) {
-            String chapterNumber = extractChapterNumber(submission.getChapter());
-            if (chapterNumber != null) {
-                comic.setLatestChapterNumber(chapterNumber);
-            }
-            comic.setLastChapterUpdatedAt(Instant.now());
-            comicRepository.save(comic);
-        }
     }
 
     private ComicEntity resolveComic(SubmissionEntity submission) {

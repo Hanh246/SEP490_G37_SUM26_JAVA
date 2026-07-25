@@ -10,6 +10,7 @@ import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.ProjectTeamEntity;
 import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.repository.IProjectTeamRepository;
+import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.plugin.mapper.ProjectTeamMapperPlugin;
 import com.sep.comiverse.service.NotificationService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -38,6 +39,7 @@ public class TranslationPoolController {
     private final IComicRepository comicRepository;
     private final ProjectTeamMapperPlugin projectTeamMapper;
     private final NotificationService notificationService;
+    private final IUserRepository userRepository;
 
     @PostMapping("/request")
     @PreAuthorize("hasAnyAuthority('MODERATOR', 'ADMIN')")
@@ -214,8 +216,18 @@ public class TranslationPoolController {
         team.setLeaderInitials(finalLeaderInitials);
         if (principal != null) {
             team.setLeaderId(principal.getId());
+            userRepository.findById(principal.getId()).ifPresent(leader -> {
+                if (team.getMembers() == null) {
+                    team.setMembers(new java.util.ArrayList<>());
+                }
+                boolean alreadyMember = team.getMembers().stream()
+                        .anyMatch(member -> member.getId().equals(leader.getId()));
+                if (!alreadyMember) {
+                    team.getMembers().add(leader);
+                }
+            });
         }
-        team.setMembersCount(1);
+        team.setMembersCount(team.getMembers() == null ? 0 : team.getMembers().size());
         ProjectTeamEntity saved = projectTeamRepository.save(team);
 
         if (principal != null) {

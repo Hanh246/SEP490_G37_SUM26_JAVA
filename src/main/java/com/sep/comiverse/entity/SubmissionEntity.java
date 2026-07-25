@@ -20,7 +20,6 @@ import jakarta.persistence.Index;
 @EqualsAndHashCode(callSuper = true)
 public class SubmissionEntity extends BaseEntity {
 
-
     @Column(name = "comic_id")
     private UUID comicId;
 
@@ -40,28 +39,28 @@ public class SubmissionEntity extends BaseEntity {
     private String submittedBy;
 
     @Column(name = "queue_type")
-    private String queueType; // "author" or "translator"
+    private String queueType;
 
     @Column(name = "time_label")
-    private String timeLabel; // e.g. "2 hours ago"
+    private String timeLabel;
 
     @Column(name = "timestamp")
-    private Long timestamp; // milliseconds for sorting
+    private Long timestamp;
 
     @Column(name = "words")
     private Integer words;
 
     @Column(name = "priority")
-    private String priority; // High, Medium, Low
+    private String priority;
 
     @Column(name = "flags")
     private Integer flags;
 
     @Column(name = "status")
-    private String status; // pending, approved, rejected
+    private String status;
 
     @Column(name = "cover")
-    private String cover; // e.g. "⚔️"
+    private String cover;
 
     @Column(name = "content", columnDefinition = "TEXT")
     private String content;
