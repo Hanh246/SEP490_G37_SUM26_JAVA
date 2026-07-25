@@ -11,4 +11,6 @@ import java.util.UUID;
 @Repository
 public interface IReviewCommentRepository extends JpaRepository<ReviewCommentEntity, UUID> {
     List<ReviewCommentEntity> findByPage_IdOrderByCreatedAtAsc(UUID pageId);
-    Optional<ReviewCommentEntity> findByPage_IdAndBubbleId(UUID pageId, String bubbleId);}
+    Optional<ReviewCommentEntity> findByPage_IdAndBubbleIdAndAuthor_Id(UUID pageId, String bubbleId, UUID authorId);
+    Optional<ReviewCommentEntity> findByPage_IdAndBubbleIdIsNullAndAuthor_Id(UUID pageId, UUID authorId);
+}
