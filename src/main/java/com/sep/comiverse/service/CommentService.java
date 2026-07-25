@@ -14,11 +14,15 @@ import com.sep.comiverse.repository.IComicCommentRepository;
 import com.sep.comiverse.repository.IComicRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -30,6 +34,7 @@ public class CommentService {
     private final IComicRepository comicRepository;
     private final IChapterRepository chapterRepository;
     private final UserService userService;
+    private final NotificationService notificationService;
 
     @Transactional
     public ComicCommentDTO createComicComment(CreateComicCommentRequest request, UUID userId) {
@@ -43,12 +48,13 @@ public class CommentService {
             throw new CustomException(404, "Comic not found", HttpStatus.NOT_FOUND);
         }
 
+        ComicCommentEntity parentComment = null;
         UUID finalParentId = null;
         UUID reqParentId = request.getParentId();
 
         // 3. Process 2-level comment nesting logic
         if (reqParentId != null) {
-            ComicCommentEntity parentComment = comicCommentRepository.findById(reqParentId)
+            parentComment = comicCommentRepository.findById(reqParentId)
                     .orElseThrow(() -> new CustomException(400, "Parent comment not found", HttpStatus.BAD_REQUEST));
 
             // Verify the parent comment is on the same comic
@@ -77,7 +83,12 @@ public class CommentService {
 
         ComicCommentEntity saved = comicCommentRepository.save(newComment);
 
-        //TODO add notification down here
+        sendReplyNotification(
+                userId,
+                request.getMentionId(),
+                parentComment != null ? parentComment.getUserId() : null,
+                "/comics/" + request.getComicId() + "?comment=" + saved.getId()
+        );
 
         return mapToComicCommentDTO(saved);
     }
@@ -94,12 +105,13 @@ public class CommentService {
             throw new CustomException(404, "Chapter not found", HttpStatus.NOT_FOUND);
         }
 
+        ChapterCommentEntity parentComment = null;
         UUID finalParentId = null;
         UUID reqParentId = request.getParentId();
 
         // 3. Process 2-level comment nesting logic
         if (reqParentId != null) {
-            ChapterCommentEntity parentComment = chapterCommentRepository.findById(reqParentId)
+            parentComment = chapterCommentRepository.findById(reqParentId)
                     .orElseThrow(() -> new CustomException(400, "Parent comment not found", HttpStatus.BAD_REQUEST));
 
             // Verify the parent comment is on the same chapter
@@ -128,7 +140,12 @@ public class CommentService {
 
         ChapterCommentEntity saved = chapterCommentRepository.save(newComment);
 
-        //TODO add notification down here
+        sendReplyNotification(
+                userId,
+                request.getMentionId(),
+                parentComment != null ? parentComment.getUserId() : null,
+                "/chapters/" + request.getChapterId() + "?comment=" + saved.getId()
+        );
 
         return mapToChapterCommentDTO(saved);
     }
@@ -138,7 +155,18 @@ public class CommentService {
         if (!comicRepository.existsById(comicId)) {
             throw new CustomException(404, "Comic not found", HttpStatus.NOT_FOUND);
         }
-        return comicCommentRepository.findByComicIdAndParentId(comicId, parentId, pageable)
+
+        Sort sort = (parentId != null)
+                ? Sort.by(Sort.Direction.ASC, "createdAt")
+                : Sort.by(Sort.Direction.DESC, "createdAt");
+
+        Pageable pageableWithSort = PageRequest.of(
+                pageable.getPageNumber(),
+                pageable.getPageSize(),
+                sort
+        );
+
+        return comicCommentRepository.findByComicIdAndParentId(comicId, parentId, pageableWithSort)
                 .map(this::mapToComicCommentDTO);
     }
 
@@ -147,8 +175,59 @@ public class CommentService {
         if (!chapterRepository.existsById(chapterId)) {
             throw new CustomException(404, "Chapter not found", HttpStatus.NOT_FOUND);
         }
-        return chapterCommentRepository.findByChapterIdAndParentId(chapterId, parentId, pageable)
+
+        Sort sort = (parentId != null)
+                ? Sort.by(Sort.Direction.ASC, "createdAt")
+                : Sort.by(Sort.Direction.DESC, "createdAt");
+
+        Pageable pageableWithSort = PageRequest.of(
+                pageable.getPageNumber(),
+                pageable.getPageSize(),
+                sort
+        );
+
+        return chapterCommentRepository.findByChapterIdAndParentId(chapterId, parentId, pageableWithSort)
                 .map(this::mapToChapterCommentDTO);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ComicCommentDTO> getComicCommentThreadById(UUID commentId) {
+        ComicCommentEntity comment = comicCommentRepository.findById(commentId)
+                .orElseThrow(() -> new CustomException(404, "Comic comment not found", HttpStatus.NOT_FOUND));
+
+        if (comment.getParentId() == null) {
+            return List.of(mapToComicCommentDTO(comment));
+        }
+
+        ComicCommentEntity rootComment = comicCommentRepository.findById(comment.getParentId())
+                .orElse(null);
+
+        List<ComicCommentDTO> result = new ArrayList<>();
+        if (rootComment != null) {
+            result.add(mapToComicCommentDTO(rootComment));
+        }
+        result.add(mapToComicCommentDTO(comment));
+        return result;
+    }
+
+    @Transactional(readOnly = true)
+    public List<ChapterCommentDTO> getChapterCommentThreadById(UUID commentId) {
+        ChapterCommentEntity comment = chapterCommentRepository.findById(commentId)
+                .orElseThrow(() -> new CustomException(404, "Chapter comment not found", HttpStatus.NOT_FOUND));
+
+        if (comment.getParentId() == null) {
+            return List.of(mapToChapterCommentDTO(comment));
+        }
+
+        ChapterCommentEntity rootComment = chapterCommentRepository.findById(comment.getParentId())
+                .orElse(null);
+
+        List<ChapterCommentDTO> result = new ArrayList<>();
+        if (rootComment != null) {
+            result.add(mapToChapterCommentDTO(rootComment));
+        }
+        result.add(mapToChapterCommentDTO(comment));
+        return result;
     }
 
     private ComicCommentDTO mapToComicCommentDTO(ComicCommentEntity entity) {
@@ -190,5 +269,19 @@ public class CommentService {
     private UserSnapshot getUserById(UUID userId){
         if (userId == null) return null;
         return userService.findUserById(userId);
+    }
+
+    private void sendReplyNotification(UUID actorId, UUID mentionId, UUID parentAuthorId, String actionUrl) {
+        UUID recipientId = mentionId != null ? mentionId : parentAuthorId;
+
+        if (recipientId != null && !recipientId.equals(actorId)) {
+            UserSnapshot actorSnapshot = getUserById(actorId);
+            String actorName = (actorSnapshot != null && actorSnapshot.getUserName() != null)
+                    ? actorSnapshot.getUserName()
+                    : "Someone";
+            String notificationTitle = "New reply to your comment";
+            String message = actorName + " replied to your comment.";
+            notificationService.notifyUser(recipientId, notificationTitle, message, "COMMENT", actionUrl);
+        }
     }
 }
