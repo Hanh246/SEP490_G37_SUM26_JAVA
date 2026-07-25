@@ -48,6 +48,9 @@ public class CommentServiceTest {
     @Mock
     private UserService userService;
 
+    @Mock
+    private NotificationService notificationService;
+
     private CommentService commentService;
 
     private final UUID userId = UUID.randomUUID();
@@ -61,7 +64,8 @@ public class CommentServiceTest {
                 chapterCommentRepository,
                 comicRepository,
                 chapterRepository,
-                userService
+                userService,
+                notificationService
         );
     }
 
@@ -387,5 +391,134 @@ public class CommentServiceTest {
         assertEquals("Chapter comment with mention", result.getContent());
         assertEquals(mentionId, result.getMentionId());
         assertEquals("mentionedUser", result.getMentionName());
+    }
+
+    @Test
+    void testGetComicCommentThreadById_RootComment() {
+        UUID commentId = UUID.randomUUID();
+        ComicCommentEntity rootEntity = ComicCommentEntity.builder()
+                .userId(userId)
+                .comicId(comicId)
+                .content("Root comment")
+                .parentId(null)
+                .build();
+        rootEntity.setId(commentId);
+
+        when(comicCommentRepository.findById(commentId)).thenReturn(Optional.of(rootEntity));
+        when(userService.findUserById(userId)).thenReturn(mockUserSnapshot());
+
+        List<ComicCommentDTO> result = commentService.getComicCommentThreadById(commentId);
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals("Root comment", result.get(0).getContent());
+    }
+
+    @Test
+    void testGetComicCommentThreadById_ChildComment() {
+        UUID rootId = UUID.randomUUID();
+        UUID childId = UUID.randomUUID();
+
+        ComicCommentEntity rootEntity = ComicCommentEntity.builder()
+                .userId(userId)
+                .comicId(comicId)
+                .content("Root comment")
+                .parentId(null)
+                .build();
+        rootEntity.setId(rootId);
+
+        ComicCommentEntity childEntity = ComicCommentEntity.builder()
+                .userId(userId)
+                .comicId(comicId)
+                .content("Reply comment")
+                .parentId(rootId)
+                .build();
+        childEntity.setId(childId);
+
+        when(comicCommentRepository.findById(childId)).thenReturn(Optional.of(childEntity));
+        when(comicCommentRepository.findById(rootId)).thenReturn(Optional.of(rootEntity));
+        when(userService.findUserById(userId)).thenReturn(mockUserSnapshot());
+
+        List<ComicCommentDTO> result = commentService.getComicCommentThreadById(childId);
+
+        assertNotNull(result);
+        assertEquals(2, result.size());
+        assertEquals("Root comment", result.get(0).getContent());
+        assertEquals("Reply comment", result.get(1).getContent());
+    }
+
+    @Test
+    void testGetComicCommentThreadById_NotFound_ThrowsException() {
+        UUID commentId = UUID.randomUUID();
+        when(comicCommentRepository.findById(commentId)).thenReturn(Optional.empty());
+
+        assertThrows(CustomException.class, () -> commentService.getComicCommentThreadById(commentId));
+    }
+
+    @Test
+    void testGetChapterCommentThreadById_ChildComment() {
+        UUID rootId = UUID.randomUUID();
+        UUID childId = UUID.randomUUID();
+
+        ChapterCommentEntity rootEntity = ChapterCommentEntity.builder()
+                .userId(userId)
+                .chapterId(chapterId)
+                .content("Root chapter comment")
+                .parentId(null)
+                .build();
+        rootEntity.setId(rootId);
+
+        ChapterCommentEntity childEntity = ChapterCommentEntity.builder()
+                .userId(userId)
+                .chapterId(chapterId)
+                .content("Reply chapter comment")
+                .parentId(rootId)
+                .build();
+        childEntity.setId(childId);
+
+        when(chapterCommentRepository.findById(childId)).thenReturn(Optional.of(childEntity));
+        when(chapterCommentRepository.findById(rootId)).thenReturn(Optional.of(rootEntity));
+        when(userService.findUserById(userId)).thenReturn(mockUserSnapshot());
+
+        List<ChapterCommentDTO> result = commentService.getChapterCommentThreadById(childId);
+
+        assertNotNull(result);
+        assertEquals(2, result.size());
+        assertEquals("Root chapter comment", result.get(0).getContent());
+        assertEquals("Reply chapter comment", result.get(1).getContent());
+    }
+
+    @Test
+    void testCreateComicComment_SendsNotificationToMentionedUser() {
+        UUID mentionedUserId = UUID.randomUUID();
+        CreateComicCommentRequest request = new CreateComicCommentRequest();
+        request.setComicId(comicId);
+        request.setContent("Reply with notification");
+        request.setMentionId(mentionedUserId);
+
+        when(comicRepository.existsById(comicId)).thenReturn(true);
+        when(userService.findUserById(userId)).thenReturn(mockUserSnapshot());
+
+        ComicCommentEntity mockSaved = ComicCommentEntity.builder()
+                .userId(userId)
+                .comicId(comicId)
+                .content("Reply with notification")
+                .mentionId(mentionedUserId)
+                .build();
+        UUID commentId = UUID.randomUUID();
+        mockSaved.setId(commentId);
+
+        when(comicCommentRepository.save(any(ComicCommentEntity.class))).thenReturn(mockSaved);
+
+        ComicCommentDTO result = commentService.createComicComment(request, userId);
+
+        assertNotNull(result);
+        verify(notificationService, times(1)).notifyUser(
+                eq(mentionedUserId),
+                eq("New reply to your comment"),
+                contains("replied to your comment"),
+                eq("COMMENT"),
+                eq("/comics/" + comicId + "?comment=" + commentId)
+        );
     }
 }

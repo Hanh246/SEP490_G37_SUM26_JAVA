@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -118,6 +119,32 @@ public class CommentController {
                         data.getTotalPages()
                 ))
                 .data(data.toList())
+                .build());
+    }
+
+    @GetMapping("/comics/{id}")
+    @Operation(summary = "Get comic comment thread by comment ID")
+    public ResponseEntity<BaseResponse<List<ComicCommentDTO>>> getComicCommentThread(
+            @PathVariable("id") UUID id
+    ) {
+        List<ComicCommentDTO> responseData = commentService.getComicCommentThreadById(id);
+        return ResponseEntity.ok(BaseResponse.<List<ComicCommentDTO>>builder()
+                .success(true)
+                .data(responseData)
+                .message("Comic comment thread retrieved successfully")
+                .build());
+    }
+
+    @GetMapping("/chapters/{id}")
+    @Operation(summary = "Get chapter comment thread by comment ID")
+    public ResponseEntity<BaseResponse<List<ChapterCommentDTO>>> getChapterCommentThread(
+            @PathVariable("id") UUID id
+    ) {
+        List<ChapterCommentDTO> responseData = commentService.getChapterCommentThreadById(id);
+        return ResponseEntity.ok(BaseResponse.<List<ChapterCommentDTO>>builder()
+                .success(true)
+                .data(responseData)
+                .message("Chapter comment thread retrieved successfully")
                 .build());
     }
 }
