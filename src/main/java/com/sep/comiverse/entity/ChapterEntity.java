@@ -56,6 +56,7 @@ public class ChapterEntity extends BaseEntity {
     private Boolean isPremium = false;
 
     @OneToMany(mappedBy = "chapter", fetch = FetchType.LAZY)
+    @Builder.Default
     private List<TeamTaskEntity> tasks = new ArrayList<>();
 
     @ManyToOne(fetch = FetchType.LAZY)
