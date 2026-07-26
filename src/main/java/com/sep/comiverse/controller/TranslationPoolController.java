@@ -8,6 +8,7 @@ import com.sep.comiverse.dto.pagination.PaginationResponse;
 import com.sep.comiverse.dto.pagination.PaginationMetadata;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.ProjectTeamEntity;
+import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.repository.IProjectTeamRepository;
 import com.sep.comiverse.repository.IUserRepository;
@@ -128,7 +129,8 @@ public class TranslationPoolController {
                 "New translation request",
                 comicTitle + " needs translation from " + sourceLanguage
                         + " to " + String.join(", ", targetLanguages) + ".",
-                "UPDATE"
+                "UPDATE",
+                NotificationPreferenceKey.PROJECT_OPPORTUNITIES
         );
 
         return ResponseEntity.ok(
@@ -235,7 +237,8 @@ public class TranslationPoolController {
                     principal.getId(),
                     "Translation project claimed",
                     "You are now leading " + saved.getTitle() + ".",
-                    "UPDATE"
+                    "UPDATE",
+                    NotificationPreferenceKey.TEAM_UPDATES
             );
         }
 

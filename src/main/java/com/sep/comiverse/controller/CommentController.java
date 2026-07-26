@@ -14,6 +14,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import com.sep.comiverse.security.UserPrincipal;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -145,6 +148,40 @@ public class CommentController {
                 .success(true)
                 .data(responseData)
                 .message("Chapter comment thread retrieved successfully")
+                .build());
+    }
+
+    @DeleteMapping("/comics/{id}")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Delete a comic comment by ID")
+    public ResponseEntity<BaseResponse<Void>> deleteComicComment(
+            @PathVariable("id") UUID id,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        UUID userId = principal != null ? principal.getId() : jwtTokenUtil.getCurrentUserId();
+        String role = principal != null ? principal.getRole() : null;
+        commentService.deleteComicComment(id, userId, role);
+
+        return ResponseEntity.ok(BaseResponse.<Void>builder()
+                .success(true)
+                .message("Comic comment deleted successfully")
+                .build());
+    }
+
+    @DeleteMapping("/chapters/{id}")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Delete a chapter comment by ID")
+    public ResponseEntity<BaseResponse<Void>> deleteChapterComment(
+            @PathVariable("id") UUID id,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        UUID userId = principal != null ? principal.getId() : jwtTokenUtil.getCurrentUserId();
+        String role = principal != null ? principal.getRole() : null;
+        commentService.deleteChapterComment(id, userId, role);
+
+        return ResponseEntity.ok(BaseResponse.<Void>builder()
+                .success(true)
+                .message("Chapter comment deleted successfully")
                 .build());
     }
 }

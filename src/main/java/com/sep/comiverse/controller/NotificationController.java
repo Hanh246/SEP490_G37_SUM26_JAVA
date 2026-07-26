@@ -2,6 +2,8 @@ package com.sep.comiverse.controller;
 
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.dto.response.NotificationResponse;
+import com.sep.comiverse.dto.response.NotificationPreferencesResponse;
+import com.sep.comiverse.dto.request.UpdateNotificationPreferencesRequest;
 import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.NotificationService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -21,6 +23,34 @@ import java.util.UUID;
 public class NotificationController {
 
     private final NotificationService notificationService;
+    private final com.sep.comiverse.service.NotificationPreferenceService notificationPreferenceService;
+
+    @GetMapping("/preferences")
+    public ResponseEntity<BaseResponse<NotificationPreferencesResponse>> getPreferences(
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        NotificationPreferencesResponse preferences = notificationPreferenceService.getPreferences(principal.getId());
+        return ResponseEntity.ok(BaseResponse.<NotificationPreferencesResponse>builder()
+                .success(true)
+                .data(preferences)
+                .build());
+    }
+
+    @PutMapping("/preferences")
+    public ResponseEntity<BaseResponse<NotificationPreferencesResponse>> updatePreferences(
+            @jakarta.validation.Valid @RequestBody UpdateNotificationPreferencesRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        NotificationPreferencesResponse preferences = notificationPreferenceService.updatePreferences(
+                principal.getId(),
+                request.getPreferences()
+        );
+        return ResponseEntity.ok(BaseResponse.<NotificationPreferencesResponse>builder()
+                .success(true)
+                .data(preferences)
+                .message("Notification preferences updated successfully")
+                .build());
+    }
 
     @GetMapping
     @Operation(summary = "Get user notifications", description = "Retrieve list of notifications for the currently logged-in user")
