@@ -3,6 +3,7 @@ package com.sep.comiverse.service;
 import com.sep.comiverse.dto.request.BroadcastRequest;
 import com.sep.comiverse.dto.response.BroadcastResponse;
 import com.sep.comiverse.entity.NotificationEntity;
+import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.INotificationRepository;
@@ -22,6 +23,7 @@ public class BroadcastService {
 
     private final INotificationRepository notificationRepository;
     private final IUserRepository userRepository;
+    private final NotificationPreferenceService notificationPreferenceService;
 
     /**
      * Send a broadcast announcement to all users matching the target roles.
@@ -58,6 +60,7 @@ public class BroadcastService {
         String targetRolesStr = isAll ? "ALL" : String.join(", ", targetRoles);
 
         List<NotificationEntity> notifications = recipients.stream()
+                .filter(user -> notificationPreferenceService.isEnabled(user, NotificationPreferenceKey.SYSTEM_BROADCASTS))
                 .map(user -> NotificationEntity.builder()
                         .user(user)
                         .title(request.getTitle().trim())
@@ -77,7 +80,7 @@ public class BroadcastService {
                 .title(request.getTitle().trim())
                 .message(request.getMessage().trim())
                 .targetRoles(targetRolesStr)
-                .recipientCount(recipients.size())
+                .recipientCount(notifications.size())
                 .sentAt(new Date())
                 .build();
     }

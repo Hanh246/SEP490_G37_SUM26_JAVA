@@ -8,6 +8,7 @@ import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.ProjectTeamEntity;
 import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
+import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.plugin.crud.SubmissionCrudPlugin;
 import com.sep.comiverse.repository.*;
@@ -347,7 +348,8 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 recipientId,
                 approved ? "Submission approved" : "Submission needs changes",
                 message,
-                approved ? "UPDATE" : "WARNING"
+                approved ? "UPDATE" : "WARNING",
+                NotificationPreferenceKey.SUBMISSION_STATUS
         );
     }
 
