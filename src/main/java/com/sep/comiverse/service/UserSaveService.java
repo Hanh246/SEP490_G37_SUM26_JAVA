@@ -49,5 +49,10 @@ public class UserSaveService {
     public List<UUID> getSavedComicIds(UUID userId) {
         return userSaveRepository.findSavedComicIdsByUserId(userId);
     }
+
+    public long getSavedComicCount(UUID userId) {
+        if (userId == null) return 0;
+        return userSaveRepository.countByUserId(userId);
+    }
 }
 

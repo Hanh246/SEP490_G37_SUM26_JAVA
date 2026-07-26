@@ -165,6 +165,14 @@ public class UserRatingService {
         return userRatingRepository.findRatedComicIdsByUserId(userId);
     }
 
+    @Transactional(readOnly = true)
+    public long getRatedComicCount(UUID userId) {
+        if (userId == null) {
+            return 0;
+        }
+        return userRatingRepository.countByUserId(userId);
+    }
+
     private ComicRatingResponse updateComicRatingMetricsAndEvictCache(ComicEntity comic, Integer currentScore) {
         Double rawAvg = userRatingRepository.getAverageRatingByComicId(comic.getId());
         Integer count = userRatingRepository.getRatingCountByComicId(comic.getId());
