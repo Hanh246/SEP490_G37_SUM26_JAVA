@@ -44,6 +44,15 @@ public interface IUserRepository extends AbstractCrudRepository<UserEntity, UUID
            "OR LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%')))")
     java.util.List<UserEntity> searchTranslators(@Param("query") String query);
 
+    @Query("SELECT u FROM UserEntity u JOIN u.role r WHERE LOWER(r.roleName) = 'project_leader' " +
+           "AND (u.deleted = false OR u.deleted IS NULL) " +
+           "AND (u.status = 'ACTIVE' OR u.status IS NULL) " +
+           "AND (:query IS NULL OR :query = '' " +
+           "OR LOWER(u.username) LIKE LOWER(CONCAT('%', :query, '%')) " +
+           "OR LOWER(u.fullName) LIKE LOWER(CONCAT('%', :query, '%')) " +
+           "OR LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%')))")
+    java.util.List<UserEntity> searchProjectLeaders(@Param("query") String query);
+
     @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM UserEntity u WHERE u.username = :username AND u.deleted = false")
     boolean existsByUsername(@Param("username") String username);
 

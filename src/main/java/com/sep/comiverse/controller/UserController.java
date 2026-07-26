@@ -97,4 +97,49 @@ public class UserController {
                         .build()
         );
     }
+
+    /**
+     * GET /users/project-leaders
+     * Searches active, non-deleted users who have the role PROJECT_LEADER (hired staff).
+     * Strictly excludes TRANSLATOR role.
+     */
+    @GetMapping("/project-leaders")
+    @Operation(summary = "Search project leaders", description = "Search active project leaders (hired staff) in the system by username, full name, or email")
+    public ResponseEntity<BaseResponse<List<TranslatorResponse>>> searchProjectLeaders(
+            @RequestParam(value = "query", required = false) String query
+    ) {
+        List<UserEntity> leaders = userRepository.searchProjectLeaders(query);
+        List<TranslatorResponse> responseList = leaders.stream()
+                .map(u -> {
+                    String initials = "PL";
+                    String nameToUse = u.getFullName() != null && !u.getFullName().isBlank() ? u.getFullName() : u.getUsername();
+                    if (nameToUse != null && !nameToUse.isBlank()) {
+                        String[] parts = nameToUse.trim().split("\\s+");
+                        initials = Arrays.stream(parts)
+                                .map(part -> part.substring(0, 1))
+                                .collect(Collectors.joining())
+                                .toUpperCase();
+                        if (initials.length() > 2) {
+                            initials = initials.substring(0, 2);
+                        }
+                    }
+
+                    return TranslatorResponse.builder()
+                            .id(u.getId())
+                            .username(u.getUsername())
+                            .fullName(u.getFullName())
+                            .email(u.getEmail())
+                            .avatarUrl(u.getAvatarUrl())
+                            .initials(initials)
+                            .build();
+                })
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(
+                BaseResponse.<List<TranslatorResponse>>builder()
+                        .success(true)
+                        .data(responseList)
+                        .build()
+        );
+    }
 }
