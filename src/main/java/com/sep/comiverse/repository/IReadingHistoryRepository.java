@@ -22,6 +22,9 @@ public interface IReadingHistoryRepository extends AbstractCrudRepository<Readin
     @Query("SELECT rh.comicId FROM ReadingHistoryEntity rh WHERE rh.userId = :userId AND rh.deleted = false GROUP BY rh.comicId ORDER BY MAX(rh.updatedAt) DESC")
     List<UUID> findReadComicIdsByUserId(@Param("userId") UUID userId);
 
+    @Query("SELECT COUNT(DISTINCT rh.comicId) FROM ReadingHistoryEntity rh WHERE rh.userId = :userId AND rh.deleted = false")
+    long countReadComicIdsByUserId(@Param("userId") UUID userId);
+
     @org.springframework.data.jpa.repository.Modifying
     @Query("DELETE FROM ReadingHistoryEntity rh WHERE rh.comicId = :comicId AND rh.userId = :userId")
     void deleteByComicIdAndUserId(@Param("comicId") UUID comicId, @Param("userId") UUID userId);

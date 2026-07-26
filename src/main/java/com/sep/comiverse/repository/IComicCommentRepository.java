@@ -1,6 +1,7 @@
 package com.sep.comiverse.repository;
 
 import com.sep.comiverse.entity.ComicCommentEntity;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -20,5 +21,9 @@ public interface IComicCommentRepository extends AbstractCrudRepository<ComicCom
             @Param("parentId") UUID parentId,
             Pageable pageable
     );
+
+    @Modifying
+    @Query("UPDATE ComicCommentEntity c SET c.deleted = true WHERE c.parentId = :parentId")
+    void softDeleteByParentId(@Param("parentId") UUID parentId);
 }
 

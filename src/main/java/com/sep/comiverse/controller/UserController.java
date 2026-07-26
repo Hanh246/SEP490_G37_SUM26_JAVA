@@ -10,6 +10,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import com.sep.comiverse.dto.response.UserInteractionCountResponse;
+import com.sep.comiverse.security.JwtTokenUtil;
+import com.sep.comiverse.service.ReadingHistoryService;
+import com.sep.comiverse.service.UserLikeService;
+import com.sep.comiverse.service.UserRatingService;
+import com.sep.comiverse.service.UserSaveService;
+
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -21,6 +28,30 @@ import java.util.stream.Collectors;
 public class UserController {
 
     private final IUserRepository userRepository;
+    private final JwtTokenUtil jwtTokenUtil;
+    private final UserLikeService userLikeService;
+    private final UserSaveService userSaveService;
+    private final ReadingHistoryService readingHistoryService;
+    private final UserRatingService userRatingService;
+
+    @GetMapping("/me/interaction-counts")
+    @Operation(summary = "Get current user interaction counts", description = "Retrieve counts of liked, saved, read comics, and rated comics for the logged-in user")
+    public ResponseEntity<BaseResponse<UserInteractionCountResponse>> getInteractionCounts() {
+        java.util.UUID userId = jwtTokenUtil.getCurrentUserId();
+        UserInteractionCountResponse response = UserInteractionCountResponse.builder()
+                .likedCount(userLikeService.getLikedComicCount(userId))
+                .savedCount(userSaveService.getSavedComicCount(userId))
+                .readCount(readingHistoryService.getReadComicCount(userId))
+                .ratingCount(userRatingService.getRatedComicCount(userId))
+                .build();
+
+        return ResponseEntity.ok(
+                BaseResponse.<UserInteractionCountResponse>builder()
+                        .success(true)
+                        .data(response)
+                        .build()
+        );
+    }
 
     /**
      * GET /users/translators

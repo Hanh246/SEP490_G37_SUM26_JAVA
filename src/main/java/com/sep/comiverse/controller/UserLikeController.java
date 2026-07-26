@@ -80,6 +80,19 @@ public class UserLikeController {
         );
     }
 
+    @GetMapping("/count")
+    @Operation(summary = "Get total count of liked comics", description = "Retrieve total count of comics liked by the logged-in user")
+    public ResponseEntity<BaseResponse<Long>> getLikedComicCount() {
+        UUID userId = this.getCurrentUserId();
+        long count = userLikeService.getLikedComicCount(userId);
+        return ResponseEntity.ok(
+                BaseResponse.<Long>builder()
+                        .success(true)
+                        .data(count)
+                        .build()
+        );
+    }
+
     private UUID getCurrentUserId(){
         return jwtTokenUtil.getCurrentUserId();
     }
