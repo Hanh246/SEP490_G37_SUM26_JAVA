@@ -287,7 +287,7 @@ public class CommentServiceTest {
         c1.setId(UUID.randomUUID());
 
         Page<ComicCommentEntity> mockPage = new PageImpl<>(List.of(c1), pageable, 1);
-        when(comicCommentRepository.findByComicIdAndParentId(comicId, parentId, pageable)).thenReturn(mockPage);
+        when(comicCommentRepository.findByComicIdAndParentId(eq(comicId), eq(parentId), any(Pageable.class))).thenReturn(mockPage);
 
         Page<ComicCommentDTO> result = commentService.getComicComments(comicId, parentId, pageable);
 
@@ -313,7 +313,7 @@ public class CommentServiceTest {
         c1.setId(UUID.randomUUID());
 
         Page<ChapterCommentEntity> mockPage = new PageImpl<>(List.of(c1), pageable, 1);
-        when(chapterCommentRepository.findByChapterIdAndParentId(chapterId, parentId, pageable)).thenReturn(mockPage);
+        when(chapterCommentRepository.findByChapterIdAndParentId(eq(chapterId), eq(parentId), any(Pageable.class))).thenReturn(mockPage);
 
         Page<ChapterCommentDTO> result = commentService.getChapterComments(chapterId, parentId, pageable);
 
@@ -520,5 +520,139 @@ public class CommentServiceTest {
                 eq("COMMENT"),
                 eq("/comics/" + comicId + "?comment=" + commentId)
         );
+    }
+
+    @Test
+    void testDeleteComicComment_AsOwner_Success() {
+        UUID commentId = UUID.randomUUID();
+        ComicCommentEntity entity = ComicCommentEntity.builder()
+                .userId(userId)
+                .comicId(comicId)
+                .content("Comment to delete")
+                .parentId(null)
+                .build();
+        entity.setId(commentId);
+
+        when(comicCommentRepository.findById(commentId)).thenReturn(Optional.of(entity));
+
+        commentService.deleteComicComment(commentId, userId, "READER");
+
+        assertTrue(entity.getDeleted());
+        verify(comicCommentRepository, times(1)).save(entity);
+        verify(comicCommentRepository, times(1)).softDeleteByParentId(commentId);
+    }
+
+    @Test
+    void testDeleteComicComment_NonOwnerNonAdmin_ThrowsForbidden() {
+        UUID commentId = UUID.randomUUID();
+        UUID otherUser = UUID.randomUUID();
+        ComicCommentEntity entity = ComicCommentEntity.builder()
+                .userId(userId)
+                .comicId(comicId)
+                .content("Comment to delete")
+                .parentId(null)
+                .build();
+        entity.setId(commentId);
+
+        when(comicCommentRepository.findById(commentId)).thenReturn(Optional.of(entity));
+
+        CustomException ex = assertThrows(CustomException.class, () ->
+                commentService.deleteComicComment(commentId, otherUser, "READER")
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, ex.getHttpStatus());
+    }
+
+    @Test
+    void testDeleteComicComment_AsAdmin_Success() {
+        UUID commentId = UUID.randomUUID();
+        UUID otherUser = UUID.randomUUID();
+        ComicCommentEntity entity = ComicCommentEntity.builder()
+                .userId(userId)
+                .comicId(comicId)
+                .content("Comment to delete")
+                .parentId(null)
+                .build();
+        entity.setId(commentId);
+
+        when(comicCommentRepository.findById(commentId)).thenReturn(Optional.of(entity));
+
+        commentService.deleteComicComment(commentId, otherUser, "ADMIN");
+
+        assertTrue(entity.getDeleted());
+        verify(comicCommentRepository, times(1)).save(entity);
+    }
+
+    @Test
+    void testDeleteChapterComment_AsOwner_Success() {
+        UUID commentId = UUID.randomUUID();
+        ChapterCommentEntity entity = ChapterCommentEntity.builder()
+                .userId(userId)
+                .chapterId(chapterId)
+                .content("Chapter comment to delete")
+                .parentId(null)
+                .build();
+        entity.setId(commentId);
+
+        when(chapterCommentRepository.findById(commentId)).thenReturn(Optional.of(entity));
+
+        commentService.deleteChapterComment(commentId, userId, "READER");
+
+        assertTrue(entity.getDeleted());
+        verify(chapterCommentRepository, times(1)).save(entity);
+        verify(chapterCommentRepository, times(1)).softDeleteByParentId(commentId);
+    }
+
+    @Test
+    void testGetComicCommentThreadById_DeletedComment_ThrowsNotFound() {
+        UUID commentId = UUID.randomUUID();
+        ComicCommentEntity entity = ComicCommentEntity.builder()
+                .userId(userId)
+                .comicId(comicId)
+                .content("Deleted comment")
+                .parentId(null)
+                .build();
+        entity.setId(commentId);
+        entity.setDeleted(true);
+
+        when(comicCommentRepository.findById(commentId)).thenReturn(Optional.of(entity));
+
+        CustomException ex = assertThrows(CustomException.class, () ->
+                commentService.getComicCommentThreadById(commentId)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getHttpStatus());
+    }
+
+    @Test
+    void testGetComicCommentThreadById_DeletedParent_ThrowsNotFound() {
+        UUID rootId = UUID.randomUUID();
+        UUID childId = UUID.randomUUID();
+
+        ComicCommentEntity rootEntity = ComicCommentEntity.builder()
+                .userId(userId)
+                .comicId(comicId)
+                .content("Root comment")
+                .parentId(null)
+                .build();
+        rootEntity.setId(rootId);
+        rootEntity.setDeleted(true);
+
+        ComicCommentEntity childEntity = ComicCommentEntity.builder()
+                .userId(userId)
+                .comicId(comicId)
+                .content("Reply comment")
+                .parentId(rootId)
+                .build();
+        childEntity.setId(childId);
+
+        when(comicCommentRepository.findById(childId)).thenReturn(Optional.of(childEntity));
+        when(comicCommentRepository.findById(rootId)).thenReturn(Optional.of(rootEntity));
+
+        CustomException ex = assertThrows(CustomException.class, () ->
+                commentService.getComicCommentThreadById(childId)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getHttpStatus());
     }
 }

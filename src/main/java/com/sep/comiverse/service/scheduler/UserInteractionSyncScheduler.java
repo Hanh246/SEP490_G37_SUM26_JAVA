@@ -24,12 +24,15 @@ public class UserInteractionSyncScheduler {
 
     public static final String COMIC_LIKE_HASH = "comic:like:counter";
     public static final String COMIC_SAVE_HASH = "comic:save:counter";
+    public static final String COMIC_RATING_COUNT_HASH = "comic:rating:count:counter";
+    public static final String COMIC_RATING_SUM_HASH = "comic:rating:sum:counter";
 
     @Scheduled(fixedRate = 3600000) // Runs every 1 hour
     @Transactional
     public void flushInteractionsToPostgres() {
         syncComicLikes();
         syncComicSaves();
+        syncComicRatings();
     }
 
     private void syncComicLikes() {
@@ -96,6 +99,60 @@ public class UserInteractionSyncScheduler {
             jdbcTemplate.update(updateGlobalComicSaveSql, params);
 
             // Evict cache of comic detail
+            try {
+                comicCrudPlugin.evictComicCache(UUID.fromString(comicIdStr));
+            } catch (Exception e) {
+                log.error("Failed to evict comic cache for comicId: {}", comicIdStr, e);
+            }
+        }
+    }
+
+    private void syncComicRatings() {
+        Set<Object> countComicIds = redisTemplate.opsForHash().keys(COMIC_RATING_COUNT_HASH);
+        Set<Object> sumComicIds = redisTemplate.opsForHash().keys(COMIC_RATING_SUM_HASH);
+
+        java.util.Set<Object> allComicIds = new java.util.HashSet<>();
+        if (countComicIds != null) allComicIds.addAll(countComicIds);
+        if (sumComicIds != null) allComicIds.addAll(sumComicIds);
+
+        if (allComicIds.isEmpty()) return;
+
+        String syncRatingSql = """
+            UPDATE comics c
+            SET rating_average = COALESCE((
+                SELECT ROUND(CAST(AVG(ur.score) AS numeric), 1)
+                FROM user_ratings ur
+                WHERE ur.comic_id = c.id AND ur.deleted = false
+            ), 0.0),
+            rating_count = COALESCE((
+                SELECT COUNT(ur.id)
+                FROM user_ratings ur
+                WHERE ur.comic_id = c.id AND ur.deleted = false
+            ), 0)
+            WHERE c.id = CAST(:comicId AS uuid)
+        """;
+
+        for (Object idObj : allComicIds) {
+            String comicIdStr = (String) idObj;
+
+            Number rawCountVal = (Number) redisTemplate.opsForHash().get(COMIC_RATING_COUNT_HASH, comicIdStr);
+            Number rawSumVal = (Number) redisTemplate.opsForHash().get(COMIC_RATING_SUM_HASH, comicIdStr);
+
+            int countInc = (rawCountVal != null) ? rawCountVal.intValue() : 0;
+            double sumInc = (rawSumVal != null) ? rawSumVal.doubleValue() : 0.0;
+
+            if (countInc == 0 && sumInc == 0.0) continue;
+
+            if (countInc != 0) {
+                redisTemplate.opsForHash().increment(COMIC_RATING_COUNT_HASH, comicIdStr, -countInc);
+            }
+            if (sumInc != 0.0) {
+                redisTemplate.opsForHash().increment(COMIC_RATING_SUM_HASH, comicIdStr, -sumInc);
+            }
+
+            Map<String, Object> params = Map.of("comicId", comicIdStr);
+            jdbcTemplate.update(syncRatingSql, params);
+
             try {
                 comicCrudPlugin.evictComicCache(UUID.fromString(comicIdStr));
             } catch (Exception e) {
