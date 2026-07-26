@@ -26,4 +26,7 @@ public interface IUserRatingRepository extends AbstractCrudRepository<UserRating
 
     @Query("SELECT ur.comicId FROM UserRatingEntity ur WHERE ur.userId = :userId AND ur.deleted = false ORDER BY ur.updatedAt DESC")
     List<UUID> findRatedComicIdsByUserId(@Param("userId") UUID userId);
+
+    @Query("SELECT COUNT(ur) FROM UserRatingEntity ur WHERE ur.userId = :userId AND ur.deleted = false")
+    long countByUserId(@Param("userId") UUID userId);
 }

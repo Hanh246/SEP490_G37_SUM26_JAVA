@@ -108,4 +108,17 @@ public class UserRatingController {
                         .build()
         );
     }
+
+    @GetMapping("/count")
+    @Operation(summary = "Get total count of rated comics", description = "Retrieve total count of comics rated by the logged-in user")
+    public ResponseEntity<BaseResponse<Long>> getRatedComicCount() {
+        UUID userId = jwtTokenUtil.getCurrentUserId();
+        long count = userRatingService.getRatedComicCount(userId);
+        return ResponseEntity.ok(
+                BaseResponse.<Long>builder()
+                        .success(true)
+                        .data(count)
+                        .build()
+        );
+    }
 }
