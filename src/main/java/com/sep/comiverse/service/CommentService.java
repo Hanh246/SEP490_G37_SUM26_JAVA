@@ -195,6 +195,10 @@ public class CommentService {
         ComicCommentEntity comment = comicCommentRepository.findById(commentId)
                 .orElseThrow(() -> new CustomException(404, "Comic comment not found", HttpStatus.NOT_FOUND));
 
+        if (Boolean.TRUE.equals(comment.getDeleted())) {
+            throw new CustomException(404, "Comic comment not found or has been deleted", HttpStatus.NOT_FOUND);
+        }
+
         if (comment.getParentId() == null) {
             return List.of(mapToComicCommentDTO(comment));
         }
@@ -202,10 +206,12 @@ public class CommentService {
         ComicCommentEntity rootComment = comicCommentRepository.findById(comment.getParentId())
                 .orElse(null);
 
-        List<ComicCommentDTO> result = new ArrayList<>();
-        if (rootComment != null) {
-            result.add(mapToComicCommentDTO(rootComment));
+        if (rootComment == null || Boolean.TRUE.equals(rootComment.getDeleted())) {
+            throw new CustomException(404, "Parent comment has been deleted", HttpStatus.NOT_FOUND);
         }
+
+        List<ComicCommentDTO> result = new ArrayList<>();
+        result.add(mapToComicCommentDTO(rootComment));
         result.add(mapToComicCommentDTO(comment));
         return result;
     }
@@ -215,6 +221,10 @@ public class CommentService {
         ChapterCommentEntity comment = chapterCommentRepository.findById(commentId)
                 .orElseThrow(() -> new CustomException(404, "Chapter comment not found", HttpStatus.NOT_FOUND));
 
+        if (Boolean.TRUE.equals(comment.getDeleted())) {
+            throw new CustomException(404, "Chapter comment not found or has been deleted", HttpStatus.NOT_FOUND);
+        }
+
         if (comment.getParentId() == null) {
             return List.of(mapToChapterCommentDTO(comment));
         }
@@ -222,12 +232,70 @@ public class CommentService {
         ChapterCommentEntity rootComment = chapterCommentRepository.findById(comment.getParentId())
                 .orElse(null);
 
-        List<ChapterCommentDTO> result = new ArrayList<>();
-        if (rootComment != null) {
-            result.add(mapToChapterCommentDTO(rootComment));
+        if (rootComment == null || Boolean.TRUE.equals(rootComment.getDeleted())) {
+            throw new CustomException(404, "Parent comment has been deleted", HttpStatus.NOT_FOUND);
         }
+
+        List<ChapterCommentDTO> result = new ArrayList<>();
+        result.add(mapToChapterCommentDTO(rootComment));
         result.add(mapToChapterCommentDTO(comment));
         return result;
+    }
+
+    @Transactional
+    public void deleteComicComment(UUID commentId, UUID userId, String userRole) {
+        if (userId == null) {
+            throw new CustomException(401, "UNAUTHORIZED", HttpStatus.UNAUTHORIZED);
+        }
+
+        ComicCommentEntity comment = comicCommentRepository.findById(commentId)
+                .orElseThrow(() -> new CustomException(404, "Comic comment not found", HttpStatus.NOT_FOUND));
+
+        if (Boolean.TRUE.equals(comment.getDeleted())) {
+            throw new CustomException(404, "Comic comment not found", HttpStatus.NOT_FOUND);
+        }
+
+        boolean isOwner = comment.getUserId().equals(userId);
+        boolean isAdminOrStaff = "ADMIN".equalsIgnoreCase(userRole) || "STAFF".equalsIgnoreCase(userRole);
+
+        if (!isOwner && !isAdminOrStaff) {
+            throw new CustomException(403, "You do not have permission to delete this comment", HttpStatus.FORBIDDEN);
+        }
+
+        comment.setDeleted(true);
+        comicCommentRepository.save(comment);
+
+        if (comment.getParentId() == null) {
+            comicCommentRepository.softDeleteByParentId(comment.getId());
+        }
+    }
+
+    @Transactional
+    public void deleteChapterComment(UUID commentId, UUID userId, String userRole) {
+        if (userId == null) {
+            throw new CustomException(401, "UNAUTHORIZED", HttpStatus.UNAUTHORIZED);
+        }
+
+        ChapterCommentEntity comment = chapterCommentRepository.findById(commentId)
+                .orElseThrow(() -> new CustomException(404, "Chapter comment not found", HttpStatus.NOT_FOUND));
+
+        if (Boolean.TRUE.equals(comment.getDeleted())) {
+            throw new CustomException(404, "Chapter comment not found", HttpStatus.NOT_FOUND);
+        }
+
+        boolean isOwner = comment.getUserId().equals(userId);
+        boolean isAdminOrStaff = "ADMIN".equalsIgnoreCase(userRole) || "STAFF".equalsIgnoreCase(userRole);
+
+        if (!isOwner && !isAdminOrStaff) {
+            throw new CustomException(403, "You do not have permission to delete this comment", HttpStatus.FORBIDDEN);
+        }
+
+        comment.setDeleted(true);
+        chapterCommentRepository.save(comment);
+
+        if (comment.getParentId() == null) {
+            chapterCommentRepository.softDeleteByParentId(comment.getId());
+        }
     }
 
     private ComicCommentDTO mapToComicCommentDTO(ComicCommentEntity entity) {
