@@ -31,16 +31,6 @@ public class NotificationService {
     private final NotificationPreferenceService notificationPreferenceService;
 
     @Transactional
-    public boolean notifyUser(UUID userId, String title, String message, String type) {
-        return notifyUser(userId, title, message, type, null, null);
-    }
-
-    @Transactional
-    public boolean notifyUser(UUID userId, String title, String message, String type, String actionUrl) {
-        return notifyUser(userId, title, message, type, actionUrl, null);
-    }
-
-    @Transactional
     public boolean notifyUser(UUID userId, String title, String message, String type, NotificationPreferenceKey preferenceKey) {
         return notifyUser(userId, title, message, type, null, preferenceKey);
     }
@@ -54,7 +44,7 @@ public class NotificationService {
             String actionUrl,
             NotificationPreferenceKey preferenceKey
     ) {
-        if (userId == null) {
+        if (userId == null || preferenceKey == null) {
             return false;
         }
 
@@ -72,11 +62,6 @@ public class NotificationService {
     }
 
     @Transactional
-    public int notifyRoles(Collection<String> roles, String title, String message, String type) {
-        return notifyRoles(roles, title, message, type, null);
-    }
-
-    @Transactional
     public int notifyRoles(
             Collection<String> roles,
             String title,
@@ -84,7 +69,7 @@ public class NotificationService {
             String type,
             NotificationPreferenceKey preferenceKey
     ) {
-        if (roles == null || roles.isEmpty()) {
+        if (roles == null || roles.isEmpty() || preferenceKey == null) {
             return 0;
         }
 

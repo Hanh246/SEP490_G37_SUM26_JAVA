@@ -53,6 +53,8 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
     @Autowired
     private com.sep.comiverse.plugin.crud.ChapterCrudPlugin chapterCrudPlugin;
+
+    @Autowired
     private com.sep.comiverse.service.NotificationService notificationService;
 
     private static final Pattern CHAPTER_NUMBER_PATTERN =
@@ -333,8 +335,9 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
     }
 
     private void notifySubmissionOwner(SubmissionEntity submission, boolean approved, String rejectionReason) {
+        boolean translatorSubmission = "translator".equalsIgnoreCase(submission.getQueueType());
         UUID recipientId = submission.getAuthorId();
-        if (recipientId == null && "translator".equalsIgnoreCase(submission.getQueueType())) {
+        if (recipientId == null && translatorSubmission) {
             ProjectTeamEntity team = findSubmissionTeam(submission);
             recipientId = team == null ? null : team.getLeaderId();
         }
@@ -349,7 +352,9 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 approved ? "Submission approved" : "Submission needs changes",
                 message,
                 approved ? "UPDATE" : "WARNING",
-                NotificationPreferenceKey.SUBMISSION_STATUS
+                translatorSubmission
+                        ? NotificationPreferenceKey.TEAM_UPDATES
+                        : NotificationPreferenceKey.SUBMISSION_STATUS
         );
     }
 

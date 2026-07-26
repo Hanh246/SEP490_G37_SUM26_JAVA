@@ -57,6 +57,9 @@ public class NotificationPreferenceService {
             if (!availableKeys.contains(key)) {
                 throw new CustomException(400, "Notification preference is not available for this role: " + key, HttpStatus.BAD_REQUEST);
             }
+            if (entry.getValue() == null) {
+                throw new CustomException(400, "Notification preference value is required: " + key, HttpStatus.BAD_REQUEST);
+            }
 
             NotificationPreferenceEntity preference = existing.getOrDefault(
                     key,
@@ -65,7 +68,7 @@ public class NotificationPreferenceService {
                             .preferenceKey(key)
                             .build()
             );
-            preference.setEnabled(!Boolean.FALSE.equals(entry.getValue()));
+            preference.setEnabled(entry.getValue());
             preferenceRepository.save(preference);
         }
 
@@ -75,7 +78,7 @@ public class NotificationPreferenceService {
     @Transactional(readOnly = true)
     public boolean isEnabled(UserEntity user, NotificationPreferenceKey key) {
         if (user == null || key == null || !availableKeys(user).contains(key)) {
-            return true;
+            return false;
         }
         return preferenceRepository.findByUser_IdAndPreferenceKeyAndDeletedFalse(user.getId(), key)
                 .map(NotificationPreferenceEntity::getEnabled)
