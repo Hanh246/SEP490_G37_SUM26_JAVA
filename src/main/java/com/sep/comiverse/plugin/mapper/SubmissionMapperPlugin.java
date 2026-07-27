@@ -44,6 +44,15 @@ public class SubmissionMapperPlugin extends AbstractMapperPlugin<SubmissionEntit
             List<String> genreNames = comicGenresCache.computeIfAbsent(dto.getComicId(), 
                 id -> comicRepository.findGenreNamesByComicId(id));
             dto.setGenres(genreNames);
+
+            comicRepository.findById(dto.getComicId()).ifPresent(comic -> {
+                dto.setLanguage(comic.getLanguage());
+                dto.setMinimumAge(comic.getMinimumAge());
+                if (comic.getPublicationStatus() != null) {
+                    dto.setPublicationStatus(comic.getPublicationStatus().name());
+                }
+                dto.setSummary(comic.getSummary());
+            });
         }
         if (dto != null && dto.getSubmittedBy() != null) {
             String subBy = dto.getSubmittedBy();
