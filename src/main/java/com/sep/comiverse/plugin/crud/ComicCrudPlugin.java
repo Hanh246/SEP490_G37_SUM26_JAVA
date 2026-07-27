@@ -145,6 +145,14 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
     }
 
     @Transactional(readOnly = true)
+    public List<ComicDTO> listAllForStaff() {
+        return comicRepository.findAllByDeletedFalseWithGenres()
+                .stream()
+                .map(plugin::toDto)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public Page<ComicDTO> listPublishedComics(PaginationSearchDTO paginationDTO) {
         Pageable pageable = paginationDTO.toPageRequest();
         return comicRepository.findPublishedComics(ComicModerationStatus.PUBLISHED, paginationDTO.getSearch(), pageable)

@@ -282,6 +282,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         if (submission.getChapterId() != null) {
             chapterRepository.findById(submission.getChapterId()).ifPresent(chapter -> {
                 chapter.setModerationStatus(ChapterStatus.REJECTED);
+                chapter.setRejectionReason(submission.getRejectionReason());
                 chapterRepository.save(chapter);
             });
             return;
@@ -289,6 +290,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         if (submission.getComicId() != null) {
             comicRepository.findById(submission.getComicId()).ifPresent(comic -> {
                 comic.setModerationStatus(ComicModerationStatus.REJECTED);
+                comic.setRejectionReason(submission.getRejectionReason());
                 comicRepository.save(comic);
             });
         }
