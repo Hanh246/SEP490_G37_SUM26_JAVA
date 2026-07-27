@@ -3,6 +3,7 @@ package com.sep.comiverse.plugin.crud;
 import com.sep.comiverse.dto.ProjectTeamDTO;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.entity.ProjectTeamEntity;
+import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.plugin.AbstractCrudPlugin;
 import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.repository.IProjectTeamRepository;
@@ -138,7 +139,8 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
                 team.getLeaderId(),
                 title,
                 "You are responsible for " + projectName + " (" + language + ").",
-                "UPDATE"
+                "UPDATE",
+                NotificationPreferenceKey.TEAM_UPDATES
         );
     }
 }

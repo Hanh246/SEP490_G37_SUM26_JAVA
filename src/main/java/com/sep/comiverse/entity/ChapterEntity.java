@@ -38,6 +38,9 @@ public class ChapterEntity extends BaseEntity {
     @Column(name = "moderation_status", nullable = false, length = 32)
     private ChapterStatus moderationStatus = ChapterStatus.PREVIEW_READY;
 
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
+
     /**
      * PostgreSQL text[] column storing chapter image URLs in reading order.
      * This replaces the old chapter_pages table.
@@ -56,6 +59,7 @@ public class ChapterEntity extends BaseEntity {
     private Boolean isPremium = false;
 
     @OneToMany(mappedBy = "chapter", fetch = FetchType.LAZY)
+    @Builder.Default
     private List<TeamTaskEntity> tasks = new ArrayList<>();
 
     @ManyToOne(fetch = FetchType.LAZY)

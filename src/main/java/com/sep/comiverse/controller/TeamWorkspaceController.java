@@ -11,6 +11,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.NotificationService;
+import com.sep.comiverse.service.UserPresenceService;
+import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import org.springframework.web.bind.annotation.*;
 
 import com.sep.comiverse.security.UserPrincipal;
@@ -39,6 +41,7 @@ public class TeamWorkspaceController {
     private final IUserRepository userRepository;
     private final IPageTranslationRepository iPageTranslationRepository;
     private final NotificationService notificationService;
+    private final UserPresenceService userPresenceService;
 
     // ── ANNOUNCEMENTS ────────────────────────────────
     @GetMapping("/{teamId}/announcements")
@@ -260,7 +263,14 @@ public class TeamWorkspaceController {
             return ResponseEntity.notFound().build();
         }
 
-        List<UserEntity> members = team.getMembers() != null ? team.getMembers() : Collections.emptyList();
+        List<UserEntity> members = team.getMembers() != null
+                ? new ArrayList<>(team.getMembers())
+                : new ArrayList<>();
+
+        if (team.getLeaderId() != null && members.stream().noneMatch(u -> team.getLeaderId().equals(u.getId()))) {
+            userRepository.findById(team.getLeaderId()).ifPresent(members::add);
+        }
+
         if (members.isEmpty()) {
             return ResponseEntity.ok(Collections.emptyList());
         }
@@ -270,7 +280,12 @@ public class TeamWorkspaceController {
                 .map(u -> TeamMemberDto.builder()
                         .id(u.getId())
                         .name(u.getFullName())
+                        .role(team.getLeaderId() != null && team.getLeaderId().equals(u.getId())
+                                ? "Group Leader"
+                                : "Member")
                         .avatar(computeInitials(u.getFullName()))
+                        .online(userPresenceService.isOnline(u.getId()))
+                        .lastSeenAt(u.getLastSeenAt())
                         .build())
                 .collect(Collectors.toList());
 
@@ -347,7 +362,8 @@ public class TeamWorkspaceController {
                         team.getLeaderId(),
                         "New team join request",
                         saved.getName() + " requested to join " + team.getTitle() + ".",
-                        "INFO"
+                        "INFO",
+                        NotificationPreferenceKey.TEAM_JOIN_REQUESTS
                 )
         );
         return ResponseEntity.ok(saved);
@@ -370,7 +386,19 @@ public class TeamWorkspaceController {
 
         ProjectTeamEntity team = projectTeamRepository.findById(request.getProjectTeamId()).orElse(null);
         if (team != null && "approved".equals(decision)) {
-            team.setMembersCount((team.getMembersCount() == null ? 0 : team.getMembersCount()) + 1);
+            if (request.getRequesterId() != null) {
+                userRepository.findById(request.getRequesterId()).ifPresent(user -> {
+                    if (team.getMembers() == null) {
+                        team.setMembers(new ArrayList<>());
+                    }
+                    boolean alreadyMember = team.getMembers().stream()
+                            .anyMatch(member -> member.getId().equals(user.getId()));
+                    if (!alreadyMember) {
+                        team.getMembers().add(user);
+                    }
+                });
+            }
+            team.setMembersCount(team.getMembers() == null ? 0 : team.getMembers().size());
             projectTeamRepository.save(team);
         }
 
@@ -379,7 +407,8 @@ public class TeamWorkspaceController {
                 request.getRequesterId(),
                 "Team request " + decision,
                 "Your request to join " + teamName + " was " + decision + ".",
-                "approved".equals(decision) ? "UPDATE" : "WARNING"
+                "approved".equals(decision) ? "UPDATE" : "WARNING",
+                NotificationPreferenceKey.TEAM_UPDATES
         );
         joinRequestRepository.deleteById(id);
         return ResponseEntity.ok(request);

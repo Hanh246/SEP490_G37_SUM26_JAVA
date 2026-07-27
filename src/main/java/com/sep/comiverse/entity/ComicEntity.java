@@ -52,6 +52,9 @@ public class ComicEntity extends BaseEntity {
     @Column(name = "moderation_status", nullable = false, length = 32)
     private ComicModerationStatus moderationStatus = ComicModerationStatus.DRAFT;
 
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
+
     @Column(name = "cover")
     private String cover;
 

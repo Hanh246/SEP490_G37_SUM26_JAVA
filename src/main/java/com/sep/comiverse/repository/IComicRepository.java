@@ -157,6 +157,15 @@ public interface IComicRepository
             ComicModerationStatus moderationStatus
     );
 
+    @Query("""
+            SELECT DISTINCT c
+            FROM ComicEntity c
+            LEFT JOIN FETCH c.genres
+            WHERE c.deleted = false
+            """)
+    List<ComicEntity>
+    findAllByDeletedFalseWithGenres();
+
     Page<ComicEntity>
     findByDeletedFalseAndModerationStatus(
             ComicModerationStatus moderationStatus,

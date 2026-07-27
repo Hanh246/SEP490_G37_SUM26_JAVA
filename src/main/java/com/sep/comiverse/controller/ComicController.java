@@ -112,6 +112,16 @@ public class ComicController {
                 .build());
     }
 
+    @GetMapping("/staff/all")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'MODERATOR', 'TRANSLATOR', 'PROJECT_LEADER')")
+    @Operation(summary = "Retrieve all comics (including un-published) for staff")
+    public ResponseEntity<BaseResponse<List<ComicDTO>>> listAllForStaff() {
+        return ResponseEntity.ok(BaseResponse.<List<ComicDTO>>builder()
+                .success(true)
+                .data(comicCrudPlugin.listAllForStaff())
+                .build());
+    }
+
 
     @GetMapping("/explore")
     @Operation(summary = "Explore published catalog using optimized cursor pagination with filters and dynamic sorting")

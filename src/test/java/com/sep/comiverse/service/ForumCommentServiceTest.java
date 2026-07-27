@@ -5,6 +5,7 @@ import com.sep.comiverse.dto.request.CreateForumCommentRequest;
 import com.sep.comiverse.entity.ForumCommentEntity;
 import com.sep.comiverse.entity.ForumThreadEntity;
 import com.sep.comiverse.entity.UserEntity;
+import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IForumCommentRepository;
 import com.sep.comiverse.repository.IForumThreadRepository;
@@ -81,7 +82,8 @@ class ForumCommentServiceTest {
                 "New reply to your forum post",
                 "Reply User replied in \"Thread title\".",
                 "FORUM",
-                "/forum/thread/" + threadId + "?comment=" + savedId
+                "/forum/thread/" + threadId + "?comment=" + savedId,
+                NotificationPreferenceKey.FORUM_ACTIVITY
         );
     }
 
@@ -116,7 +118,8 @@ class ForumCommentServiceTest {
                 "New reply to your forum comment",
                 "Reply User replied in \"Thread title\".",
                 "FORUM",
-                "/forum/thread/" + threadId + "?comment=" + savedId
+                "/forum/thread/" + threadId + "?comment=" + savedId,
+                NotificationPreferenceKey.FORUM_ACTIVITY
         );
     }
 
@@ -141,7 +144,8 @@ class ForumCommentServiceTest {
                 "New reply to your forum post",
                 "Reply User replied in \"Thread title\".",
                 "FORUM",
-                "/forum/thread/" + threadId + "?comment=" + savedId
+                "/forum/thread/" + threadId + "?comment=" + savedId,
+                NotificationPreferenceKey.FORUM_ACTIVITY
         );
     }
 
@@ -167,7 +171,8 @@ class ForumCommentServiceTest {
                 "New reply to your forum post",
                 "Reply User replied in \"Thread title\".",
                 "FORUM",
-                "/forum/thread/" + threadId + "?comment=" + savedId
+                "/forum/thread/" + threadId + "?comment=" + savedId,
+                NotificationPreferenceKey.FORUM_ACTIVITY
         );
     }
 
@@ -188,7 +193,10 @@ class ForumCommentServiceTest {
         );
 
         assertNotNull(result);
-        verify(notificationService, never()).notifyUser(any(), any(), any(), any(), any());
+        verify(notificationService, never()).notifyUser(
+                any(), any(), any(), any(), any(),
+                org.mockito.ArgumentMatchers.eq(NotificationPreferenceKey.FORUM_ACTIVITY)
+        );
     }
 
     @Test

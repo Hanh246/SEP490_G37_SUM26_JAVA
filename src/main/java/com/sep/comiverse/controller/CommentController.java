@@ -14,7 +14,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import com.sep.comiverse.security.UserPrincipal;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -118,6 +122,66 @@ public class CommentController {
                         data.getTotalPages()
                 ))
                 .data(data.toList())
+                .build());
+    }
+
+    @GetMapping("/comics/{id}")
+    @Operation(summary = "Get comic comment thread by comment ID")
+    public ResponseEntity<BaseResponse<List<ComicCommentDTO>>> getComicCommentThread(
+            @PathVariable("id") UUID id
+    ) {
+        List<ComicCommentDTO> responseData = commentService.getComicCommentThreadById(id);
+        return ResponseEntity.ok(BaseResponse.<List<ComicCommentDTO>>builder()
+                .success(true)
+                .data(responseData)
+                .message("Comic comment thread retrieved successfully")
+                .build());
+    }
+
+    @GetMapping("/chapters/{id}")
+    @Operation(summary = "Get chapter comment thread by comment ID")
+    public ResponseEntity<BaseResponse<List<ChapterCommentDTO>>> getChapterCommentThread(
+            @PathVariable("id") UUID id
+    ) {
+        List<ChapterCommentDTO> responseData = commentService.getChapterCommentThreadById(id);
+        return ResponseEntity.ok(BaseResponse.<List<ChapterCommentDTO>>builder()
+                .success(true)
+                .data(responseData)
+                .message("Chapter comment thread retrieved successfully")
+                .build());
+    }
+
+    @DeleteMapping("/comics/{id}")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Delete a comic comment by ID")
+    public ResponseEntity<BaseResponse<Void>> deleteComicComment(
+            @PathVariable("id") UUID id,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        UUID userId = principal != null ? principal.getId() : jwtTokenUtil.getCurrentUserId();
+        String role = principal != null ? principal.getRole() : null;
+        commentService.deleteComicComment(id, userId, role);
+
+        return ResponseEntity.ok(BaseResponse.<Void>builder()
+                .success(true)
+                .message("Comic comment deleted successfully")
+                .build());
+    }
+
+    @DeleteMapping("/chapters/{id}")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Delete a chapter comment by ID")
+    public ResponseEntity<BaseResponse<Void>> deleteChapterComment(
+            @PathVariable("id") UUID id,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        UUID userId = principal != null ? principal.getId() : jwtTokenUtil.getCurrentUserId();
+        String role = principal != null ? principal.getRole() : null;
+        commentService.deleteChapterComment(id, userId, role);
+
+        return ResponseEntity.ok(BaseResponse.<Void>builder()
+                .success(true)
+                .message("Chapter comment deleted successfully")
                 .build());
     }
 }
