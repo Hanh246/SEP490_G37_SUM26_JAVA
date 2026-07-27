@@ -129,4 +129,26 @@ public class ReadingHistoryService {
         java.time.Instant oneMonthAgo = java.time.Instant.now().minus(30, java.time.temporal.ChronoUnit.DAYS);
         readingHistoryRepository.deleteOldHistoryExceptLatest(oneMonthAgo);
     }
+
+    public long getReadComicCount(UUID userId) {
+        if (userId == null) {
+            return 0;
+        }
+        java.util.Set<UUID> readComicIds = new java.util.HashSet<>(readingHistoryRepository.findReadComicIdsByUserId(userId));
+        try {
+            Set<Object> queuedEntries = redisTemplate.opsForSet().members(READING_HISTORY_SYNC_QUEUE);
+            if (queuedEntries != null && !queuedEntries.isEmpty()) {
+                for (Object obj : queuedEntries) {
+                    if (obj instanceof ReadingHistoryCacheDTO entry) {
+                        if (userId.equals(entry.getUserId()) && entry.getComicId() != null) {
+                            readComicIds.add(entry.getComicId());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Ignore Redis connection/read errors
+        }
+        return readComicIds.size();
+    }
 }

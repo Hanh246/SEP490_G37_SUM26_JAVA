@@ -12,6 +12,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.NotificationService;
 import com.sep.comiverse.service.UserPresenceService;
+import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import org.springframework.web.bind.annotation.*;
 
 import com.sep.comiverse.security.UserPrincipal;
@@ -361,7 +362,8 @@ public class TeamWorkspaceController {
                         team.getLeaderId(),
                         "New team join request",
                         saved.getName() + " requested to join " + team.getTitle() + ".",
-                        "INFO"
+                        "INFO",
+                        NotificationPreferenceKey.TEAM_JOIN_REQUESTS
                 )
         );
         return ResponseEntity.ok(saved);
@@ -405,7 +407,8 @@ public class TeamWorkspaceController {
                 request.getRequesterId(),
                 "Team request " + decision,
                 "Your request to join " + teamName + " was " + decision + ".",
-                "approved".equals(decision) ? "UPDATE" : "WARNING"
+                "approved".equals(decision) ? "UPDATE" : "WARNING",
+                NotificationPreferenceKey.TEAM_UPDATES
         );
         joinRequestRepository.deleteById(id);
         return ResponseEntity.ok(request);

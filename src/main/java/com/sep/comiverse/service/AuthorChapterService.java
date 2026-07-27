@@ -10,6 +10,7 @@ import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
+import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.plugin.crud.ChapterCrudPlugin;
 import com.sep.comiverse.plugin.crud.ComicCrudPlugin;
@@ -374,7 +375,8 @@ public class AuthorChapterService {
                 List.of("MODERATOR"),
                 "New chapter review",
                 comic.getTitle() + " - Chapter " + chapter.getChapterNumber() + " is waiting for moderation.",
-                "UPDATE"
+                "UPDATE",
+                NotificationPreferenceKey.REVIEW_QUEUE
         );
     }
 

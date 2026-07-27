@@ -10,6 +10,7 @@ import com.sep.comiverse.entity.ComicMetricSnapshotEntity;
 import com.sep.comiverse.entity.GenreEntity;
 import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.entity.enums.ComicModerationStatus;
+import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.entity.enums.ComicPublicationStatus;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IChapterRepository;
@@ -303,7 +304,8 @@ public class AuthorComicService {
                 List.of("MODERATOR"),
                 "New comic review",
                 comic.getTitle() + " was submitted by an author for moderation.",
-                "UPDATE"
+                "UPDATE",
+                NotificationPreferenceKey.REVIEW_QUEUE
         );
     }
 

@@ -77,4 +77,17 @@ public class ReadingHistoryController {
                         .build()
         );
     }
+
+    @GetMapping("/count")
+    @Operation(summary = "Get count of read comics", description = "Retrieve total count of unique comics read by the logged-in user")
+    public ResponseEntity<BaseResponse<Long>> getReadComicCount() {
+        UUID userId = jwtTokenUtil.getCurrentUserId();
+        long count = readingHistoryService.getReadComicCount(userId);
+        return ResponseEntity.ok(
+                BaseResponse.<Long>builder()
+                        .success(true)
+                        .data(count)
+                        .build()
+        );
+    }
 }

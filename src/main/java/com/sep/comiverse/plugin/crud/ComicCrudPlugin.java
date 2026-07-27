@@ -233,6 +233,31 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
             // Ignore Redis hash errors
         }
 
+        //adjust rating stats from Redis deltas
+        try {
+            Number rawRatingCount = (Number) redisTemplate.opsForHash().get(UserInteractionSyncScheduler.COMIC_RATING_COUNT_HASH, comicIdStr);
+            Number rawRatingSum = (Number) redisTemplate.opsForHash().get(UserInteractionSyncScheduler.COMIC_RATING_SUM_HASH, comicIdStr);
+
+            int deltaCount = (rawRatingCount != null) ? rawRatingCount.intValue() : 0;
+            double deltaSum = (rawRatingSum != null) ? rawRatingSum.doubleValue() : 0.0;
+
+            if (deltaCount != 0 || deltaSum != 0.0) {
+                int baseCount = (dto.getRatingCount() != null) ? dto.getRatingCount() : 0;
+                double baseAvg = (dto.getRatingAverage() != null) ? dto.getRatingAverage() : 0.0;
+                double baseSum = baseAvg * baseCount;
+
+                int effectiveCount = Math.max(0, baseCount + deltaCount);
+                double effectiveSum = Math.max(0.0, baseSum + deltaSum);
+                double calculatedAvg = (effectiveCount > 0) ? Math.round((effectiveSum / effectiveCount) * 10.0) / 10.0 : 0.0;
+                double effectiveAvg = Math.min(5.0, Math.max(0.0, calculatedAvg));
+
+                dto.setRatingCount(effectiveCount);
+                dto.setRatingAverage(effectiveAvg);
+            }
+        } catch (Exception e) {
+            // Ignore Redis hash errors
+        }
+
         return dto;
     }
 

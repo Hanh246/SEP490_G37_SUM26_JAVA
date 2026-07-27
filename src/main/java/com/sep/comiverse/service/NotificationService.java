@@ -3,6 +3,7 @@ package com.sep.comiverse.service;
 import com.sep.comiverse.dto.response.NotificationResponse;
 import com.sep.comiverse.entity.NotificationEntity;
 import com.sep.comiverse.entity.UserEntity;
+import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.INotificationRepository;
 import com.sep.comiverse.repository.IUserRepository;
@@ -27,20 +28,29 @@ public class NotificationService {
     private final INotificationRepository notificationRepository;
     private final IUserRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final NotificationPreferenceService notificationPreferenceService;
 
     @Transactional
-    public boolean notifyUser(UUID userId, String title, String message, String type) {
-        return notifyUser(userId, title, message, type, null);
+    public boolean notifyUser(UUID userId, String title, String message, String type, NotificationPreferenceKey preferenceKey) {
+        return notifyUser(userId, title, message, type, null, preferenceKey);
     }
 
     @Transactional
-    public boolean notifyUser(UUID userId, String title, String message, String type, String actionUrl) {
-        if (userId == null) {
+    public boolean notifyUser(
+            UUID userId,
+            String title,
+            String message,
+            String type,
+            String actionUrl,
+            NotificationPreferenceKey preferenceKey
+    ) {
+        if (userId == null || preferenceKey == null) {
             return false;
         }
 
         return userRepository.findByIdWithRole(userId)
                 .filter(this::canReceiveNotifications)
+                .filter(user -> notificationPreferenceService.isEnabled(user, preferenceKey))
                 .map(user -> {
                     NotificationEntity entity = buildWorkflowNotification(user, title, message, type, null, actionUrl);
                     NotificationEntity saved = notificationRepository.save(entity);
@@ -52,8 +62,14 @@ public class NotificationService {
     }
 
     @Transactional
-    public int notifyRoles(Collection<String> roles, String title, String message, String type) {
-        if (roles == null || roles.isEmpty()) {
+    public int notifyRoles(
+            Collection<String> roles,
+            String title,
+            String message,
+            String type,
+            NotificationPreferenceKey preferenceKey
+    ) {
+        if (roles == null || roles.isEmpty() || preferenceKey == null) {
             return 0;
         }
 
@@ -71,7 +87,9 @@ public class NotificationService {
                 cb.or(cb.isNull(root.get("status")), cb.equal(cb.upper(root.get("status")), "ACTIVE")),
                 cb.upper(root.get("role").get("roleName")).in(normalizedRoles)
         );
-        List<UserEntity> recipients = userRepository.findAll(spec);
+        List<UserEntity> recipients = userRepository.findAll(spec).stream()
+                .filter(user -> notificationPreferenceService.isEnabled(user, preferenceKey))
+                .toList();
         String targetRoles = String.join(", ", normalizedRoles);
 
         List<NotificationEntity> savedList = notificationRepository.saveAll(recipients.stream()
