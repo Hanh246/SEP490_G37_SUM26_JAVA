@@ -20,17 +20,20 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
     private final IGenreRepository genreRepository;
     private final IAuthorRepository authorRepository;
     private final IUserRepository userRepository;
+    private final com.sep.comiverse.repository.IChapterRepository chapterRepository;
     private final Map<UUID, String> authorNameCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Autowired
     public ComicMapperPlugin(ModelMapper modelMapper,
                              IGenreRepository genreRepository,
                              IAuthorRepository authorRepository,
-                             IUserRepository userRepository) {
+                             IUserRepository userRepository,
+                             com.sep.comiverse.repository.IChapterRepository chapterRepository) {
         super(ComicEntity.class, ComicDTO.class, UUID.class, modelMapper);
         this.genreRepository = genreRepository;
         this.authorRepository = authorRepository;
         this.userRepository = userRepository;
+        this.chapterRepository = chapterRepository;
 
         // Skip mapping genres from DTO to Entity to prevent ModelMapper map exceptions
         modelMapper.typeMap(ComicDTO.class, ComicEntity.class)
@@ -90,6 +93,15 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
             dto.setGenres(genreDtos);
         } else {
             dto.setGenres(new HashSet<>());
+        }
+
+        if (model.getId() != null) {
+            long rejected = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
+                    model.getId(), com.sep.comiverse.entity.enums.ChapterStatus.REJECTED);
+            long pending = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
+                    model.getId(), com.sep.comiverse.entity.enums.ChapterStatus.PENDING_REVIEW);
+            dto.setRejectedChapterCount((int) rejected);
+            dto.setPendingChapterCount((int) pending);
         }
 
         return dto;
