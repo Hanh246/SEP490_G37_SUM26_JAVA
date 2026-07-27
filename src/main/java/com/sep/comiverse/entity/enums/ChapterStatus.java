@@ -8,5 +8,6 @@ public enum ChapterStatus {
     REJECTED,
     NEEDS_CHANGES,
     PUBLISHED,
-    UNPUBLISHED
+    UNPUBLISHED,
+    PENDING_REVIEW
 }

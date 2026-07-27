@@ -11,7 +11,9 @@ import com.sep.comiverse.entity.ReviewCommentEntity;
 import com.sep.comiverse.entity.TeamTaskEntity;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
+import com.sep.comiverse.entity.ChapterTranslationEntity;
 import com.sep.comiverse.repository.IChapterRepository;
+import com.sep.comiverse.repository.IChapterTranslationRepository;
 import com.sep.comiverse.repository.IPageTranslationRepository;
 import com.sep.comiverse.repository.IProjectTeamRepository;
 import com.sep.comiverse.repository.IReviewCommentRepository;
@@ -48,6 +50,7 @@ public class ReviewController {
     private final IProjectTeamRepository projectTeamRepository;
     private final IChapterRepository chapterRepository;
     private final com.sep.comiverse.repository.IComicRepository comicRepository;
+    private final IChapterTranslationRepository chapterTranslationRepository;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -223,9 +226,8 @@ public class ReviewController {
 
     private void publishChapterFromTask(TeamTaskEntity task, List<PageTranslationEntity> pages) {
         ChapterEntity chapter = task.getChapter();
-        log.info("[publishChapterFromTask] task.getChapter() = {}", chapter);
         if (chapter == null) {
-            log.warn("[publishChapterFromTask] task has no chapter, nothing to publish for taskId={}", task.getId());
+            log.warn("[publishChapterFromTask] task {} has no chapter linked, skipping publish", task.getId());
             return;
         }
 
@@ -247,6 +249,26 @@ public class ReviewController {
             comic.setChapterCount(publishedCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) publishedCount);
             comicRepository.save(comic);
         }
+
+        // ── Publish bản dịch vào chapter_translations ──────────────────────
+        String languageCode = (team != null && team.getTargetLang() != null)
+                ? team.getTargetLang()
+                : "vi"; // fallback mặc định
+        String pagesBubblesJson = buildPagesBubblesJson(pages);
+        UUID teamId = task.getProjectTeamId();
+
+        // Upsert: nếu đã tồn tại bản ghi cùng chapter + languageCode thì update, ngược lại tạo mới
+        ChapterTranslationEntity translation = chapterTranslationRepository
+                .findByChapter_IdAndLanguageCode(savedChapter.getId(), languageCode)
+                .orElseGet(ChapterTranslationEntity::new);
+
+        translation.setChapter(savedChapter);
+        translation.setLanguageCode(languageCode);
+        translation.setPagesBubbles(pagesBubblesJson);
+        translation.setProjectTeamId(teamId);
+        chapterTranslationRepository.save(translation);
+        log.info("[publishChapterFromTask] Saved ChapterTranslationEntity for chapterId={} languageCode={} teamId={}",
+                savedChapter.getId(), languageCode, teamId);
     }
 
     private String buildPagesBubblesJson(List<PageTranslationEntity> pages) {
