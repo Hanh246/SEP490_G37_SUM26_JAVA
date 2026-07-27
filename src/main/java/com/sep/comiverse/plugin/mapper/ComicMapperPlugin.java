@@ -99,7 +99,7 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
             long rejected = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
                     model.getId(), com.sep.comiverse.entity.enums.ChapterStatus.REJECTED);
             long pending = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
-                    model.getId(), com.sep.comiverse.entity.enums.ChapterStatus.PENDING_REVIEW);
+                    model.getId(), com.sep.comiverse.entity.enums.ChapterStatus.SUBMITTED_FOR_REVIEW);
             dto.setRejectedChapterCount((int) rejected);
             dto.setPendingChapterCount((int) pending);
         }
