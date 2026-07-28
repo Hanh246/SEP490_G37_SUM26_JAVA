@@ -12,6 +12,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.NotificationService;
 import com.sep.comiverse.service.UserPresenceService;
+import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import org.springframework.web.bind.annotation.*;
 
 import com.sep.comiverse.security.UserPrincipal;
@@ -361,7 +362,8 @@ public class TeamWorkspaceController {
                         team.getLeaderId(),
                         "New team join request",
                         saved.getName() + " requested to join " + team.getTitle() + ".",
-                        "INFO"
+                        "INFO",
+                        NotificationPreferenceKey.TEAM_JOIN_REQUESTS
                 )
         );
         return ResponseEntity.ok(saved);
@@ -405,7 +407,8 @@ public class TeamWorkspaceController {
                 request.getRequesterId(),
                 "Team request " + decision,
                 "Your request to join " + teamName + " was " + decision + ".",
-                "approved".equals(decision) ? "UPDATE" : "WARNING"
+                "approved".equals(decision) ? "UPDATE" : "WARNING",
+                NotificationPreferenceKey.TEAM_UPDATES
         );
         joinRequestRepository.deleteById(id);
         return ResponseEntity.ok(request);
@@ -437,5 +440,34 @@ public class TeamWorkspaceController {
         iPageTranslationRepository.saveAll(pages);
 
         return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    @PutMapping("/tasks/{taskId}")
+    public ResponseEntity<?> updateTask(@PathVariable UUID taskId, @RequestBody Map<String, Object> updates) {
+        TeamTaskEntity task = taskRepository.findById(taskId).orElse(null);
+        if (task == null) {
+            return ResponseEntity.status(404).body(Map.of("success", false, "message", "Task not found"));
+        }
+
+        if (updates.containsKey("title")) {
+            task.setTitle((String) updates.get("title"));
+        }
+        if (updates.containsKey("status")) {
+            task.setStatus((String) updates.get("status"));
+        }
+        if (updates.containsKey("dueDate")) {
+            task.setDueDate((String) updates.get("dueDate"));
+        }
+        if (updates.containsKey("assigneeIds")) {
+            @SuppressWarnings("unchecked")
+            List<String> rawIds = (List<String>) updates.get("assigneeIds");
+            List<UUID> assigneeIds = rawIds.stream()
+                    .map(UUID::fromString)
+                    .collect(Collectors.toList());
+            task.setAssigneeIds(assigneeIds);
+        }
+
+        TeamTaskEntity saved = taskRepository.save(task);
+        return ResponseEntity.ok(saved);
     }
 }

@@ -48,5 +48,10 @@ public class UserLikeService {
     public List<UUID> getLikedComicIds(UUID userId) {
         return userLikeRepository.findLikedComicIdsByUserId(userId);
     }
+
+    public long getLikedComicCount(UUID userId) {
+        if (userId == null) return 0;
+        return userLikeRepository.countByUserId(userId);
+    }
 }
 

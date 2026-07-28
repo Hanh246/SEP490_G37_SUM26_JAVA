@@ -7,6 +7,7 @@ import com.sep.comiverse.dto.request.CreateChapterCommentRequest;
 import com.sep.comiverse.dto.request.CreateComicCommentRequest;
 import com.sep.comiverse.entity.ChapterCommentEntity;
 import com.sep.comiverse.entity.ComicCommentEntity;
+import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IChapterCommentRepository;
 import com.sep.comiverse.repository.IChapterRepository;
@@ -349,7 +350,14 @@ public class CommentService {
                     : "Someone";
             String notificationTitle = "New reply to your comment";
             String message = actorName + " replied to your comment.";
-            notificationService.notifyUser(recipientId, notificationTitle, message, "COMMENT", actionUrl);
+            notificationService.notifyUser(
+                    recipientId,
+                    notificationTitle,
+                    message,
+                    "COMMENT",
+                    actionUrl,
+                    NotificationPreferenceKey.FORUM_ACTIVITY
+            );
         }
     }
 }

@@ -135,7 +135,9 @@ public class AuthController {
                 principal.getId(),
                 request.getFullName(),
                 request.getAvatarUrl(),
-                request.getBackgroundImageUrl()
+                request.getBackgroundImageUrl(),
+                request.getDateOfBirth(),
+                request.getBio()
         );
         UserProfileResponse response = premiumPlanService.toUserProfileResponse(updatedUser);
         return ResponseEntity.ok(BaseResponse.<UserProfileResponse>builder()

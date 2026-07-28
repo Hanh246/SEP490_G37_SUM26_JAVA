@@ -5,6 +5,7 @@ import com.sep.comiverse.dto.request.CreateForumCommentRequest;
 import com.sep.comiverse.entity.ForumCommentEntity;
 import com.sep.comiverse.entity.ForumThreadEntity;
 import com.sep.comiverse.entity.UserEntity;
+import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IForumCommentRepository;
 import com.sep.comiverse.repository.IForumThreadRepository;
@@ -76,7 +77,14 @@ public class ForumCommentService {
                     : "New reply to your forum comment";
             String message = actorName + " replied in \"" + abbreviate(thread.getTitle(), 80) + "\".";
             String actionUrl = "/forum/thread/" + threadId + "?comment=" + saved.getId();
-            notificationService.notifyUser(recipientId, notificationTitle, message, "FORUM", actionUrl);
+            notificationService.notifyUser(
+                    recipientId,
+                    notificationTitle,
+                    message,
+                    "FORUM",
+                    actionUrl,
+                    NotificationPreferenceKey.FORUM_ACTIVITY
+            );
         }
 
         return toDto(saved, actor);

@@ -26,6 +26,8 @@ public class ChapterDTO {
 
     private ChapterStatus moderationStatus;
 
+    private String rejectionReason;
+
     @Builder.Default
     private Long viewCount = 0L;
 

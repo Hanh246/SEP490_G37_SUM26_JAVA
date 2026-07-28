@@ -81,6 +81,19 @@ public class UserSaveController {
         );
     }
 
+    @GetMapping("/count")
+    @Operation(summary = "Get total count of saved comics", description = "Retrieve total count of comics saved/bookmarked by the logged-in user")
+    public ResponseEntity<BaseResponse<Long>> getSavedComicCount() {
+        UUID userId = this.getCurrentUserId();
+        long count = userSaveService.getSavedComicCount(userId);
+        return ResponseEntity.ok(
+                BaseResponse.<Long>builder()
+                        .success(true)
+                        .data(count)
+                        .build()
+        );
+    }
+
     private UUID getCurrentUserId(){
         return jwtTokenUtil.getCurrentUserId();
     }

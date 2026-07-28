@@ -27,6 +27,8 @@ public class ComicDTO {
     private String authorName;
     private ComicPublicationStatus publicationStatus;
     private ComicModerationStatus moderationStatus;
+
+    private String rejectionReason;
     private String cover;
 
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
@@ -48,5 +50,7 @@ public class ComicDTO {
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Instant updatedAt;
     private Integer chapterCount;
+    private Integer rejectedChapterCount;
+    private Integer pendingChapterCount;
     private java.time.Instant lastChapterUpdatedAt;
 }

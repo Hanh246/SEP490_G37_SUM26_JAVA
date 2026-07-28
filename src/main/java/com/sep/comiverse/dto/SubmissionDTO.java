@@ -31,4 +31,8 @@ public class SubmissionDTO {
     private String rejectionReason;
     private UUID moderatorId;
     private String moderatorName;
+    private String language;
+    private Integer minimumAge;
+    private String publicationStatus;
+    private String summary;
 }
