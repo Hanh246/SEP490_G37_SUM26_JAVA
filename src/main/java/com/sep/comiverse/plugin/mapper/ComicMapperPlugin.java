@@ -96,17 +96,10 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
         }
 
         if (model.getId() != null) {
-            long chapters = chapterRepository.countByComic_IdAndDeletedFalse(model.getId());
-            long rejected = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
-                    model.getId(), com.sep.comiverse.entity.enums.ChapterStatus.REJECTED);
-            long pending = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
-                    model.getId(), com.sep.comiverse.entity.enums.ChapterStatus.SUBMITTED_FOR_REVIEW);
-            // Use the higher value between the actual count from chapters table
-            // and the stored chapter_count in comics table (for scraped/mock data)
             int storedCount = model.getChapterCount() != null ? model.getChapterCount() : 0;
-            dto.setChapterCount(Math.max((int) chapters, storedCount));
-            dto.setRejectedChapterCount((int) rejected);
-            dto.setPendingChapterCount((int) pending);
+            dto.setChapterCount(storedCount);
+            dto.setRejectedChapterCount(0);
+            dto.setPendingChapterCount(0);
         }
 
         return dto;
