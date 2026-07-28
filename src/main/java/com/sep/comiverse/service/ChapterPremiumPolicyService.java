@@ -13,7 +13,7 @@ public class ChapterPremiumPolicyService {
     private final int freeChapterCount;
 
     public ChapterPremiumPolicyService(
-            @Value("${premium.free-chapter-count:3}") int freeChapterCount
+            @Value("${premium.free-chapter-count:2}") int freeChapterCount
     ) {
         this.freeChapterCount = Math.max(freeChapterCount, 0);
     }

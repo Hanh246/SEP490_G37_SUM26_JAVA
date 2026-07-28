@@ -6,6 +6,7 @@ import com.sep.comiverse.dto.ReadingHistoryCacheDTO;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
+import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.plugin.AbstractCrudPlugin;
 import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.repository.IChapterRepository;
@@ -16,6 +17,7 @@ import com.sep.comiverse.service.ReadingHistoryService;
 import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.plugin.core.PluginRegistry;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,51 +63,48 @@ public class ChapterCrudPlugin
 
     @Transactional(readOnly = true)
     public ChapterDTO getChapterDetail(UUID chapterId, UUID userId, String clientIp) {
+        ChapterEntity publishedChapter = chapterRepository
+                .findByIdAndDeletedFalseAndModerationStatus(chapterId, ChapterStatus.PUBLISHED)
+                .orElseThrow(() -> new CustomException(
+                        404,
+                        "Chapter not found",
+                        HttpStatus.NOT_FOUND
+                ));
         String cacheKey = CHAPTER_DETAIL_CACHE_PREFIX + chapterId;
 
         ChapterLiteDTO cacheDto = null;
         try {
             cacheDto = (ChapterLiteDTO) redisTemplate.opsForValue().get(cacheKey);
         } catch (Exception e) {
-            // Delete corrupt cache so it can be rebuilt
+            // Delete corrupt cache so it can be rebuilt.
             try {
                 redisTemplate.delete(cacheKey);
-            } catch (Exception ex) {
-                // Ignore
+            } catch (Exception ignored) {
+                // Redis is optional for chapter reads.
             }
         }
-        List<String> images;
 
         if (cacheDto == null) {
-            ChapterEntity entity = chapterRepository.findById(chapterId)
-                    .orElseThrow(() -> new RuntimeException("Chapter not found"));
-
             cacheDto = ChapterLiteDTO.builder()
-                    .id(entity.getId())
-                    .comicId(entity.getComic().getId())
-                    .chapterNumber(entity.getChapterNumber())
-                    .title(entity.getTitle())
-                    .viewCount(entity.getViewCount())
-                    .isPremium(chapterPremiumPolicyService.isPremiumChapter(entity.getChapterNumber()))
-                    .createdAt(entity.getCreatedAt())
+                    .id(publishedChapter.getId())
+                    .comicId(publishedChapter.getComic().getId())
+                    .chapterNumber(publishedChapter.getChapterNumber())
+                    .title(publishedChapter.getTitle())
+                    .viewCount(publishedChapter.getViewCount())
+                    .isPremium(chapterPremiumPolicyService.isPremiumChapter(publishedChapter.getChapterNumber()))
+                    .createdAt(publishedChapter.getCreatedAt())
                     .build();
 
             try {
                 redisTemplate.opsForValue().set(cacheKey, cacheDto, Duration.ofDays(3));
-            } catch (Exception e) {
-                // Ignore Redis set errors
-            }
-            images = entity.getImages();
-        }else {
-            List<String> rawImages = chapterRepository.findImagesByChapterIdAndStatus(chapterId);
-
-            if (rawImages != null && rawImages.size() == 1 && rawImages.getFirst().contains(",")) {
-                images = java.util.Arrays.asList(rawImages.getFirst().split(","));
-            } else {
-                images = rawImages != null ? rawImages : Collections.emptyList();
+            } catch (Exception ignored) {
+                // Redis is optional for chapter reads.
             }
         }
 
+        List<String> images = publishedChapter.getImages() == null
+                ? Collections.emptyList()
+                : publishedChapter.getImages();
         boolean premiumRequired = chapterPremiumPolicyService.isPremiumChapter(cacheDto.getChapterNumber());
         boolean hasContentAccess = !premiumRequired || checkUserPremiumAccess(userId);
 
@@ -124,18 +123,19 @@ public class ChapterCrudPlugin
         if (hasContentAccess) {
             try {
                 trackAndIncrementView(responseDto.getComicId(), chapterId, userId, clientIp);
-            } catch (Exception e) {
-                // Ignore view tracking errors if Redis is down
+            } catch (Exception ignored) {
+                // Redis view tracking must not block reading.
             }
         }
 
         try {
-            Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString());
+            Number rawChapterViews = (Number) redisTemplate.opsForHash()
+                    .get(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString());
             if (rawChapterViews != null && responseDto.getViewCount() != null) {
                 responseDto.setViewCount(responseDto.getViewCount() + rawChapterViews.intValue());
             }
-        } catch (Exception e) {
-            // Ignore Redis view count lookup errors if Redis is down
+        } catch (Exception ignored) {
+            // Redis view counts are best effort.
         }
 
         return responseDto;
@@ -172,7 +172,8 @@ public class ChapterCrudPlugin
         if (chapterId == null) {
             return false;
         }
-        return chapterRepository.findById(chapterId)
+        return chapterRepository
+                .findByIdAndDeletedFalseAndModerationStatus(chapterId, ChapterStatus.PUBLISHED)
                 .map(chapter -> !chapterPremiumPolicyService.isPremiumChapter(chapter.getChapterNumber())
                         || checkUserPremiumAccess(userId))
                 .orElse(false);

@@ -71,8 +71,25 @@ public class StripeGatewayService {
         }
         form.add("metadata[plan_id]", plan.getId().toString());
         form.add("metadata[plan_code]", plan.getCode());
-        JsonNode response = postForm("/v1/products", form);
+        JsonNode response = postForm(
+                "/v1/products",
+                form,
+                catalogIdempotencyKey("product", plan)
+        );
         return requiredText(response, "id", "Stripe did not return a product ID");
+    }
+
+    public void updateProduct(SubscriptionPlanEntity plan) {
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("name", plan.getName());
+        form.add("description", plan.getDescription() == null ? "" : plan.getDescription());
+        form.add("metadata[plan_id]", plan.getId().toString());
+        form.add("metadata[plan_code]", plan.getCode());
+        postForm(
+                "/v1/products/" + plan.getStripeProductId(),
+                form,
+                catalogIdempotencyKey("product-update", plan)
+        );
     }
 
     public String createRecurringPrice(SubscriptionPlanEntity plan, String productId) {
@@ -85,17 +102,30 @@ public class StripeGatewayService {
         form.add("nickname", plan.getName());
         form.add("metadata[plan_id]", plan.getId().toString());
         form.add("metadata[plan_code]", plan.getCode());
-        JsonNode response = postForm("/v1/prices", form);
+        JsonNode response = postForm(
+                "/v1/prices",
+                form,
+                catalogIdempotencyKey("price", plan)
+        );
         return requiredText(response, "id", "Stripe did not return a price ID");
     }
 
-    public JsonNode createCheckoutSession(UUID userId, String userEmail, SubscriptionPlanEntity plan) {
+    public JsonNode createCheckoutSession(
+            UUID userId,
+            String userEmail,
+            SubscriptionPlanEntity plan,
+            String existingCustomerId
+    ) {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("mode", "subscription");
         form.add("success_url", frontendUrl + "/subscription/success?session_id={CHECKOUT_SESSION_ID}");
         form.add("cancel_url", frontendUrl + "/subscription/cancel");
         form.add("client_reference_id", userId.toString());
-        form.add("customer_email", userEmail);
+        if (existingCustomerId != null && !existingCustomerId.isBlank()) {
+            form.add("customer", existingCustomerId);
+        } else {
+            form.add("customer_email", userEmail);
+        }
         form.add("line_items[0][price]", plan.getStripePriceId());
         form.add("line_items[0][quantity]", "1");
         form.add("metadata[user_id]", userId.toString());
@@ -106,7 +136,13 @@ public class StripeGatewayService {
         form.add("subscription_data[metadata][plan_code]", plan.getCode());
         form.add("billing_address_collection", "auto");
         form.add("payment_method_collection", "always");
-        return postForm("/v1/checkout/sessions", form);
+        // Every explicit checkout attempt gets a fresh Stripe session. Reusing a time-bucketed
+        // idempotency key can return a previously cancelled or expired Checkout URL.
+        return postForm(
+                "/v1/checkout/sessions",
+                form,
+                "checkout-" + userId + "-" + UUID.randomUUID()
+        );
     }
 
     public JsonNode retrieveCheckoutSession(String sessionId) {
@@ -139,7 +175,7 @@ public class StripeGatewayService {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("customer", customerId);
         form.add("return_url", frontendUrl + "/profile");
-        return postForm("/v1/billing_portal/sessions", form);
+        return postForm("/v1/billing_portal/sessions", form, null);
     }
 
     public JsonNode verifyAndParseWebhook(String payload, String signatureHeader) {
@@ -198,18 +234,42 @@ public class StripeGatewayService {
     }
 
     private JsonNode postForm(String path, MultiValueMap<String, String> form) {
+        return postForm(path, form, null);
+    }
+
+    private JsonNode postForm(String path, MultiValueMap<String, String> form, String idempotencyKey) {
         requireSecretKey();
         try {
-            return restClient.post()
+            RestClient.RequestBodySpec request = restClient.post()
                     .uri(path)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + secretKey)
-                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED);
+            if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+                request.header("Idempotency-Key", idempotencyKey);
+            }
+            return request
                     .body(form)
                     .retrieve()
                     .body(JsonNode.class);
         } catch (RestClientResponseException ex) {
             throw stripeException(ex, "Stripe request failed");
         }
+    }
+
+    private String catalogIdempotencyKey(String operation, SubscriptionPlanEntity plan) {
+        String fingerprint = String.join(
+                "|",
+                operation,
+                plan.getId().toString(),
+                plan.getCode(),
+                plan.getName(),
+                String.valueOf(plan.getDescription()),
+                plan.getPrice().toPlainString(),
+                plan.getCurrency(),
+                plan.getBillingInterval().name(),
+                plan.getIntervalCount().toString()
+        );
+        return operation + "-" + UUID.nameUUIDFromBytes(fingerprint.getBytes(StandardCharsets.UTF_8));
     }
 
     private void requireSecretKey() {

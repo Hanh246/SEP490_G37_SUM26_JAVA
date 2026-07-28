@@ -74,8 +74,15 @@ public class ChapterCrudPluginTest {
     @BeforeEach
     void setUp() {
         when(pluginRegistry.getPluginFor(ChapterEntity.class)).thenReturn(Optional.of(mapperPlugin));
+        when(chapterPremiumPolicyService.isPremiumChapter(anyString()))
+                .thenAnswer(invocation -> "2".equals(invocation.getArgument(0)));
         chapterCrudPlugin = new ChapterCrudPlugin(
-                chapterRepository, pluginRegistry, redisTemplate, userRepository, premiumPlanService,chapterPremiumPolicyService
+                chapterRepository,
+                pluginRegistry,
+                redisTemplate,
+                userRepository,
+                premiumPlanService,
+                chapterPremiumPolicyService
         );
     }
 
@@ -94,7 +101,7 @@ public class ChapterCrudPluginTest {
         entity.setModerationStatus(ChapterStatus.PUBLISHED);
         entity.setImages(List.of("img1.png", "img2.png"));
 
-        when(chapterRepository.findById(chapterId))
+        when(chapterRepository.findByIdAndDeletedFalseAndModerationStatus(chapterId, ChapterStatus.PUBLISHED))
                 .thenReturn(Optional.of(entity));
 
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
@@ -137,7 +144,7 @@ public class ChapterCrudPluginTest {
         entity.setModerationStatus(ChapterStatus.PUBLISHED);
         entity.setImages(List.of("img1.png", "img2.png"));
 
-        when(chapterRepository.findById(chapterId))
+        when(chapterRepository.findByIdAndDeletedFalseAndModerationStatus(chapterId, ChapterStatus.PUBLISHED))
                 .thenReturn(Optional.of(entity));
 
         // Mock authorization
@@ -151,7 +158,6 @@ public class ChapterCrudPluginTest {
         when(valueOperations.setIfAbsent(lockKey, "1", Duration.ofMinutes(10))).thenReturn(false);
 
         when(redisTemplate.opsForHash()).thenReturn(hashOperations);
-        when(hashOperations.get(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString())).thenReturn(null);
 
         ChapterDTO result = chapterCrudPlugin.getChapterDetail(chapterId, userId, clientIp);
 
@@ -176,18 +182,14 @@ public class ChapterCrudPluginTest {
         entity.setModerationStatus(ChapterStatus.PUBLISHED);
         entity.setImages(List.of("img1.png", "img2.png"));
 
-        when(chapterRepository.findById(chapterId))
+        when(chapterRepository.findByIdAndDeletedFalseAndModerationStatus(chapterId, ChapterStatus.PUBLISHED))
                 .thenReturn(Optional.of(entity));
 
         // Mock unauthorized
         when(userRepository.findByIdWithRole(userId)).thenReturn(Optional.empty());
 
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        String userIdentity = "user:" + userId;
-        String lockKey = String.format("view:lock:%s:chapter:%s", userIdentity, chapterId);
-        when(valueOperations.setIfAbsent(lockKey, "1", Duration.ofMinutes(10))).thenReturn(true);
         when(redisTemplate.opsForHash()).thenReturn(hashOperations);
-        when(redisTemplate.opsForSet()).thenReturn(setOperations);
 
         ChapterDTO result = chapterCrudPlugin.getChapterDetail(chapterId, userId, clientIp);
 

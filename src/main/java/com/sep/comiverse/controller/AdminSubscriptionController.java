@@ -59,7 +59,7 @@ public class AdminSubscriptionController {
     ) {
         return ResponseEntity.ok(BaseResponse.<SubscriptionPlanResponse>builder()
                 .success(true)
-                .message("Subscription plan updated")
+                .message("Subscription plan updated. Pricing changes apply to new checkouts only.")
                 .data(planService.updatePlan(planId, request))
                 .build());
     }

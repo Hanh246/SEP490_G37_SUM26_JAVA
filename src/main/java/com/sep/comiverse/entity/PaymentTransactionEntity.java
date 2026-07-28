@@ -26,10 +26,16 @@ import java.util.UUID;
 @EqualsAndHashCode(callSuper = true)
 @Table(
         name = "payment_transactions",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_payment_transaction_checkout_session",
-                columnNames = "stripe_checkout_session_id"
-        ),
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_payment_transaction_checkout_session",
+                        columnNames = "stripe_checkout_session_id"
+                ),
+                @UniqueConstraint(
+                        name = "uk_payment_transaction_invoice",
+                        columnNames = "stripe_invoice_id"
+                )
+        },
         indexes = {
                 @Index(name = "idx_payment_transaction_user", columnList = "user_id, create_at"),
                 @Index(name = "idx_payment_transaction_status", columnList = "status, create_at"),

@@ -13,6 +13,8 @@ public interface ISubscriptionPlanRepository extends AbstractCrudRepository<Subs
 
     List<SubscriptionPlanEntity> findAllByDeletedFalseOrderBySortOrderAscCreatedAtAsc();
 
+    Optional<SubscriptionPlanEntity> findByIdAndDeletedFalse(UUID id);
+
     Optional<SubscriptionPlanEntity> findByCodeIgnoreCaseAndDeletedFalse(String code);
 
     boolean existsByCodeIgnoreCaseAndDeletedFalse(String code);

@@ -63,7 +63,7 @@ public class SubscriptionPlanService {
 
     @Transactional(readOnly = true)
     public SubscriptionPlanEntity getPlanEntity(UUID planId) {
-        return planRepository.findById(planId)
+        return planRepository.findByIdAndDeletedFalse(planId)
                 .orElseThrow(() -> new CustomException(404, "Subscription plan not found", HttpStatus.NOT_FOUND));
     }
 
@@ -108,9 +108,10 @@ public class SubscriptionPlanService {
         BillingInterval interval = request.getBillingInterval();
         Integer intervalCount = defaultIfNull(request.getIntervalCount(), 1);
 
-        boolean stripeCatalogChanged = !Objects.equals(plan.getName(), name)
-                || !Objects.equals(plan.getDescription(), description)
-                || plan.getPrice().compareTo(price) != 0
+        boolean stripeProductChanged = !Objects.equals(plan.getCode(), code)
+                || !Objects.equals(plan.getName(), name)
+                || !Objects.equals(plan.getDescription(), description);
+        boolean stripePriceChanged = plan.getPrice().compareTo(price) != 0
                 || !Objects.equals(plan.getCurrency(), currency)
                 || plan.getBillingInterval() != interval
                 || !Objects.equals(plan.getIntervalCount(), intervalCount);
@@ -128,8 +129,10 @@ public class SubscriptionPlanService {
         plan.setFeaturesJson(writeFeatures(request.getFeatures()));
         plan.setSortOrder(defaultIfNull(request.getSortOrder(), plan.getSortOrder()));
 
-        if (stripeCatalogChanged) {
-            plan.setStripeProductId(null);
+        if (stripeProductChanged && plan.getStripeProductId() != null && !plan.getStripeProductId().isBlank()) {
+            stripeGatewayService.updateProduct(plan);
+        }
+        if (stripePriceChanged) {
             plan.setStripePriceId(null);
         }
         return toResponse(planRepository.save(plan));
@@ -178,10 +181,18 @@ public class SubscriptionPlanService {
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void seedDefaultPlans() {
-        if (planRepository.count() > 0) return;
-        createDefaultPlan("MONTHLY", "Premium Monthly", new BigDecimal("79000"), BillingInterval.MONTH, 1, true, "Most Popular", 10);
-        createDefaultPlan("YEARLY", "Premium Yearly", new BigDecimal("790000"), BillingInterval.YEAR, 1, false, "Save more", 20);
-        log.info("Created default monthly and yearly subscription plans");
+        boolean created = false;
+        if (planRepository.findByCodeIgnoreCaseAndDeletedFalse("MONTHLY").isEmpty()) {
+            createDefaultPlan("MONTHLY", "Premium Monthly", new BigDecimal("79000"), BillingInterval.MONTH, 1, true, "Most Popular", 10);
+            created = true;
+        }
+        if (planRepository.findByCodeIgnoreCaseAndDeletedFalse("YEARLY").isEmpty()) {
+            createDefaultPlan("YEARLY", "Premium Yearly", new BigDecimal("790000"), BillingInterval.YEAR, 1, false, "Save more", 20);
+            created = true;
+        }
+        if (created) {
+            log.info("Ensured default monthly and yearly subscription plans exist");
+        }
     }
 
     private void createDefaultPlan(

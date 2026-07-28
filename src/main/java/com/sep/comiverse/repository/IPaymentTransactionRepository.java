@@ -16,6 +16,8 @@ public interface IPaymentTransactionRepository extends AbstractCrudRepository<Pa
 
     Optional<PaymentTransactionEntity> findByStripeCheckoutSessionIdAndDeletedFalse(String sessionId);
 
+    Optional<PaymentTransactionEntity> findByStripeInvoiceIdAndDeletedFalse(String invoiceId);
+
     Optional<PaymentTransactionEntity> findFirstByStripeSubscriptionIdAndDeletedFalseOrderByCreatedAtDesc(String subscriptionId);
 
     Optional<PaymentTransactionEntity> findFirstByUserIdAndPlanIdAndStatusAndDeletedFalseOrderByCreatedAtDesc(

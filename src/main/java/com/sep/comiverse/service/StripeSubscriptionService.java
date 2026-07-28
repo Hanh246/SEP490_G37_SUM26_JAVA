@@ -33,8 +33,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -64,16 +65,43 @@ public class StripeSubscriptionService {
             throw new CustomException(403, "Only reader accounts can purchase a reader subscription", HttpStatus.FORBIDDEN);
         }
 
-        subscriptionRepository.findByUserIdAndDeletedFalse(userId)
-                .filter(this::isSubscriptionCurrentlyActive)
+        Optional<ReaderSubscriptionEntity> existingSubscription =
+                subscriptionRepository.findByUserIdAndDeletedFalse(userId);
+        existingSubscription
+                .filter(this::requiresBillingPortalBeforeNewCheckout)
                 .ifPresent(active -> {
-                    throw new CustomException(409, "You already have an active subscription. Use Manage Subscription instead.", HttpStatus.CONFLICT);
+                    throw new CustomException(
+                            409,
+                            "An existing Stripe subscription must be managed before starting a new checkout.",
+                            HttpStatus.CONFLICT
+                    );
                 });
 
+        String existingCustomerId = existingSubscription
+                .map(ReaderSubscriptionEntity::getStripeCustomerId)
+                .filter(value -> !value.isBlank())
+                .orElse(null);
         SubscriptionPlanEntity plan = planService.ensureStripeCatalog(planId);
-        JsonNode session = stripeGatewayService.createCheckoutSession(userId, user.getEmail(), plan);
+        JsonNode session = stripeGatewayService.createCheckoutSession(
+                userId,
+                user.getEmail(),
+                plan,
+                existingCustomerId
+        );
         String sessionId = requiredText(session, "id", "Stripe did not return a checkout session ID");
         String checkoutUrl = requiredText(session, "url", "Stripe did not return a checkout URL");
+
+        Optional<PaymentTransactionEntity> existingTransaction =
+                paymentRepository.findByStripeCheckoutSessionIdAndDeletedFalse(sessionId);
+        if (existingTransaction.isPresent()) {
+            if (!existingTransaction.get().getUserId().equals(userId)) {
+                throw new CustomException(409, "Stripe Checkout session belongs to another user", HttpStatus.CONFLICT);
+            }
+            return CheckoutSessionResponse.builder()
+                    .sessionId(sessionId)
+                    .checkoutUrl(checkoutUrl)
+                    .build();
+        }
 
         PaymentTransactionEntity transaction = PaymentTransactionEntity.builder()
                 .userId(userId)
@@ -94,10 +122,13 @@ public class StripeSubscriptionService {
                 .build();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ReaderSubscriptionResponse getCurrentSubscription(UUID userId) {
         return subscriptionRepository.findByUserIdAndDeletedFalse(userId)
-                .map(this::toSubscriptionResponse)
+                .map(subscription -> {
+                    syncPremiumCache(subscription);
+                    return toSubscriptionResponse(subscription);
+                })
                 .orElse(null);
     }
 
@@ -131,6 +162,24 @@ public class StripeSubscriptionService {
         }
 
         ReaderSubscriptionEntity subscription = subscriptionRepository.findByUserIdAndDeletedFalse(userId).orElse(null);
+        if (transaction.getStatus() == PaymentTransactionStatus.PAID
+                && (subscription == null || !isSubscriptionCurrentlyActive(subscription))) {
+            try {
+                subscription = reconcilePaidSubscription(transaction);
+            } catch (RuntimeException ex) {
+                // Payment is already confirmed. Keep exposing PAID while Stripe/webhooks finish
+                // subscription synchronization, so the frontend can continue polling safely.
+                log.warn(
+                        "Unable to reconcile paid Stripe Checkout session {} yet: {}",
+                        sessionId,
+                        ex.getMessage()
+                );
+            }
+        }
+
+        if (subscription != null) {
+            syncPremiumCache(subscription);
+        }
         boolean premiumActive = subscription != null && isSubscriptionCurrentlyActive(subscription);
         return CheckoutStatusResponse.builder()
                 .sessionId(sessionId)
@@ -236,7 +285,7 @@ public class StripeSubscriptionService {
                             savedTransaction,
                             customerId
                     );
-                    grantPremium(subscription);
+                    syncPremiumCache(subscription);
                 } catch (RuntimeException ex) {
                     // invoice.paid/customer.subscription.updated will retry subscription synchronization.
                     log.error(
@@ -260,9 +309,31 @@ public class StripeSubscriptionService {
         String sessionId = textOrNull(session, "id");
         if (sessionId == null) return;
         paymentRepository.findByStripeCheckoutSessionIdAndDeletedFalse(sessionId).ifPresent(transaction -> {
+            String subscriptionId = textOrNull(session, "subscription");
+            String customerId = textOrNull(session, "customer");
             transaction.setStatus(PaymentTransactionStatus.FAILED);
             transaction.setFailureReason("Stripe asynchronous payment failed");
-            paymentRepository.save(transaction);
+            transaction.setStripeSubscriptionId(subscriptionId);
+            transaction.setStripeCustomerId(customerId);
+            PaymentTransactionEntity saved = paymentRepository.save(transaction);
+
+            if (subscriptionId != null) {
+                try {
+                    JsonNode stripeSubscription = stripeGatewayService.retrieveSubscription(subscriptionId);
+                    ReaderSubscriptionEntity subscription = upsertSubscription(
+                            stripeSubscription,
+                            saved,
+                            customerId
+                    );
+                    syncPremiumCache(subscription);
+                } catch (RuntimeException ex) {
+                    log.warn(
+                            "Unable to synchronize failed asynchronous subscription {}: {}",
+                            subscriptionId,
+                            ex.getMessage()
+                    );
+                }
+            }
         });
     }
 
@@ -290,9 +361,11 @@ public class StripeSubscriptionService {
                 .orElseThrow(() -> new CustomException(404, "Subscription user not found", HttpStatus.NOT_FOUND));
 
         String invoiceId = textOrNull(invoice, "id");
-        PaymentTransactionEntity transaction = paymentRepository
-                .findFirstByStripeSubscriptionIdAndDeletedFalseOrderByCreatedAtDesc(subscriptionId)
-                .filter(existing -> existing.getStripeInvoiceId() == null)
+        PaymentTransactionEntity transaction = Optional.ofNullable(invoiceId)
+                .flatMap(paymentRepository::findByStripeInvoiceIdAndDeletedFalse)
+                .or(() -> paymentRepository
+                        .findFirstByStripeSubscriptionIdAndDeletedFalseOrderByCreatedAtDesc(subscriptionId)
+                        .filter(existing -> existing.getStripeInvoiceId() == null))
                 .or(() -> paymentRepository
                         .findFirstByUserIdAndPlanIdAndStatusAndDeletedFalseOrderByCreatedAtDesc(
                                 userId,
@@ -323,52 +396,43 @@ public class StripeSubscriptionService {
                 saved,
                 textOrNull(invoice, "customer")
         );
-        grantPremium(subscription);
+        syncPremiumCache(subscription);
     }
 
     private void handleInvoicePaymentFailed(JsonNode invoice) {
         String subscriptionId = extractSubscriptionIdFromInvoice(invoice);
         if (subscriptionId == null) return;
         String reason = invoice.path("last_finalization_error").path("message").asText("Stripe invoice payment failed");
-
-        JsonNode stripeSubscription = null;
-        PaymentTransactionEntity transaction = paymentRepository
-                .findFirstByStripeSubscriptionIdAndDeletedFalseOrderByCreatedAtDesc(subscriptionId)
+        String invoiceId = textOrNull(invoice, "id");
+        JsonNode stripeSubscription = stripeGatewayService.retrieveSubscription(subscriptionId);
+        UUID userId = uuidFromMetadata(stripeSubscription, "user_id");
+        UUID planId = uuidFromMetadata(stripeSubscription, "plan_id");
+        PaymentTransactionEntity transaction = Optional.ofNullable(invoiceId)
+                .flatMap(paymentRepository::findByStripeInvoiceIdAndDeletedFalse)
                 .orElse(null);
 
-        if (transaction == null) {
-            stripeSubscription = stripeGatewayService.retrieveSubscription(subscriptionId);
-            UUID userId = uuidFromMetadata(stripeSubscription, "user_id");
-            UUID planId = uuidFromMetadata(stripeSubscription, "plan_id");
-            if (userId != null && planId != null) {
-                SubscriptionPlanEntity plan = planService.getPlanEntity(planId);
-                UserEntity user = userRepository.findById(userId)
-                        .orElseThrow(() -> new CustomException(404, "Subscription user not found", HttpStatus.NOT_FOUND));
-                transaction = paymentRepository
-                        .findFirstByUserIdAndPlanIdAndStatusAndDeletedFalseOrderByCreatedAtDesc(
-                                userId,
-                                planId,
-                                PaymentTransactionStatus.PENDING
-                        )
-                        .orElseGet(() -> PaymentTransactionEntity.builder()
-                                .userId(userId)
-                                .userEmail(user.getEmail())
-                                .planId(planId)
-                                .planCode(plan.getCode())
-                                .planName(plan.getName())
-                                .amount(readInvoiceAmount(invoice, plan))
-                                .currency(invoice.path("currency").asText(plan.getCurrency()).toUpperCase(Locale.ROOT))
-                                .status(PaymentTransactionStatus.FAILED)
-                                .build());
-                transaction.setStripeSubscriptionId(subscriptionId);
-            }
+        if (transaction == null && userId != null && planId != null) {
+            SubscriptionPlanEntity plan = planService.getPlanEntity(planId);
+            UserEntity user = userRepository.findById(userId)
+                    .orElseThrow(() -> new CustomException(404, "Subscription user not found", HttpStatus.NOT_FOUND));
+            transaction = PaymentTransactionEntity.builder()
+                    .userId(userId)
+                    .userEmail(user.getEmail())
+                    .planId(planId)
+                    .planCode(plan.getCode())
+                    .planName(plan.getName())
+                    .amount(readInvoiceAmount(invoice, plan))
+                    .currency(invoice.path("currency").asText(plan.getCurrency()).toUpperCase(Locale.ROOT))
+                    .status(PaymentTransactionStatus.FAILED)
+                    .stripeSubscriptionId(subscriptionId)
+                    .build();
         }
 
         PaymentTransactionEntity savedTransaction = null;
         if (transaction != null) {
             transaction.setStatus(PaymentTransactionStatus.FAILED);
             transaction.setFailureReason(reason);
-            transaction.setStripeInvoiceId(textOrNull(invoice, "id"));
+            transaction.setStripeInvoiceId(invoiceId);
             transaction.setStripeCustomerId(textOrNull(invoice, "customer"));
             savedTransaction = paymentRepository.save(transaction);
         }
@@ -376,7 +440,7 @@ public class StripeSubscriptionService {
         ReaderSubscriptionEntity subscription = subscriptionRepository
                 .findByStripeSubscriptionIdAndDeletedFalse(subscriptionId)
                 .orElse(null);
-        if (subscription == null && stripeSubscription != null && savedTransaction != null) {
+        if (subscription == null && savedTransaction != null) {
             subscription = upsertSubscription(
                     stripeSubscription,
                     savedTransaction,
@@ -385,7 +449,8 @@ public class StripeSubscriptionService {
         }
         if (subscription != null) {
             subscription.setStatus(ReaderSubscriptionStatus.PAST_DUE);
-            subscriptionRepository.save(subscription);
+            subscription = subscriptionRepository.save(subscription);
+            syncPremiumCache(subscription);
         }
     }
 
@@ -404,11 +469,7 @@ public class StripeSubscriptionService {
                 transaction,
                 textOrNull(stripeSubscription, "customer")
         );
-        if (isSubscriptionCurrentlyActive(subscription)) {
-            grantPremium(subscription);
-        } else if (subscription.getCurrentPeriodEnd() == null || !subscription.getCurrentPeriodEnd().isAfter(Instant.now())) {
-            clearExpiredPremium(subscription.getUserId());
-        }
+        syncPremiumCache(subscription);
     }
 
     private ReaderSubscriptionEntity upsertSubscription(
@@ -461,18 +522,59 @@ public class StripeSubscriptionService {
                 .build();
     }
 
+    private ReaderSubscriptionEntity reconcilePaidSubscription(PaymentTransactionEntity transaction) {
+        String subscriptionId = transaction.getStripeSubscriptionId();
+        String customerId = transaction.getStripeCustomerId();
+
+        if ((subscriptionId == null || subscriptionId.isBlank())
+                && transaction.getStripeCheckoutSessionId() != null
+                && !transaction.getStripeCheckoutSessionId().isBlank()) {
+            JsonNode session = stripeGatewayService.retrieveCheckoutSession(transaction.getStripeCheckoutSessionId());
+            subscriptionId = textOrNull(session, "subscription");
+            customerId = Optional.ofNullable(textOrNull(session, "customer")).orElse(customerId);
+            transaction.setStripeSubscriptionId(subscriptionId);
+            transaction.setStripeCustomerId(customerId);
+            paymentRepository.save(transaction);
+        }
+
+        if (subscriptionId == null || subscriptionId.isBlank()) {
+            return null;
+        }
+
+        JsonNode stripeSubscription = stripeGatewayService.retrieveSubscription(subscriptionId);
+        ReaderSubscriptionEntity subscription = upsertSubscription(
+                stripeSubscription,
+                transaction,
+                customerId
+        );
+        syncPremiumCache(subscription);
+        return subscription;
+    }
+
+    private void syncPremiumCache(ReaderSubscriptionEntity subscription) {
+        if (isSubscriptionCurrentlyActive(subscription)) {
+            grantPremium(subscription);
+        } else {
+            revokePremium(subscription.getUserId());
+        }
+    }
+
     private void grantPremium(ReaderSubscriptionEntity subscription) {
         if (subscription.getCurrentPeriodEnd() == null) return;
         UserEntity user = userRepository.findById(subscription.getUserId())
                 .orElseThrow(() -> new CustomException(404, "Subscription user not found", HttpStatus.NOT_FOUND));
-        user.setPremiumPlan(subscription.getPlanCode());
-        user.setPremiumExpiresAt(LocalDateTime.ofInstant(subscription.getCurrentPeriodEnd(), ZoneId.systemDefault()));
-        userRepository.save(user);
+        LocalDateTime expiresAt = LocalDateTime.ofInstant(subscription.getCurrentPeriodEnd(), ZoneOffset.UTC);
+        if (!Objects.equals(user.getPremiumPlan(), subscription.getPlanCode())
+                || !Objects.equals(user.getPremiumExpiresAt(), expiresAt)) {
+            user.setPremiumPlan(subscription.getPlanCode());
+            user.setPremiumExpiresAt(expiresAt);
+            userRepository.save(user);
+        }
     }
 
-    private void clearExpiredPremium(UUID userId) {
+    private void revokePremium(UUID userId) {
         userRepository.findById(userId).ifPresent(user -> {
-            if (user.getPremiumExpiresAt() == null || !user.getPremiumExpiresAt().isAfter(LocalDateTime.now())) {
+            if (user.getPremiumPlan() != null || user.getPremiumExpiresAt() != null) {
                 user.setPremiumPlan(null);
                 user.setPremiumExpiresAt(null);
                 userRepository.save(user);
@@ -514,6 +616,20 @@ public class StripeSubscriptionService {
                 .createdAt(transaction.getCreatedAt())
                 .updatedAt(transaction.getUpdatedAt())
                 .build();
+    }
+
+    private boolean requiresBillingPortalBeforeNewCheckout(ReaderSubscriptionEntity subscription) {
+        if (subscription == null
+                || subscription.getStripeSubscriptionId() == null
+                || subscription.getStripeSubscriptionId().isBlank()) {
+            return false;
+        }
+        return subscription.getStatus() == ReaderSubscriptionStatus.ACTIVE
+                || subscription.getStatus() == ReaderSubscriptionStatus.TRIALING
+                || subscription.getStatus() == ReaderSubscriptionStatus.PAST_DUE
+                || subscription.getStatus() == ReaderSubscriptionStatus.UNPAID
+                || subscription.getStatus() == ReaderSubscriptionStatus.PAUSED
+                || subscription.getStatus() == ReaderSubscriptionStatus.INCOMPLETE;
     }
 
     private boolean isSubscriptionCurrentlyActive(ReaderSubscriptionEntity subscription) {
