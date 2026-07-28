@@ -441,4 +441,33 @@ public class TeamWorkspaceController {
 
         return ResponseEntity.ok(Map.of("success", true));
     }
+
+    @PutMapping("/tasks/{taskId}")
+    public ResponseEntity<?> updateTask(@PathVariable UUID taskId, @RequestBody Map<String, Object> updates) {
+        TeamTaskEntity task = taskRepository.findById(taskId).orElse(null);
+        if (task == null) {
+            return ResponseEntity.status(404).body(Map.of("success", false, "message", "Task not found"));
+        }
+
+        if (updates.containsKey("title")) {
+            task.setTitle((String) updates.get("title"));
+        }
+        if (updates.containsKey("status")) {
+            task.setStatus((String) updates.get("status"));
+        }
+        if (updates.containsKey("dueDate")) {
+            task.setDueDate((String) updates.get("dueDate"));
+        }
+        if (updates.containsKey("assigneeIds")) {
+            @SuppressWarnings("unchecked")
+            List<String> rawIds = (List<String>) updates.get("assigneeIds");
+            List<UUID> assigneeIds = rawIds.stream()
+                    .map(UUID::fromString)
+                    .collect(Collectors.toList());
+            task.setAssigneeIds(assigneeIds);
+        }
+
+        TeamTaskEntity saved = taskRepository.save(task);
+        return ResponseEntity.ok(saved);
+    }
 }
