@@ -11,6 +11,7 @@ import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.plugin.IMapperPluginDetail;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IUserRepository;
+import com.sep.comiverse.service.ChapterPremiumPolicyService;
 import com.sep.comiverse.service.PremiumPlanService;
 import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,7 +62,8 @@ public class ChapterCrudPluginTest {
 
     @Mock
     private IMapperPluginDetail<ChapterEntity, ChapterDTO, UUID> mapperPlugin;
-
+    @Mock
+    private ChapterPremiumPolicyService chapterPremiumPolicyService;
     private ChapterCrudPlugin chapterCrudPlugin;
 
     private final UUID chapterId = UUID.randomUUID();
@@ -73,7 +75,7 @@ public class ChapterCrudPluginTest {
     void setUp() {
         when(pluginRegistry.getPluginFor(ChapterEntity.class)).thenReturn(Optional.of(mapperPlugin));
         chapterCrudPlugin = new ChapterCrudPlugin(
-                chapterRepository, pluginRegistry, redisTemplate, userRepository, premiumPlanService
+                chapterRepository, pluginRegistry, redisTemplate, userRepository, premiumPlanService,chapterPremiumPolicyService
         );
     }
 

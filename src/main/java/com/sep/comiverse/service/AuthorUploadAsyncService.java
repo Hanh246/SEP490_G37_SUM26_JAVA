@@ -32,7 +32,7 @@ public class AuthorUploadAsyncService {
 
     @Async("authorUploadExecutor")
     public void processChapterZip(UUID taskId, UUID comicId, ChapterUploadRequest request, MultipartFile zipFile) {
-        uploadTaskService.markProcessing(taskId, "Processing chapter CBZ and uploading pages", 10);
+        uploadTaskService.markProcessing(taskId, "Processing chapter ZIP and uploading pages", 10);
         try {
             ChapterPreviewResponse result = chapterService.uploadChapterZip(comicId, request, zipFile);
             uploadTaskService.completeChapter(taskId, result);

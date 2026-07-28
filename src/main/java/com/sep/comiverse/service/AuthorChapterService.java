@@ -51,7 +51,7 @@ public class AuthorChapterService {
     private static final long MAX_IMAGE_SIZE_BYTES = 10L * 1024L * 1024L;
     private static final Pattern NATURAL_PART_PATTERN = Pattern.compile("\\d+|\\D+");
     private static final Pattern CHAPTER_ZIP_NAME_PATTERN =
-            Pattern.compile("(?i)^chapter\\s+([1-9][0-9]*(?:[,.][0-9]+)?)\\.cbz$");
+            Pattern.compile("(?i)^chapter\\s+([1-9][0-9]*(?:[,.][0-9]+)?)\\.zip$");
     private static final Pattern CHAPTER_NUMBER_PATTERN =
             Pattern.compile("^[1-9][0-9]*(?:[,.][0-9]+)?$");
 
@@ -66,6 +66,7 @@ public class AuthorChapterService {
     private final RedisTemplate<String, Object> redisTemplate;
     private final CloudinaryStorageService cloudinaryStorageService;
     private final NotificationService notificationService;
+    private final ChapterPremiumPolicyService chapterPremiumPolicyService;
 
     @Value("${author.chapter.max-pages:200}")
     private int maxPages;
@@ -101,6 +102,7 @@ public class AuthorChapterService {
                 .chapterNumber(chapterNumber)
                 .title(trimToNull(request.getTitle()))
                 .moderationStatus(ChapterStatus.PREVIEW_READY)
+                .isPremium(chapterPremiumPolicyService.isPremiumChapter(chapterNumber))
                 .images(imageUrls)
                 .build();
         ChapterEntity savedChapter = chapterRepository.save(chapter);
@@ -190,6 +192,7 @@ public class AuthorChapterService {
                 throw new CustomException(409, "Chapter number already exists for this comic", HttpStatus.CONFLICT);
             }
             chapter.setChapterNumber(requestedChapterNumber);
+            chapter.setIsPremium(chapterPremiumPolicyService.isPremiumChapter(requestedChapterNumber));
             changed = true;
         }
 
@@ -273,8 +276,8 @@ public class AuthorChapterService {
         String numberFromFileName = parseChapterNumberFromFileName(fileName);
         if (!chapter.getChapterNumber().equals(numberFromFileName)) {
             throw new CustomException(400,
-                    "Replacement CBZ filename must match the existing chapter number. Expected Chapter "
-                            + chapter.getChapterNumber() + ".cbz but got " + fileName,
+                    "Replacement ZIP filename must match the existing chapter number. Expected Chapter "
+                            + chapter.getChapterNumber() + ".zip but got " + fileName,
                     HttpStatus.BAD_REQUEST);
         }
 
@@ -401,15 +404,15 @@ public class AuthorChapterService {
         }
 
         String originalFilename = zipFile.getOriginalFilename();
-        if (!StringUtils.hasText(originalFilename) || !isCbzArchiveFileName(originalFilename)) {
-            throw new CustomException(400, "Only .cbz chapter files are accepted", HttpStatus.BAD_REQUEST);
+        if (!StringUtils.hasText(originalFilename) || !isZipArchiveFileName(originalFilename)) {
+            throw new CustomException(400, "Only .zip chapter files are accepted", HttpStatus.BAD_REQUEST);
         }
 
         String fileName = getBaseName(normalizeEntryName(originalFilename));
         if (!CHAPTER_ZIP_NAME_PATTERN.matcher(fileName).matches()) {
             throw new CustomException(
                     400,
-                    "Chapter archive name must be like 'Chapter 1.cbz' or 'Chapter 1,5.cbz'. Invalid file: " + fileName,
+                    "Chapter archive name must be like 'Chapter 1.zip' or 'Chapter 1,5.zip'. Invalid file: " + fileName,
                     HttpStatus.BAD_REQUEST
             );
         }
@@ -434,14 +437,14 @@ public class AuthorChapterService {
                 }
 
                 if (splitCleanPath(entryName).length != 1) {
-                    throw new CustomException(400, "Chapter CBZ must contain image files at root only. Invalid entry: " + entryName, HttpStatus.BAD_REQUEST);
+                    throw new CustomException(400, "Chapter ZIP must contain image files at root only. Invalid entry: " + entryName, HttpStatus.BAD_REQUEST);
                 }
 
                 String baseFileName = getBaseName(entryName);
-                if (isCbzArchiveFileName(baseFileName)) {
+                if (isZipArchiveFileName(baseFileName)) {
                     throw new CustomException(
                             400,
-                            "Upload Chapter only accepts page images. Do not put another archive inside chapter CBZ: " + entryName,
+                            "Upload Chapter only accepts page images. Do not put another archive inside chapter ZIP: " + entryName,
                             HttpStatus.BAD_REQUEST
                     );
                 }
@@ -451,7 +454,7 @@ public class AuthorChapterService {
 
                 byte[] bytes = readCurrentEntry(zipInputStream);
                 if (bytes.length == 0) {
-                    throw new CustomException(400, "Empty image file in chapter CBZ: " + entryName, HttpStatus.BAD_REQUEST);
+                    throw new CustomException(400, "Empty image file in chapter ZIP: " + entryName, HttpStatus.BAD_REQUEST);
                 }
                 if (bytes.length > MAX_IMAGE_SIZE_BYTES) {
                     throw new CustomException(400, "Image exceeds 10MB limit: " + entryName, HttpStatus.BAD_REQUEST);
@@ -466,11 +469,11 @@ public class AuthorChapterService {
                 }
             }
         } catch (IOException e) {
-            throw new CustomException(400, "Invalid or unreadable chapter CBZ file", HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Invalid or unreadable chapter ZIP file", HttpStatus.BAD_REQUEST);
         }
 
         if (images.isEmpty()) {
-            throw new CustomException(400, "Chapter CBZ file does not contain any supported images", HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Chapter ZIP file does not contain any supported images", HttpStatus.BAD_REQUEST);
         }
         return images;
     }
@@ -492,11 +495,11 @@ public class AuthorChapterService {
                 if (fileName.toLowerCase(Locale.ROOT).endsWith(".webp")) {
                     return new ImageDimension(null, null);
                 }
-                throw new CustomException(400, "Invalid image file in chapter CBZ: " + fileName, HttpStatus.BAD_REQUEST);
+                throw new CustomException(400, "Invalid image file in chapter ZIP: " + fileName, HttpStatus.BAD_REQUEST);
             }
             return new ImageDimension(image.getWidth(), image.getHeight());
         } catch (IOException e) {
-            throw new CustomException(400, "Invalid image file in chapter CBZ: " + fileName, HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Invalid image file in chapter ZIP: " + fileName, HttpStatus.BAD_REQUEST);
         }
     }
 
@@ -537,12 +540,12 @@ public class AuthorChapterService {
         return ALLOWED_EXTENSIONS.stream().anyMatch(extension -> lower.endsWith("." + extension));
     }
 
-    private boolean isCbzArchiveFileName(String fileName) {
+    private boolean isZipArchiveFileName(String fileName) {
         if (!StringUtils.hasText(fileName)) {
             return false;
         }
         String lower = fileName.toLowerCase(Locale.ROOT);
-        return lower.endsWith(".cbz");
+        return lower.endsWith(".zip");
     }
 
     private Comparator<ImageCandidate> imageNaturalComparator() {

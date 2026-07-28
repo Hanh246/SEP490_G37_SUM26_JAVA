@@ -42,11 +42,10 @@ public class PremiumPlanController {
         if (principal == null) {
             throw new CustomException(401, "Unauthorized", HttpStatus.UNAUTHORIZED);
         }
-        UpgradePlanResponse response = premiumPlanService.upgradePlan(principal.getId(), request.getPlanType());
-        return ResponseEntity.ok(BaseResponse.<UpgradePlanResponse>builder()
-                .success(true)
-                .message("Premium plan upgraded successfully.")
-                .data(response)
-                .build());
+        throw new CustomException(
+                402,
+                "Direct premium upgrade is disabled. Create a verified Stripe Checkout session through /subscriptions/checkout.",
+                HttpStatus.PAYMENT_REQUIRED
+        );
     }
 }

@@ -11,6 +11,7 @@ import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.service.PremiumPlanService;
+import com.sep.comiverse.service.ChapterPremiumPolicyService;
 import com.sep.comiverse.service.ReadingHistoryService;
 import com.sep.comiverse.service.scheduler.ViewSyncScheduler;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 @Component
@@ -32,6 +35,11 @@ public class ChapterCrudPlugin
     private final RedisTemplate<String, Object> redisTemplate;
     private final IUserRepository userRepository;
     private final PremiumPlanService premiumPlanService;
+    private final ChapterPremiumPolicyService chapterPremiumPolicyService;
+
+    private static final Set<String> PREMIUM_BYPASS_ROLES = Set.of(
+            "ADMIN", "MODERATOR", "AUTHOR", "TRANSLATOR", "PROJECT_LEADER"
+    );
 
     private static final String CHAPTER_DETAIL_CACHE_PREFIX = "chapter:detail:meta:";
     private static final String COMIC_CHAPTERS_LIST_CACHE_PREFIX = "comic:chapters:list:";
@@ -41,12 +49,14 @@ public class ChapterCrudPlugin
                              PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry,
                              RedisTemplate<String, Object> redisTemplate,
                              IUserRepository userRepository,
-                             PremiumPlanService premiumPlanService){
+                             PremiumPlanService premiumPlanService,
+                             ChapterPremiumPolicyService chapterPremiumPolicyService){
         super(repository, pluginRegistry, ChapterEntity.class);
         this.chapterRepository = repository;
         this.redisTemplate = redisTemplate;
         this.userRepository = userRepository;
         this.premiumPlanService = premiumPlanService;
+        this.chapterPremiumPolicyService = chapterPremiumPolicyService;
     }
 
     @Transactional(readOnly = true)
@@ -76,7 +86,7 @@ public class ChapterCrudPlugin
                     .chapterNumber(entity.getChapterNumber())
                     .title(entity.getTitle())
                     .viewCount(entity.getViewCount())
-                    .isPremium(entity.getIsPremium())
+                    .isPremium(chapterPremiumPolicyService.isPremiumChapter(entity.getChapterNumber()))
                     .createdAt(entity.getCreatedAt())
                     .build();
 
@@ -96,26 +106,27 @@ public class ChapterCrudPlugin
             }
         }
 
+        boolean premiumRequired = chapterPremiumPolicyService.isPremiumChapter(cacheDto.getChapterNumber());
+        boolean hasContentAccess = !premiumRequired || checkUserPremiumAccess(userId);
+
         ChapterDTO responseDto = ChapterDTO.builder()
                 .id(cacheDto.getId())
                 .comicId(cacheDto.getComicId())
                 .chapterNumber(cacheDto.getChapterNumber())
                 .title(cacheDto.getTitle())
                 .viewCount(cacheDto.getViewCount())
-                .isPremium(cacheDto.getIsPremium())
+                .isPremium(premiumRequired)
                 .createdAt(cacheDto.getCreatedAt())
                 .build();
 
-        if (Boolean.TRUE.equals(responseDto.getIsPremium()) && !checkUserPremiumAccess(userId)) {
-            responseDto.setImages(Collections.emptyList());
-        }else {
-            responseDto.setImages(images);
-        }
+        responseDto.setImages(hasContentAccess ? images : Collections.emptyList());
 
-        try {
-            trackAndIncrementView(responseDto.getComicId(), chapterId, userId, clientIp);
-        } catch (Exception e) {
-            // Ignore view tracking errors if Redis is down
+        if (hasContentAccess) {
+            try {
+                trackAndIncrementView(responseDto.getComicId(), chapterId, userId, clientIp);
+            } catch (Exception e) {
+                // Ignore view tracking errors if Redis is down
+            }
         }
 
         try {
@@ -156,12 +167,28 @@ public class ChapterCrudPlugin
         }
     }
 
+    @Transactional(readOnly = true)
+    public boolean canAccessChapterContent(UUID chapterId, UUID userId) {
+        if (chapterId == null) {
+            return false;
+        }
+        return chapterRepository.findById(chapterId)
+                .map(chapter -> !chapterPremiumPolicyService.isPremiumChapter(chapter.getChapterNumber())
+                        || checkUserPremiumAccess(userId))
+                .orElse(false);
+    }
+
     private boolean checkUserPremiumAccess(UUID userId) {
         if (userId == null) {
             return false;
         }
         return userRepository.findByIdWithRole(userId)
-                .map(premiumPlanService::hasActivePremium)
+                .map(user -> {
+                    String role = user.getRole() == null || user.getRole().getRoleName() == null
+                            ? "READER"
+                            : user.getRole().getRoleName().trim().toUpperCase(Locale.ROOT);
+                    return PREMIUM_BYPASS_ROLES.contains(role) || premiumPlanService.hasActivePremium(user);
+                })
                 .orElse(false);
     }
 
@@ -172,7 +199,7 @@ public class ChapterCrudPlugin
                 .chapterNumber(dto.getChapterNumber())
                 .title(dto.getTitle())
                 .viewCount(dto.getViewCount())
-                .isPremium(dto.getIsPremium())
+                .isPremium(chapterPremiumPolicyService.isPremiumChapter(dto.getChapterNumber()))
                 .createdAt(dto.getCreatedAt())
                 .num(dto.getNum())
                 .date(dto.getDate())
@@ -196,7 +223,7 @@ public class ChapterCrudPlugin
                     .chapterNumber(c.getChapterNumber())
                     .title(c.getTitle())
                     .viewCount(c.getViewCount() != null ? c.getViewCount() : 0)
-                    .isPremium(c.getIsPremium() != null ? c.getIsPremium() : false)
+                    .isPremium(chapterPremiumPolicyService.isPremiumChapter(c.getChapterNumber()))
                     .createdAt(c.getCreatedAt())
                     .build()
             ).sorted((a, b) -> toChapterSortNumber(a.getChapterNumber()).compareTo(toChapterSortNumber(b.getChapterNumber()))).toList();
@@ -237,18 +264,18 @@ public class ChapterCrudPlugin
                     .chapterNumber(dto.getChapterNumber())
                     .title(dto.getTitle())
                     .viewCount(dto.getViewCount())
-                    .isPremium(dto.getIsPremium())
+                    .isPremium(chapterPremiumPolicyService.isPremiumChapter(dto.getChapterNumber()))
                     .createdAt(dto.getCreatedAt())
                     .build();
 
-                try {
-                    Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, copy.getId().toString());
-                    if (rawChapterViews != null && copy.getViewCount() != null) {
-                        copy.setViewCount(copy.getViewCount() + rawChapterViews.intValue());
-                    }
-                } catch (Exception e) {
-                    // Ignore Redis error if Redis is down
+            try {
+                Number rawChapterViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.CHAPTER_VIEW_HASH, copy.getId().toString());
+                if (rawChapterViews != null && copy.getViewCount() != null) {
+                    copy.setViewCount(copy.getViewCount() + rawChapterViews.intValue());
                 }
+            } catch (Exception e) {
+                // Ignore Redis error if Redis is down
+            }
             return copy;
         }).toList();
     }
