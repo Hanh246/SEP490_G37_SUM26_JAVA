@@ -184,7 +184,7 @@ public class ComicController {
      * ADMIN CRUD - sửa comic trực tiếp.
      */
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'MODERATOR')")
     public ResponseEntity<BaseResponse<ComicDTO>> update(
             @PathVariable UUID id,
             @RequestBody ComicDTO dto

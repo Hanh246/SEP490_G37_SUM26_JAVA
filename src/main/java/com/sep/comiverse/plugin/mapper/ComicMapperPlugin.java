@@ -44,19 +44,19 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
     public ComicDTO toDto(ComicEntity model) {
         if (model == null) return null;
 
-        // Keep the old inactivity rule, but use the current ComicEntity field.
-        // PAUSED was removed together with ComicStatus; HIATUS is the matching
-        // value in ComicPublicationStatus.
-        if (model.getPublicationStatus() == com.sep.comiverse.entity.enums.ComicPublicationStatus.ONGOING
+        ComicDTO dto = super.toDto(model);
+
+        // Keep the old inactivity rule: PAUSED was removed together with ComicStatus; 
+        // HIATUS is the matching value in ComicPublicationStatus.
+        // DO NOT modify the `model` directly in a readOnly transaction, modify the DTO instead!
+        if (dto.getPublicationStatus() == com.sep.comiverse.entity.enums.ComicPublicationStatus.ONGOING
                 && model.getLastChapterUpdatedAt() != null) {
             java.time.Instant thirtyDaysAgo = java.time.Instant.now()
                     .minus(30, java.time.temporal.ChronoUnit.DAYS);
             if (model.getLastChapterUpdatedAt().isBefore(thirtyDaysAgo)) {
-                model.setPublicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.HIATUS);
+                dto.setPublicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.HIATUS);
             }
         }
-
-        ComicDTO dto = super.toDto(model);
 
         // ComicEntity.authorId currently stores the author user's UUID. Some legacy
         // records may store AuthorEntity.id, so resolve both forms. Public search also
@@ -96,10 +96,15 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
         }
 
         if (model.getId() != null) {
+            long chapters = chapterRepository.countByComic_IdAndDeletedFalse(model.getId());
             long rejected = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
                     model.getId(), com.sep.comiverse.entity.enums.ChapterStatus.REJECTED);
             long pending = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
                     model.getId(), com.sep.comiverse.entity.enums.ChapterStatus.SUBMITTED_FOR_REVIEW);
+            // Use the higher value between the actual count from chapters table
+            // and the stored chapter_count in comics table (for scraped/mock data)
+            int storedCount = model.getChapterCount() != null ? model.getChapterCount() : 0;
+            dto.setChapterCount(Math.max((int) chapters, storedCount));
             dto.setRejectedChapterCount((int) rejected);
             dto.setPendingChapterCount((int) pending);
         }
