@@ -80,7 +80,10 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
             c.title,
             c.viewCount,
             c.isPremium,
-            c.createdAt
+            c.createdAt,
+            c.moderationStatus,
+            c.approvedBy,
+            c.approvedAt
         )
         FROM ChapterEntity c
         WHERE c.comic.id = :comicId
@@ -101,7 +104,10 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
             c.title,
             c.viewCount,
             c.isPremium,
-            c.createdAt
+            c.createdAt,
+            c.moderationStatus,
+            c.approvedBy,
+            c.approvedAt
         )
         FROM ChapterEntity c
         WHERE c.comic.id = :comicId
