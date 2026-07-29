@@ -12,15 +12,19 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
+import com.sep.comiverse.service.ChatService;
+
 @RestController
 @RequestMapping("/chat/banned-keywords")
 public class BannedKeywordController {
 
     private final BannedKeywordCrudPlugin crudPlugin;
+    private final ChatService chatService;
 
     @Autowired
-    public BannedKeywordController(BannedKeywordCrudPlugin crudPlugin) {
+    public BannedKeywordController(BannedKeywordCrudPlugin crudPlugin, ChatService chatService) {
         this.crudPlugin = crudPlugin;
+        this.chatService = chatService;
     }
 
     @GetMapping
@@ -44,6 +48,15 @@ public class BannedKeywordController {
         crudPlugin.delete(id);
         return ResponseEntity.ok(BaseResponse.<Void>builder()
                 .success(true)
+                .build());
+    }
+
+    @PostMapping("/validate")
+    public ResponseEntity<BaseResponse<com.sep.comiverse.dto.response.BannedKeywordValidationResponseDTO>> validate(@RequestBody com.sep.comiverse.dto.request.BannedKeywordValidationRequestDTO request) {
+        com.sep.comiverse.dto.response.BannedKeywordValidationResponseDTO result = chatService.validateMessageContent(request.getContent());
+        return ResponseEntity.ok(BaseResponse.<com.sep.comiverse.dto.response.BannedKeywordValidationResponseDTO>builder()
+                .success(true)
+                .data(result)
                 .build());
     }
 }

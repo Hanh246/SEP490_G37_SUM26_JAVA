@@ -18,17 +18,22 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
+import com.sep.comiverse.service.ChatService;
+
 @ExtendWith(MockitoExtension.class)
 class BannedKeywordControllerTest {
 
     @Mock
     private BannedKeywordCrudPlugin crudPlugin;
 
+    @Mock
+    private ChatService chatService;
+
     private BannedKeywordController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new BannedKeywordController(crudPlugin);
+        controller = new BannedKeywordController(crudPlugin, chatService);
     }
 
     @Test

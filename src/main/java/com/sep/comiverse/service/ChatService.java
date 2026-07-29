@@ -17,6 +17,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
+import com.sep.comiverse.repository.IBannedKeywordRepository;
+import com.sep.comiverse.entity.BannedKeywordEntity;
+import java.util.List;
+
+import com.sep.comiverse.dto.response.BannedKeywordValidationResponseDTO;
+
 @Service
 @RequiredArgsConstructor
 public class ChatService {
@@ -24,9 +30,45 @@ public class ChatService {
     private final IMessageRepository messageRepository;
     private final IProjectTeamRepository projectTeamRepository;
     private final UserService userService;
+    private final IBannedKeywordRepository bannedKeywordRepository;
+
+    @Transactional(readOnly = true)
+    public BannedKeywordValidationResponseDTO validateMessageContent(String content) {
+        if (content == null || content.trim().isEmpty()) {
+            return BannedKeywordValidationResponseDTO.builder().isBanned(false).build();
+        }
+
+        List<BannedKeywordEntity> bannedKeywords = bannedKeywordRepository.findAll();
+        String contentLower = content.toLowerCase();
+        
+        for (BannedKeywordEntity kw : bannedKeywords) {
+            String wordLower = kw.getWord().toLowerCase();
+            if (contentLower.contains(wordLower)) {
+                return BannedKeywordValidationResponseDTO.builder()
+                        .isBanned(true)
+                        .matchedWord(kw.getWord())
+                        .category(kw.getCategory())
+                        .severity(kw.getSeverity())
+                        .reason("Backend Filter Exact Match")
+                        .build();
+            }
+        }
+        return BannedKeywordValidationResponseDTO.builder().isBanned(false).build();
+    }
 
     @Transactional
     public MessageResponseDTO saveMessage(UUID senderId, MessageRequestDTO request) {
+        
+        String content = request.getContent() != null ? request.getContent().trim() : "";
+        if (content.isEmpty()) {
+            throw new CustomException(400, "Message content cannot be empty", HttpStatus.BAD_REQUEST);
+        }
+
+        // Backend Banned Keyword Filter
+        BannedKeywordValidationResponseDTO validation = validateMessageContent(content);
+        if (validation.isBanned()) {
+            throw new CustomException(400, "Message blocked by Server Filter! Contains banned keyword: " + validation.getMatchedWord(), HttpStatus.BAD_REQUEST);
+        }
 
         if (ChatType.GROUP.equals(request.getChatType())) {
             if (request.getGroupId() == null) {
@@ -42,7 +84,7 @@ public class ChatService {
                 .senderId(senderId)
                 .chatType(request.getChatType())
                 .groupId(request.getGroupId())
-                .content(request.getContent().trim())
+                .content(content)
                 .status("ACTIVE")
                 .build();
 
