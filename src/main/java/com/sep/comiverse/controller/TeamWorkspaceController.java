@@ -292,25 +292,6 @@ public class TeamWorkspaceController {
         return ResponseEntity.ok(result);
     }
 
-    @GetMapping("/{teamId}/chapters")
-    public ResponseEntity<List<ChapterLiteDTO>> getTeamChapters(@PathVariable UUID teamId) {
-        List<ChapterEntity> chapters = chapterRepository.findByProjectTeam_Id(teamId);
-
-        List<ChapterLiteDTO> result = chapters.stream()
-                .map(c -> ChapterLiteDTO.builder()
-                        .id(c.getId())
-                        .comicId(c.getComic() != null ? c.getComic().getId() : null)
-                        .chapterNumber(c.getChapterNumber())
-                        .title(c.getTitle())
-                        .viewCount(c.getViewCount())
-                        .isPremium(c.getIsPremium())
-                        .createdAt(c.getCreatedAt())
-
-                        .build())
-                .collect(Collectors.toList());
-
-        return ResponseEntity.ok(result);
-    }
 
     private String computeInitials(String fullName) {
         if (fullName == null || fullName.isBlank()) return "?";

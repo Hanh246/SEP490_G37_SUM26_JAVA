@@ -128,7 +128,6 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
         """, nativeQuery = true)
     List<String> findImagesByChapterIdAndStatus(@Param("chapterId") UUID chapterId);
 
-    List<ChapterEntity> findByProjectTeam_Id(UUID projectTeamId);
 
     @Query("""
         SELECT c.comic.id AS comicId, COUNT(c) AS chapterCount

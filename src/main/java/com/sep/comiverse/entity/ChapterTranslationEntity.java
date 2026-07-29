@@ -34,7 +34,4 @@ public class ChapterTranslationEntity extends BaseEntity {
     @Column(name = "project_team_id")
     private UUID projectTeamId;    // team nào đã dịch bản này
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "project_team_id", insertable = false, updatable = false)
-    private ProjectTeamEntity projectTeam;
 }
