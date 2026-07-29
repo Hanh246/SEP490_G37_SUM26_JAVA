@@ -18,14 +18,14 @@ import java.util.List;
 @AllArgsConstructor
 public class UpdatePremiumPlanSettingsRequest {
     @NotNull(message = "Monthly price is required")
-    @DecimalMin(value = "0.0", inclusive = true, message = "Monthly price cannot be negative")
+    @DecimalMin(value = "0.01", message = "Monthly price must be greater than zero")
     private BigDecimal monthlyPrice;
 
     @NotNull(message = "Yearly price is required")
-    @DecimalMin(value = "0.0", inclusive = true, message = "Yearly price cannot be negative")
+    @DecimalMin(value = "0.01", message = "Yearly price must be greater than zero")
     private BigDecimal yearlyPrice;
 
     @NotEmpty(message = "Premium benefits cannot be empty")
-    @Size(max = 12, message = "Premium benefits can contain at most 12 items")
-    private List<@Size(max = 140, message = "Each benefit must be at most 140 characters") String> benefits;
+    @Size(max = 15, message = "Premium benefits can contain at most 15 items")
+    private List<@Size(max = 160, message = "Each benefit must be at most 160 characters") String> benefits;
 }

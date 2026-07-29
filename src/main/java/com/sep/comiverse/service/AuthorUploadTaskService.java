@@ -75,7 +75,7 @@ public class AuthorUploadTaskService {
         update(taskId, state -> {
             state.status = STATUS_COMPLETED;
             state.progress = 100;
-            state.message = "Chapter CBZ processed successfully";
+            state.message = "Chapter ZIP processed successfully";
             state.chapter = chapter;
             state.error = null;
         });

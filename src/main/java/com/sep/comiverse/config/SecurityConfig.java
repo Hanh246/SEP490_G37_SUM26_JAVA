@@ -50,7 +50,8 @@ public class SecurityConfig {
             "/error",
             "/v3/api-docs/**",
             "/swagger-ui/**",
-            "/swagger-ui.html"
+            "/swagger-ui.html",
+            "/stripe/webhook"
     };
 
     @Bean
@@ -77,6 +78,7 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/chapters/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/genres/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/plans/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/subscriptions/plans").permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2

@@ -8,6 +8,7 @@ import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.plugin.crud.ChapterCrudPlugin;
 import com.sep.comiverse.security.JwtTokenUtil;
+import com.sep.comiverse.security.UserPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -16,18 +17,25 @@ import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/chapters")
 public class ChapterController {
 
+    private static final Set<String> INCLUDE_UNPUBLISHED_ROLES = Set.of(
+            "ADMIN", "MODERATOR"
+    );
+
     private final ChapterCrudPlugin chapterCrudPlugin;
     private final JwtTokenUtil jwtTokenUtil;
-    
+
     public ChapterController(ChapterCrudPlugin chapterCrudPlugin, JwtTokenUtil jwtTokenUtil) {
         this.chapterCrudPlugin = chapterCrudPlugin;
         this.jwtTokenUtil = jwtTokenUtil;
@@ -153,11 +161,17 @@ public class ChapterController {
     @Operation(summary = "Get list of chapters by comic ID")
     public ResponseEntity<BaseResponse<List<ChapterLiteDTO>>> getChaptersByComicId(
             @PathVariable UUID comicId,
-            @RequestParam(value = "includeAll", required = false, defaultValue = "false") boolean includeAll
+            @RequestParam(value = "includeAll", required = false, defaultValue = "false") boolean includeAll,
+            @AuthenticationPrincipal UserPrincipal principal
     ) {
+        String role = principal == null || principal.getRole() == null
+                ? ""
+                : principal.getRole().trim().toUpperCase(Locale.ROOT);
+        boolean includeUnpublished = includeAll && INCLUDE_UNPUBLISHED_ROLES.contains(role);
+
         return ResponseEntity.ok(BaseResponse.<List<ChapterLiteDTO>>builder()
                 .success(true)
-                .data(chapterCrudPlugin.getChaptersByComicId(comicId, includeAll))
+                .data(chapterCrudPlugin.getChaptersByComicId(comicId, includeUnpublished))
                 .build());
     }
 }

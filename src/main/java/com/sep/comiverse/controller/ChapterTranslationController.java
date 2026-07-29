@@ -4,6 +4,8 @@ import com.sep.comiverse.dto.ChapterTranslationDTO;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.entity.ChapterTranslationEntity;
 import com.sep.comiverse.repository.IChapterTranslationRepository;
+import com.sep.comiverse.plugin.crud.ChapterCrudPlugin;
+import com.sep.comiverse.security.JwtTokenUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -22,9 +24,19 @@ import java.util.stream.Collectors;
 public class ChapterTranslationController {
 
     private final IChapterTranslationRepository chapterTranslationRepository;
+    private final ChapterCrudPlugin chapterCrudPlugin;
+    private final JwtTokenUtil jwtTokenUtil;
 
     @GetMapping("/chapters/{chapterId}/translations")
     public ResponseEntity<BaseResponse<List<ChapterTranslationDTO>>> getTranslations(@PathVariable UUID chapterId) {
+        UUID userId = jwtTokenUtil.getCurrentUserId();
+        if (!chapterCrudPlugin.canAccessChapterContent(chapterId, userId)) {
+            return ResponseEntity.ok(BaseResponse.<List<ChapterTranslationDTO>>builder()
+                    .success(true)
+                    .data(List.of())
+                    .build());
+        }
+
         List<ChapterTranslationEntity> translations = chapterTranslationRepository.findByChapter_Id(chapterId);
 
         List<ChapterTranslationDTO> result = translations.stream()
