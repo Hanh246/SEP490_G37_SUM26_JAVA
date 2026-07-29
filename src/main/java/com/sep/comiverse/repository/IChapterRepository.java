@@ -23,6 +23,8 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
             UUID authorId
     );
 
+    Optional<ChapterEntity> findByIdAndDeletedFalse(UUID id);
+
     Optional<ChapterEntity> findByIdAndDeletedFalseAndModerationStatus(
             UUID id,
             ChapterStatus moderationStatus

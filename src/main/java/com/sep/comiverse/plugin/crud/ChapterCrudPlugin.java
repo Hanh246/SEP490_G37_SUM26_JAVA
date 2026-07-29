@@ -63,13 +63,36 @@ public class ChapterCrudPlugin
 
     @Transactional(readOnly = true)
     public ChapterDTO getChapterDetail(UUID chapterId, UUID userId, String clientIp) {
-        ChapterEntity publishedChapter = chapterRepository
-                .findByIdAndDeletedFalseAndModerationStatus(chapterId, ChapterStatus.PUBLISHED)
+        ChapterEntity chapter = chapterRepository
+                .findByIdAndDeletedFalse(chapterId)
                 .orElseThrow(() -> new CustomException(
                         404,
                         "Chapter not found",
                         HttpStatus.NOT_FOUND
                 ));
+
+        // If not published, restrict access to privileged roles
+        if (chapter.getModerationStatus() != ChapterStatus.PUBLISHED) {
+            boolean canViewUnpublished = false;
+            if (userId != null) {
+                canViewUnpublished = userRepository.findByIdWithRole(userId)
+                        .map(user -> {
+                            String role = user.getRole() == null || user.getRole().getRoleName() == null
+                                    ? "READER"
+                                    : user.getRole().getRoleName().trim().toUpperCase(Locale.ROOT);
+                            return PREMIUM_BYPASS_ROLES.contains(role);
+                        })
+                        .orElse(false);
+            }
+            if (!canViewUnpublished) {
+                throw new CustomException(
+                        404,
+                        "Chapter not found or not published",
+                        HttpStatus.NOT_FOUND
+                );
+            }
+        }
+
         String cacheKey = CHAPTER_DETAIL_CACHE_PREFIX + chapterId;
 
         ChapterLiteDTO cacheDto = null;
@@ -86,13 +109,13 @@ public class ChapterCrudPlugin
 
         if (cacheDto == null) {
             cacheDto = ChapterLiteDTO.builder()
-                    .id(publishedChapter.getId())
-                    .comicId(publishedChapter.getComic().getId())
-                    .chapterNumber(publishedChapter.getChapterNumber())
-                    .title(publishedChapter.getTitle())
-                    .viewCount(publishedChapter.getViewCount())
-                    .isPremium(chapterPremiumPolicyService.isPremiumChapter(publishedChapter.getChapterNumber()))
-                    .createdAt(publishedChapter.getCreatedAt())
+                    .id(chapter.getId())
+                    .comicId(chapter.getComic().getId())
+                    .chapterNumber(chapter.getChapterNumber())
+                    .title(chapter.getTitle())
+                    .viewCount(chapter.getViewCount())
+                    .isPremium(chapterPremiumPolicyService.isPremiumChapter(chapter.getChapterNumber()))
+                    .createdAt(chapter.getCreatedAt())
                     .build();
 
             try {
@@ -102,9 +125,9 @@ public class ChapterCrudPlugin
             }
         }
 
-        List<String> images = publishedChapter.getImages() == null
+        List<String> images = chapter.getImages() == null
                 ? Collections.emptyList()
-                : publishedChapter.getImages();
+                : chapter.getImages();
         boolean premiumRequired = chapterPremiumPolicyService.isPremiumChapter(cacheDto.getChapterNumber());
         boolean hasContentAccess = !premiumRequired || checkUserPremiumAccess(userId);
 
