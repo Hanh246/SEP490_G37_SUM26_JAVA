@@ -33,7 +33,7 @@ import java.util.UUID;
 @RequestMapping("/author/comics/{comicId}/chapters")
 @RequiredArgsConstructor
 @PreAuthorize("hasAuthority('AUTHOR')")
-@Tag(name = "Author - Chapters", description = "APIs for author chapter CBZ upload, preview, and review submission")
+@Tag(name = "Author - Chapters", description = "APIs for author chapter ZIP upload, preview, and review submission")
 public class AuthorChapterController {
 
     private final AuthorChapterService authorChapterService;
@@ -41,7 +41,7 @@ public class AuthorChapterController {
     private final AuthorUploadAsyncService authorUploadAsyncService;
 
     @PostMapping(value = "/upload-zip", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "Upload chapter ZIP asynchronously", description = "Receives one chapter CBZ file, returns an upload task immediately after the file is accepted, then extracts images and uploads pages to Cloudinary in the background.")
+    @Operation(summary = "Upload chapter ZIP asynchronously", description = "Receives one chapter ZIP file, returns an upload task immediately after the file is accepted, then extracts images and uploads pages to Cloudinary in the background.")
     public ResponseEntity<BaseResponse<AuthorUploadTaskResponse>> uploadChapterZip(
             @PathVariable UUID comicId,
             @Valid @ModelAttribute ChapterUploadRequest request,
@@ -55,18 +55,18 @@ public class AuthorChapterController {
         AuthorUploadTaskResponse task = authorUploadTaskService.createTask(
                 request.getAuthorId(),
                 "CHAPTER_ZIP",
-                "Chapter CBZ accepted. Backend is processing it in the background."
+                "Chapter ZIP accepted. Backend is processing it in the background."
         );
         authorUploadAsyncService.processChapterZip(task.getTaskId(), comicId, request, safeZipFile);
         return ResponseEntity.accepted().body(BaseResponse.<AuthorUploadTaskResponse>builder()
                 .success(true)
-                .message("Chapter CBZ accepted. Track status with the returned taskId.")
+                .message("Chapter ZIP accepted. Track status with the returned taskId.")
                 .data(task)
                 .build());
     }
 
     @GetMapping("/upload-zip/status/{taskId}")
-    @Operation(summary = "Get chapter CBZ upload status", description = "Returns current background processing status for a chapter CBZ upload task")
+    @Operation(summary = "Get chapter ZIP upload status", description = "Returns current background processing status for a chapter ZIP upload task")
     public ResponseEntity<BaseResponse<AuthorUploadTaskResponse>> getChapterUploadStatus(
             @PathVariable UUID comicId,
             @PathVariable UUID taskId,
@@ -165,8 +165,8 @@ public class AuthorChapterController {
                 .message("Chapter permanently deleted")
                 .build());
     }
-    @PutMapping(value = "/{chapterId}/replace-cbz", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "Replace chapter CBZ", description = "Replaces all image URLs of an owned chapter. The new CBZ filename must match the existing chapter number.")
+    @PutMapping(value = "/{chapterId}/replace-zip", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Replace chapter ZIP", description = "Replaces all image URLs of an owned chapter. The new ZIP filename must match the existing chapter number.")
     public ResponseEntity<BaseResponse<ChapterPreviewResponse>> replaceChapterZip(
             @PathVariable UUID comicId,
             @PathVariable UUID chapterId,
@@ -179,7 +179,7 @@ public class AuthorChapterController {
         MultipartFile resolvedZipFile = zipFile != null ? zipFile : fallbackFile;
         return ResponseEntity.ok(BaseResponse.<ChapterPreviewResponse>builder()
                 .success(true)
-                .message("Chapter CBZ replaced. Submit it for review when the preview is correct.")
+                .message("Chapter ZIP replaced. Submit it for review when the preview is correct.")
                 .data(authorChapterService.replaceChapterZip(comicId, chapterId, resolvedAuthorId, resolvedZipFile))
                 .build());
     }

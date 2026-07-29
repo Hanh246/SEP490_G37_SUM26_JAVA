@@ -38,7 +38,7 @@ import java.util.zip.ZipInputStream;
 public class AuthorComicPackageUploadService {
 
     private static final Pattern CHAPTER_ZIP_NAME_PATTERN =
-            Pattern.compile("(?i)^chapter\\s+([1-9][0-9]*(?:[,.][0-9]+)?)\\.cbz$");
+            Pattern.compile("(?i)^chapter\\s+([1-9][0-9]*(?:[,.][0-9]+)?)\\.zip$");
     private static final Pattern NATURAL_PART_PATTERN = Pattern.compile("\\d+|\\D+");
 
     private final AuthorComicService authorComicService;
@@ -120,14 +120,14 @@ public class AuthorComicPackageUploadService {
                 if (pathParts.length != 1) {
                     throw new CustomException(
                             400,
-                            "Comic package must be exactly: Comic Title.zip -> Chapter 1.cbz -> 01.jpg. Do not wrap chapter CBZ files in another folder. Invalid entry: " + entryName,
+                            "Comic package must be exactly: Comic Title.zip -> Chapter 1.zip -> 01.jpg. Do not wrap chapter ZIP files in another folder. Invalid entry: " + entryName,
                             HttpStatus.BAD_REQUEST
                     );
                 }
 
                 String fileName = pathParts[0];
-                if (!isCbzArchiveFileName(fileName)) {
-                    throw new CustomException(400, "Comic package can contain chapter .cbz files only. Invalid entry: " + entryName, HttpStatus.BAD_REQUEST);
+                if (!isChapterZipFileName(fileName)) {
+                    throw new CustomException(400, "Comic package can contain chapter .zip files only. Invalid entry: " + entryName, HttpStatus.BAD_REQUEST);
                 }
 
                 String chapterNumber = parseChapterNumber(fileName);
@@ -135,7 +135,7 @@ public class AuthorComicPackageUploadService {
                 if (chapterNumber == null) {
                     throw new CustomException(
                             400,
-                            "Chapter archive name must be like 'Chapter 1.cbz' or 'Chapter 1,5.cbz'. Invalid file: " + fileName,
+                            "Chapter archive name must be like 'Chapter 1.zip' or 'Chapter 1,5.zip'. Invalid file: " + fileName,
                             HttpStatus.BAD_REQUEST
                     );
                 }
@@ -161,7 +161,7 @@ public class AuthorComicPackageUploadService {
         }
 
         if (chapterZips.isEmpty()) {
-            throw new CustomException(400, "Comic package does not contain any chapter .cbz files like 'Chapter 1.cbz' at root", HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Comic package does not contain any chapter .zip files like 'Chapter 1.zip' at root", HttpStatus.BAD_REQUEST);
         }
 
         chapterZips.sort(Comparator
@@ -228,15 +228,15 @@ public class AuthorComicPackageUploadService {
         return fileName.toLowerCase(Locale.ROOT).endsWith(".zip");
     }
 
-    private boolean isCbzArchiveFileName(String fileName) {
+    private boolean isChapterZipFileName(String fileName) {
         if (!StringUtils.hasText(fileName)) {
             return false;
         }
-        return fileName.toLowerCase(Locale.ROOT).endsWith(".cbz");
+        return fileName.toLowerCase(Locale.ROOT).endsWith(".zip");
     }
 
     private String contentTypeForArchive(String fileName) {
-        return "application/vnd.comicbook+zip";
+        return "application/zip";
     }
 
     private String parseChapterNumber(String fileName) {
@@ -256,7 +256,7 @@ public class AuthorComicPackageUploadService {
             return "Untitled Comic";
         }
         String fileName = getBaseName(normalizeEntryName(originalFilename));
-        return fileName.replaceAll("(?i)\\.(zip|cbz)$", "").trim();
+        return fileName.replaceAll("(?i)\\.zip$", "").trim();
     }
 
     private Comparator<String> naturalComparator() {
