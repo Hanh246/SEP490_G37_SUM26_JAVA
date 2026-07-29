@@ -80,8 +80,4 @@ public class ProjectTeamEntity extends BaseEntity {
     @Builder.Default
     private Integer maxMembers = 5;
 
-    @OneToMany(mappedBy = "projectTeam", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
-    @org.hibernate.annotations.BatchSize(size = 100)
-    @Builder.Default
-    private List<ChapterEntity> chaptersList = new ArrayList<>();
 }
