@@ -25,6 +25,10 @@ public class TeamTaskEntity {
     private UUID projectTeamId;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "project_team_id", insertable = false, updatable = false)
+    private ProjectTeamEntity projectTeam;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "chapter_id")
     private ChapterEntity chapter;
 
