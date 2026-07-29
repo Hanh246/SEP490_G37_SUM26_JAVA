@@ -30,7 +30,7 @@ import java.util.UUID;
 public class ChapterController {
 
     private static final Set<String> INCLUDE_UNPUBLISHED_ROLES = Set.of(
-            "ADMIN", "MODERATOR"
+            "ADMIN", "MODERATOR", "AUTHOR", "TRANSLATOR", "PROJECT_LEADER"
     );
 
     private final ChapterCrudPlugin chapterCrudPlugin;
