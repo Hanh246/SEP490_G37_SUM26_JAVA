@@ -6,6 +6,11 @@ import com.sep.comiverse.dto.pagination.PaginationMetadata;
 import com.sep.comiverse.dto.pagination.PaginationResponse;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.dto.response.BaseResponse;
+import com.sep.comiverse.entity.ChapterEntity;
+import com.sep.comiverse.entity.ComicEntity;
+import com.sep.comiverse.entity.enums.ChapterStatus;
+import com.sep.comiverse.repository.IChapterRepository;
+import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.plugin.crud.ChapterCrudPlugin;
 import com.sep.comiverse.security.JwtTokenUtil;
 import com.sep.comiverse.security.UserPrincipal;
@@ -35,6 +40,12 @@ public class ChapterController {
 
     private final ChapterCrudPlugin chapterCrudPlugin;
     private final JwtTokenUtil jwtTokenUtil;
+    
+    @org.springframework.beans.factory.annotation.Autowired
+    private IChapterRepository chapterRepository;
+    
+    @org.springframework.beans.factory.annotation.Autowired
+    private IComicRepository comicRepository;
 
     public ChapterController(ChapterCrudPlugin chapterCrudPlugin, JwtTokenUtil jwtTokenUtil) {
         this.chapterCrudPlugin = chapterCrudPlugin;
@@ -150,6 +161,45 @@ public class ChapterController {
         return ResponseEntity.ok(BaseResponse.<ChapterDTO>builder()
                 .success(true)
                 .data(chapterCrudPlugin.getChapterDetail(id, userId, clientIp))
+                .build());
+    }
+
+    @PutMapping("/{id}/approve")
+    @PreAuthorize("hasAnyAuthority('MODERATOR', 'ADMIN')")
+    @org.springframework.transaction.annotation.Transactional
+    public ResponseEntity<BaseResponse<ChapterDTO>> approveChapter(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        String modName = principal != null && principal.getFullName() != null ? principal.getFullName() : (principal != null ? principal.getUsername() : "System Moderator");
+
+        ChapterEntity chapter = chapterRepository.findById(id)
+                .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Chapter with id " + id + " not found"));
+
+        chapter.setModerationStatus(ChapterStatus.PUBLISHED);
+        chapter.setApprovedBy(modName);
+        chapter.setApprovedAt(java.time.Instant.now());
+
+        ChapterEntity savedChapter = chapterRepository.save(chapter);
+
+        ComicEntity comic = savedChapter.getComic();
+        if (comic != null) {
+            comic.setLatestChapterNumber(savedChapter.getChapterNumber());
+            comic.setLastChapterUpdatedAt(java.time.Instant.now());
+
+            long publishedChapterCount = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
+                    comic.getId(),
+                    ChapterStatus.PUBLISHED
+            );
+            comic.setChapterCount(publishedChapterCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) publishedChapterCount);
+            
+            comicRepository.save(comic);
+            chapterCrudPlugin.evictChaptersCache(comic.getId());
+        }
+
+        return ResponseEntity.ok(BaseResponse.<ChapterDTO>builder()
+                .success(true)
+                .data(chapterCrudPlugin.getPlugin().toDto(savedChapter))
                 .build());
     }
 
