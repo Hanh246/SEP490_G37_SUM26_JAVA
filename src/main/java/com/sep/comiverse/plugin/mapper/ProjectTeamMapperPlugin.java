@@ -24,39 +24,12 @@ public class ProjectTeamMapperPlugin extends AbstractMapperPlugin<ProjectTeamEnt
         ProjectTeamDTO dto = super.toDto(model);
         dto.setComicTitle(model.getComicName());
         dto.setNotes(model.getNotes());
-        if (model.getChaptersList() != null && org.hibernate.Hibernate.isInitialized(model.getChaptersList())) {
-            dto.setChaptersList(model.getChaptersList().stream()
-                    .map(chap -> {
-                        var chapDto = new com.sep.comiverse.dto.ChapterDTO();
-                        chapDto.setId(chap.getId());
-                        
-                        // Extract comic ID directly from the Hibernate proxy without running a database query
-                        UUID comicId = null;
-                        if (chap.getComic() != null) {
-                            if (chap.getComic() instanceof org.hibernate.proxy.HibernateProxy proxy) {
-                                comicId = (UUID) proxy.getHibernateLazyInitializer().getIdentifier();
-                            } else {
-                                comicId = chap.getComic().getId();
-                            }
-                        }
-                        chapDto.setComicId(comicId);
-                        
-                        chapDto.setChapterNumber(chap.getChapterNumber());
-                        chapDto.setTitle(chap.getTitle());
-                        chapDto.setNum("Chapter " + chap.getChapterNumber());
-                        chapDto.setDate("Just now");
-                        return chapDto;
-                    })
-                    .collect(Collectors.toList()));
-        }
-        return dto;
+            return dto;
     }
 
     @Override
     protected void configureModelMapper() {
         super.configureModelMapper();
-        modelMapper.typeMap(ProjectTeamDTO.class, ProjectTeamEntity.class)
-                .addMappings(mapper -> mapper.skip(ProjectTeamEntity::setChaptersList));
     }
 
     @Override

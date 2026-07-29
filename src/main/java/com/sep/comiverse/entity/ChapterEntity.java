@@ -63,9 +63,7 @@ public class ChapterEntity extends BaseEntity {
     @Builder.Default
     private List<TeamTaskEntity> tasks = new ArrayList<>();
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "project_team_id")
-    private ProjectTeamEntity projectTeam;
+    // projectTeam removed
 
     @Column(name = "approved_by")
     private String approvedBy;
