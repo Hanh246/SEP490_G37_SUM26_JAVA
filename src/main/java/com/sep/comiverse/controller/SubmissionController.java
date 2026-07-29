@@ -86,8 +86,10 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
         boolean alreadyApproved = "approved".equalsIgnoreCase(submission.getStatus());
         submission.setStatus("approved");
+        String modName = "System Moderator";
         if (principal != null) {
             submission.setModeratorId(principal.getId());
+            modName = principal.getFullName() != null ? principal.getFullName() : principal.getUsername();
         }
         SubmissionEntity savedSubmission = submissionRepository.save(submission);
 
@@ -97,7 +99,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                     : "Comic profile";
             auditLogService.log("REVIEW_QUEUE", "Approved " + targetDesc + " of " + submission.getTitle());
             if ("author".equalsIgnoreCase(submission.getQueueType())) {
-                handleAuthorApproval(submission);
+                handleAuthorApproval(submission, modName);
             }
             ComicEntity comic = resolveComic(submission);
             if (comic != null) {
@@ -112,7 +114,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 .build());
     }
 
-    private void handleAuthorApproval(SubmissionEntity submission) {
+    private void handleAuthorApproval(SubmissionEntity submission, String modName) {
         if (submission == null) {
             return;
         }
@@ -131,6 +133,8 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                     ));
 
             chapter.setModerationStatus(ChapterStatus.PUBLISHED);
+            chapter.setApprovedBy(modName);
+            chapter.setApprovedAt(java.time.Instant.now());
             ChapterEntity savedChapter = chapterRepository.save(chapter);
 
             ComicEntity comic = savedChapter.getComic();
@@ -160,6 +164,8 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             for (ChapterEntity ch : comicChapters) {
                 if (ch.getModerationStatus() != ChapterStatus.PUBLISHED) {
                     ch.setModerationStatus(ChapterStatus.PUBLISHED);
+                    ch.setApprovedBy(modName);
+                    ch.setApprovedAt(java.time.Instant.now());
                     chapterRepository.save(ch);
                 }
             }
@@ -183,6 +189,8 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             for (ChapterEntity ch : comicChapters) {
                 if (ch.getModerationStatus() != ChapterStatus.PUBLISHED) {
                     ch.setModerationStatus(ChapterStatus.PUBLISHED);
+                    ch.setApprovedBy(modName);
+                    ch.setApprovedAt(java.time.Instant.now());
                     chapterRepository.save(ch);
                 }
             }

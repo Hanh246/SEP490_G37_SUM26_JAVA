@@ -1,5 +1,6 @@
 package com.sep.comiverse.dto;
 
+import com.sep.comiverse.entity.enums.ChapterStatus;
 import lombok.*;
 import java.time.Instant;
 import java.util.UUID;
@@ -16,4 +17,7 @@ public class ChapterLiteDTO {
     private Long viewCount;
     private Boolean isPremium;
     private Instant createdAt;
+    private ChapterStatus moderationStatus;
+    private String approvedBy;
+    private Instant approvedAt;
 }

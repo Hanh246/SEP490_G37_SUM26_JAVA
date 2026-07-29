@@ -53,4 +53,6 @@ public class ComicDTO {
     private Integer rejectedChapterCount;
     private Integer pendingChapterCount;
     private java.time.Instant lastChapterUpdatedAt;
+    private String approvedBy;
+    private java.time.Instant approvedAt;
 }

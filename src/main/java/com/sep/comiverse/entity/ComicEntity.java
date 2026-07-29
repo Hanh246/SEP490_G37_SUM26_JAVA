@@ -105,6 +105,12 @@ public class ComicEntity extends BaseEntity {
     @Column(name = "summary_vector", columnDefinition = "vector(768)")
     private float[] summaryVector;
 
+    @Column(name = "approved_by")
+    private String approvedBy;
+
+    @Column(name = "approved_at")
+    private java.time.Instant approvedAt;
+
     @PrePersist
     protected void ensureModerationDefaults() {
         if (this.moderationStatus == null) {

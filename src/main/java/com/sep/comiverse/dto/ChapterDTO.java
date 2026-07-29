@@ -41,4 +41,7 @@ public class ChapterDTO {
 
     private String num;
     private String date;
+
+    private String approvedBy;
+    private Instant approvedAt;
 }
