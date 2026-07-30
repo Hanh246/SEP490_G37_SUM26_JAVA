@@ -157,8 +157,16 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             chapter.setApprovedAt(java.time.Instant.now());
             ChapterEntity savedChapter = chapterRepository.save(chapter);
 
-            ComicEntity comic = savedChapter.getComic();
+            ComicEntity comic = null;
+            if (savedChapter.getComic() != null) {
+                comic = comicRepository.findById(savedChapter.getComic().getId()).orElse(null);
+            }
             if (comic != null) {
+                if (comic.getModerationStatus() != ComicModerationStatus.PUBLISHED) {
+                    comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+                    comic.setApprovedBy(modName);
+                    comic.setApprovedAt(java.time.Instant.now());
+                }
                 refreshComicMetadataAfterPublishedChapter(comic, savedChapter);
                 comicRepository.save(comic);
             }

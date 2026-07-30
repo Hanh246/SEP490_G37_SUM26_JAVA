@@ -9,6 +9,7 @@ import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
+import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.plugin.crud.ChapterCrudPlugin;
@@ -171,36 +172,68 @@ public class ChapterController {
             @PathVariable UUID id,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
-        String modName = principal != null && principal.getFullName() != null ? principal.getFullName() : (principal != null ? principal.getUsername() : "System Moderator");
+        try {
+            String modName = principal != null && principal.getFullName() != null ? principal.getFullName() : (principal != null ? principal.getUsername() : "System Moderator");
 
-        ChapterEntity chapter = chapterRepository.findById(id)
-                .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Chapter with id " + id + " not found"));
+            ChapterEntity chapter = chapterRepository.findById(id)
+                    .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Chapter with id " + id + " not found"));
 
-        chapter.setModerationStatus(ChapterStatus.PUBLISHED);
-        chapter.setApprovedBy(modName);
-        chapter.setApprovedAt(java.time.Instant.now());
+            chapter.setModerationStatus(ChapterStatus.PUBLISHED);
+            chapter.setApprovedBy(modName);
+            chapter.setApprovedAt(java.time.Instant.now());
 
-        ChapterEntity savedChapter = chapterRepository.save(chapter);
+            ChapterEntity savedChapter = chapterRepository.save(chapter);
 
-        ComicEntity comic = savedChapter.getComic();
-        if (comic != null) {
-            comic.setLatestChapterNumber(savedChapter.getChapterNumber());
-            comic.setLastChapterUpdatedAt(java.time.Instant.now());
+            ComicEntity comic = null;
+            if (savedChapter.getComic() != null) {
+                comic = comicRepository.findById(savedChapter.getComic().getId()).orElse(null);
+            }
+            if (comic != null) {
+                if (comic.getModerationStatus() != ComicModerationStatus.PUBLISHED) {
+                    comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+                    comic.setApprovedBy(modName);
+                    comic.setApprovedAt(java.time.Instant.now());
+                }
 
-            long publishedChapterCount = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
-                    comic.getId(),
-                    ChapterStatus.PUBLISHED
-            );
-            comic.setChapterCount(publishedChapterCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) publishedChapterCount);
-            
-            comicRepository.save(comic);
-            chapterCrudPlugin.evictChaptersCache(comic.getId());
+                comic.setLatestChapterNumber(savedChapter.getChapterNumber());
+                comic.setLastChapterUpdatedAt(java.time.Instant.now());
+
+                long publishedChapterCount = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
+                        comic.getId(),
+                        ChapterStatus.PUBLISHED
+                );
+                comic.setChapterCount(publishedChapterCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) publishedChapterCount);
+                
+                comicRepository.save(comic);
+                chapterCrudPlugin.evictChaptersCache(comic.getId());
+            }
+
+            ChapterDTO responseDto = null;
+            try {
+                responseDto = chapterCrudPlugin.getPlugin().toDto(savedChapter);
+            } catch (Exception e) {
+                // Fallback if ModelMapper fails
+                responseDto = new ChapterDTO();
+                responseDto.setId(savedChapter.getId());
+                responseDto.setChapterNumber(savedChapter.getChapterNumber());
+                if (savedChapter.getModerationStatus() != null) {
+                    responseDto.setModerationStatus(savedChapter.getModerationStatus());
+                }
+                if (comic != null) responseDto.setComicId(comic.getId());
+            }
+
+            return ResponseEntity.ok(BaseResponse.<ChapterDTO>builder()
+                    .success(true)
+                    .data(responseDto)
+                    .build());
+        } catch (Exception ex) {
+            java.io.StringWriter sw = new java.io.StringWriter();
+            ex.printStackTrace(new java.io.PrintWriter(sw));
+            return ResponseEntity.status(500).body(BaseResponse.<ChapterDTO>builder()
+                    .success(false)
+                    .message("FATAL ERROR: " + ex.getMessage() + " | TRACE: " + sw.toString())
+                    .build());
         }
-
-        return ResponseEntity.ok(BaseResponse.<ChapterDTO>builder()
-                .success(true)
-                .data(chapterCrudPlugin.getPlugin().toDto(savedChapter))
-                .build());
     }
 
     /**
