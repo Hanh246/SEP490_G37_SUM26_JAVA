@@ -3,37 +3,64 @@ package com.sep.comiverse.util;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sep.comiverse.exception.CustomException;
+import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.mail.MailException;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 @Component
+@Slf4j
 public class EmailUtil {
     private static final String FROM_NAME = "ComiVerse - The Ultimate Comic Portal";
     private static final URI RESEND_EMAILS_URI = URI.create("https://api.resend.com/emails");
 
+    private final String mailProvider;
+    private final String smtpUsername;
+    private final String smtpPassword;
+    private final String smtpFrom;
+    private final String smtpFromName;
     private final String apiKey;
     private final String mailFrom;
+    private final JavaMailSender mailSender;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
 
     public EmailUtil(
+            @Value("${app.mail.provider:smtp}") String mailProvider,
+            @Value("${spring.mail.username:}") String smtpUsername,
+            @Value("${spring.mail.password:}") String smtpPassword,
+            @Value("${app.mail.smtp-from:}") String smtpFrom,
+            @Value("${app.mail.smtp-from-name:ComiVerse}") String smtpFromName,
             @Value("${resend.api-key:}") String apiKey,
             @Value("${mail.from:ComiVerse <onboarding@resend.dev>}") String mailFrom,
+            JavaMailSender mailSender,
             ObjectMapper objectMapper
     ) {
+        this.mailProvider = mailProvider == null ? "smtp" : mailProvider.trim();
+        this.smtpUsername = smtpUsername == null ? "" : smtpUsername.trim();
+        this.smtpPassword = smtpPassword == null ? "" : smtpPassword.trim();
+        this.smtpFrom = smtpFrom == null ? "" : smtpFrom.trim();
+        this.smtpFromName = smtpFromName == null || smtpFromName.isBlank() ? FROM_NAME : smtpFromName.trim();
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.mailFrom = mailFrom;
+        this.mailSender = mailSender;
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
@@ -102,6 +129,46 @@ public class EmailUtil {
     }
 
     public void sendEmail(String toEmail, String subject, String htmlContent, String textContent) {
+        if ("smtp".equalsIgnoreCase(mailProvider)) {
+            sendViaSmtp(toEmail, subject, htmlContent, textContent);
+            return;
+        }
+        if ("resend".equalsIgnoreCase(mailProvider)) {
+            sendViaResend(toEmail, subject, htmlContent, textContent);
+            return;
+        }
+        throw new CustomException(
+                500,
+                "Unsupported mail provider configuration.",
+                HttpStatus.INTERNAL_SERVER_ERROR
+        );
+    }
+
+    private void sendViaSmtp(String toEmail, String subject, String htmlContent, String textContent) {
+        if (smtpUsername.isBlank() || smtpPassword.isBlank()) {
+            throw new CustomException(500, "SMTP credentials are not configured.", HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+
+        String fromAddress = smtpFrom.isBlank() ? smtpUsername : smtpFrom;
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(
+                    message,
+                    MimeMessageHelper.MULTIPART_MODE_MIXED_RELATED,
+                    StandardCharsets.UTF_8.name()
+            );
+            helper.setFrom(fromAddress, smtpFromName);
+            helper.setTo(toEmail);
+            helper.setSubject(subject);
+            helper.setText(textContent == null ? "" : textContent, htmlContent);
+            mailSender.send(message);
+        } catch (MailException | MessagingException | UnsupportedEncodingException e) {
+            log.error("SMTP email delivery failed for recipient domain {}", emailDomain(toEmail), e);
+            throw new CustomException(500, "Could not send email via SMTP.", HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    private void sendViaResend(String toEmail, String subject, String htmlContent, String textContent) {
         if (apiKey.isBlank()) {
             throw new CustomException(500, "RESEND_API_KEY is not configured.", HttpStatus.INTERNAL_SERVER_ERROR);
         }
@@ -140,6 +207,16 @@ public class EmailUtil {
         } catch (Exception e) {
             throw new CustomException(500, "An unknown email error occurred: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    private String emailDomain(String email) {
+        if (email == null) {
+            return "unknown";
+        }
+        int separator = email.lastIndexOf('@');
+        return separator >= 0 && separator < email.length() - 1
+                ? email.substring(separator + 1).toLowerCase()
+                : "unknown";
     }
 
     private String buildPasswordResetOtpHtml(String otp, String name) {
