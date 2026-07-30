@@ -294,6 +294,11 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             chapterRepository.findById(submission.getChapterId()).ifPresent(chapter -> {
                 chapter.setModerationStatus(ChapterStatus.REJECTED);
                 chapter.setRejectionReason(submission.getRejectionReason());
+                
+                // Tombstone: Clear heavy images array to prevent DB bloat.
+                // The content hash was already saved during upload to prevent re-uploads.
+                chapter.setImages(new java.util.ArrayList<>());
+                
                 chapterRepository.save(chapter);
             });
             return;

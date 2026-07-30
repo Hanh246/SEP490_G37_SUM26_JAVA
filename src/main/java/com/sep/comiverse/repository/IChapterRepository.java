@@ -137,4 +137,6 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
         GROUP BY c.comic.id
         """)
     List<ComicChapterCountProjection> countChaptersByComicForAuthor(@Param("authorId") UUID authorId);
+
+    boolean existsByContentHashAndModerationStatus(String contentHash, com.sep.comiverse.entity.enums.ChapterStatus moderationStatus);
 }

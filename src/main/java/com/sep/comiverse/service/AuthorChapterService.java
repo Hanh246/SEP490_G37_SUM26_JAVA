@@ -72,6 +72,24 @@ public class AuthorChapterService {
     @Value("${author.chapter.max-pages:200}")
     private int maxPages;
 
+    private String computeContentHash(List<ImageCandidate> images) {
+        if (images == null || images.isEmpty()) return null;
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("MD5");
+            for (ImageCandidate img : images) {
+                md.update(img.bytes());
+            }
+            byte[] hashBytes = md.digest();
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hashBytes) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     @Transactional
     public ChapterPreviewResponse uploadChapterZip(UUID comicId, ChapterUploadRequest request, MultipartFile zipFile) {
         validateUploadRequest(request);
@@ -85,6 +103,12 @@ public class AuthorChapterService {
 
         List<ImageCandidate> images = extractAndValidateImages(zipFile);
         images.sort(imageNaturalComparator());
+
+        // Content Fingerprinting: Check if this exact content was previously rejected
+        String contentHash = computeContentHash(images);
+        if (contentHash != null && chapterRepository.existsByContentHashAndModerationStatus(contentHash, ChapterStatus.REJECTED)) {
+            throw new CustomException(400, "This chapter content was previously rejected and cannot be re-uploaded. Please contact moderation.", HttpStatus.BAD_REQUEST);
+        }
 
         List<String> imageUrls = new ArrayList<>();
         String targetFolder = "comiverse/chapters/" + comicId + "/chapter-" + chapterNumber;
@@ -105,6 +129,7 @@ public class AuthorChapterService {
                 .moderationStatus(ChapterStatus.PREVIEW_READY)
                 .isPremium(chapterPremiumPolicyService.isPremiumChapter(chapterNumber))
                 .images(imageUrls)
+                .contentHash(contentHash)
                 .build();
         ChapterEntity savedChapter = chapterRepository.save(chapter);
         refreshComicChapterMetadata(comic);
@@ -285,6 +310,12 @@ public class AuthorChapterService {
         List<ImageCandidate> images = extractAndValidateImages(zipFile);
         images.sort(imageNaturalComparator());
 
+        // Content Fingerprinting: Check if this exact content was previously rejected
+        String contentHash = computeContentHash(images);
+        if (contentHash != null && chapterRepository.existsByContentHashAndModerationStatus(contentHash, ChapterStatus.REJECTED)) {
+            throw new CustomException(400, "This chapter content was previously rejected and cannot be re-uploaded. Please contact moderation.", HttpStatus.BAD_REQUEST);
+        }
+
         List<String> imageUrls = new ArrayList<>();
         String targetFolder = "comiverse/chapters/" + comicId + "/chapter-" + chapter.getChapterNumber();
         for (int index = 0; index < images.size(); index++) {
@@ -298,6 +329,7 @@ public class AuthorChapterService {
         }
 
         chapter.setImages(imageUrls);
+        chapter.setContentHash(contentHash);
         chapter.setModerationStatus(ChapterStatus.PREVIEW_READY);
         cancelPendingChapterSubmissions(chapterId, authorId);
 
