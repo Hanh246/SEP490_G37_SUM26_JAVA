@@ -68,10 +68,30 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
     }
 
     @GetMapping("/all")
-    public ResponseEntity<BaseResponse<List<SubmissionDTO>>> listAll() {
+    public ResponseEntity<BaseResponse<List<SubmissionDTO>>> listAll(org.springframework.security.core.Authentication authentication) {
+        List<SubmissionDTO> all = crudPlugin.listAll();
+        
+        if (authentication != null && authentication.getPrincipal() instanceof com.sep.comiverse.security.UserPrincipal principal) {
+            com.sep.comiverse.entity.UserEntity user = principal.user();
+            if ("MODERATOR".equalsIgnoreCase(user.getRole().getRoleName())) {
+                String langs = user.getAssignedLanguages();
+                if (langs != null && !langs.isBlank()) {
+                    List<String> scope = java.util.Arrays.stream(langs.toLowerCase().split(","))
+                            .map(String::trim).toList();
+                    all = all.stream().filter(s -> {
+                        String comicLang = s.getLanguage();
+                        if (comicLang == null) return false;
+                        return scope.stream().anyMatch(l -> comicLang.toLowerCase().contains(l) || l.contains(comicLang.toLowerCase()));
+                    }).toList();
+                } else {
+                    all = java.util.Collections.emptyList();
+                }
+            }
+        }
+
         return ResponseEntity.ok(BaseResponse.<List<SubmissionDTO>>builder()
                 .success(true)
-                .data(crudPlugin.listAll())
+                .data(all)
                 .build());
     }
 

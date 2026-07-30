@@ -207,6 +207,11 @@ public class AuthService {
         RoleEntity targetRole = roleRepository.findByRoleName(finalRoleName)
                 .orElseThrow(() -> new CustomException(400, "Role " + finalRoleName + " not found", HttpStatus.BAD_REQUEST));
 
+        String assignedLanguagesStr = null;
+        if (request.getAssignedLanguages() != null) {
+            assignedLanguagesStr = String.join(",", request.getAssignedLanguages());
+        }
+
         UserEntity user = UserEntity.builder()
                 .username(request.getUsername())
                 .password(passwordEncoder.encode(request.getPassword()))
@@ -216,6 +221,7 @@ public class AuthService {
                 .role(targetRole)
                 .status("ACTIVE")
                 .dateOfBirth(request.getDateOfBirth())
+                .assignedLanguages(assignedLanguagesStr)
                 .build();
 
         return userRepository.save(user);

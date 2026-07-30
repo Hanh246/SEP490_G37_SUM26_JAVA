@@ -29,6 +29,7 @@ public class RegisterRequest {
     private String phone;
 
     private String role;
-
     private LocalDate dateOfBirth;
+
+    private java.util.List<String> assignedLanguages;
 }

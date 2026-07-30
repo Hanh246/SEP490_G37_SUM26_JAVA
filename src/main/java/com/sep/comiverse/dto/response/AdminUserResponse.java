@@ -55,4 +55,7 @@ public class AdminUserResponse {
 
     @JsonProperty("dateOfBirth")
     private java.time.LocalDate dateOfBirth;
+
+    @JsonProperty("assignedLanguages")
+    private java.util.List<String> assignedLanguages;
 }

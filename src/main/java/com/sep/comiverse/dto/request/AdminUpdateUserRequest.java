@@ -14,4 +14,6 @@ public class AdminUpdateUserRequest {
 
     @NotBlank(message = "Role cannot be blank")
     private String role;
+
+    private java.util.List<String> assignedLanguages;
 }

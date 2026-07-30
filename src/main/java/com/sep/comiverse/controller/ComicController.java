@@ -115,10 +115,30 @@ public class ComicController {
     @GetMapping("/staff/all")
     @PreAuthorize("hasAnyAuthority('ADMIN', 'MODERATOR', 'TRANSLATOR', 'PROJECT_LEADER')")
     @Operation(summary = "Retrieve all comics (including un-published) for staff")
-    public ResponseEntity<BaseResponse<List<ComicDTO>>> listAllForStaff() {
+    public ResponseEntity<BaseResponse<List<ComicDTO>>> listAllForStaff(org.springframework.security.core.Authentication authentication) {
+        List<ComicDTO> all = comicCrudPlugin.listAllForStaff();
+
+        if (authentication != null && authentication.getPrincipal() instanceof com.sep.comiverse.security.UserPrincipal principal) {
+            com.sep.comiverse.entity.UserEntity user = principal.user();
+            if ("MODERATOR".equalsIgnoreCase(user.getRole().getRoleName())) {
+                String langs = user.getAssignedLanguages();
+                if (langs != null && !langs.isBlank()) {
+                    List<String> scope = java.util.Arrays.stream(langs.toLowerCase().split(","))
+                            .map(String::trim).toList();
+                    all = all.stream().filter(c -> {
+                        String comicLang = c.getLanguage();
+                        if (comicLang == null) return false;
+                        return scope.stream().anyMatch(l -> comicLang.toLowerCase().contains(l) || l.contains(comicLang.toLowerCase()));
+                    }).toList();
+                } else {
+                    all = java.util.Collections.emptyList();
+                }
+            }
+        }
+
         return ResponseEntity.ok(BaseResponse.<List<ComicDTO>>builder()
                 .success(true)
-                .data(comicCrudPlugin.listAllForStaff())
+                .data(all)
                 .build());
     }
 
