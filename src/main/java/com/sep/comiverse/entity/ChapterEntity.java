@@ -71,6 +71,9 @@ public class ChapterEntity extends BaseEntity {
     @Column(name = "approved_at")
     private Instant approvedAt;
 
+    @Column(name = "rejected_by")
+    private String rejectedBy;
+
     @Column(name = "content_hash", length = 64)
     private String contentHash;
 }

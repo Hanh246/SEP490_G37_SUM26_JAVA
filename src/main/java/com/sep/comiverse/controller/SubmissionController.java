@@ -286,7 +286,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         return matcher.group(1).replace(',', '.');
     }
 
-    private void handleSubmissionRejected(SubmissionEntity submission) {
+    private void handleSubmissionRejected(SubmissionEntity submission, String modName) {
         if (submission == null || !"author".equalsIgnoreCase(submission.getQueueType())) {
             return;
         }
@@ -294,6 +294,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             chapterRepository.findById(submission.getChapterId()).ifPresent(chapter -> {
                 chapter.setModerationStatus(ChapterStatus.REJECTED);
                 chapter.setRejectionReason(submission.getRejectionReason());
+                chapter.setRejectedBy(modName);
                 
                 // Tombstone: Clear heavy images array to prevent DB bloat.
                 // The content hash was already saved during upload to prevent re-uploads.
@@ -308,6 +309,18 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 comic.setModerationStatus(ComicModerationStatus.REJECTED);
                 comic.setRejectionReason(submission.getRejectionReason());
                 comicRepository.save(comic);
+                
+                // Tombstone: Clear heavy images array for all chapters to prevent DB bloat
+                java.util.List<ChapterEntity> chapters = chapterRepository.findAllByComic_IdAndDeletedFalse(comic.getId());
+                for (ChapterEntity ch : chapters) {
+                    if (ch.getModerationStatus() != ChapterStatus.PUBLISHED) {
+                        ch.setModerationStatus(ChapterStatus.REJECTED);
+                        ch.setRejectionReason(submission.getRejectionReason());
+                        ch.setRejectedBy(modName);
+                        ch.setImages(new java.util.ArrayList<>());
+                        chapterRepository.save(ch);
+                    }
+                }
             });
         }
     }
@@ -334,7 +347,8 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         if (!alreadyRejected) {
             String targetDesc = "author".equalsIgnoreCase(submission.getQueueType()) ? "Comic profile" : "chapter " + submission.getChapter();
             auditLogService.log("REVIEW_QUEUE", "Rejected " + targetDesc + " of " + submission.getTitle() + " (Reason: " + reason + ")");
-            handleSubmissionRejected(submission);
+            String modName = principal != null ? (principal.getFullName() != null ? principal.getFullName() : principal.getUsername()) : "Moderator";
+            handleSubmissionRejected(submission, modName);
             notifySubmissionOwner(submission, false, reason);
         }
 

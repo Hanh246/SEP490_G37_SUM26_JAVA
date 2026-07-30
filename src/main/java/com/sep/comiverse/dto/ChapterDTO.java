@@ -44,4 +44,6 @@ public class ChapterDTO {
 
     private String approvedBy;
     private Instant approvedAt;
+    
+    private String rejectedBy;
 }
