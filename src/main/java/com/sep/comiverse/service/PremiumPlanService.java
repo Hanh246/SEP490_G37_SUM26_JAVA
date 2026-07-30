@@ -109,6 +109,12 @@ public class PremiumPlanService {
     @Transactional(readOnly = true)
     public UserProfileResponse toUserProfileResponse(UserEntity user) {
         PremiumSnapshot premium = resolvePremiumSnapshot(user);
+        java.util.List<String> parsedLangs = new java.util.ArrayList<>();
+        if (user.getAssignedLanguages() != null && !user.getAssignedLanguages().isBlank()) {
+            for (String lang : user.getAssignedLanguages().split(",")) {
+                parsedLangs.add(lang.trim());
+            }
+        }
         return UserProfileResponse.builder()
                 .userId(user.getId())
                 .username(user.getUsername())
@@ -122,6 +128,7 @@ public class PremiumPlanService {
                 .premiumPlan(premium.active() ? premium.planCode() : null)
                 .premiumExpiresAt(premium.expiresAt())
                 .premiumActive(premium.active())
+                .assignedLanguages(parsedLangs)
                 .build();
     }
 
