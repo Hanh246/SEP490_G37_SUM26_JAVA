@@ -25,7 +25,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AdminUserService {
 
-    private static final String DEFAULT_ADMIN_RESET_PASSWORD = "123456";
+    private static final String DEFAULT_ADMIN_RESET_PASSWORD = "abcd1234";
 
     private final IUserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
