@@ -17,6 +17,14 @@ import java.util.UUID;
 @Repository
 public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity, UUID> {
 
+    @Query("""
+        SELECT c.comic.id
+        FROM ChapterEntity c
+        WHERE c.id = :chapterId
+          AND (c.deleted = false OR c.deleted IS NULL)
+        """)
+    Optional<UUID> findComicIdByChapterId(@Param("chapterId") UUID chapterId);
+
     Optional<ChapterEntity> findByIdAndComic_IdAndComic_AuthorIdAndDeletedFalse(
             UUID id,
             UUID comicId,

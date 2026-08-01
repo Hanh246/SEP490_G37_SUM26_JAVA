@@ -9,7 +9,9 @@ import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.INotificationRepository;
 import com.sep.comiverse.repository.IUserRepository;
+import com.sep.comiverse.service.push.NotificationPushEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -27,6 +29,7 @@ public class BroadcastService {
     private final IUserRepository userRepository;
     private final NotificationPreferenceService notificationPreferenceService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * Send a broadcast announcement to all users matching the target roles.
@@ -77,10 +80,12 @@ public class BroadcastService {
 
         List<NotificationEntity> savedNotifications = notificationRepository.saveAll(notifications);
         for (NotificationEntity notification : savedNotifications) {
+            NotificationResponse response = toNotificationResponse(notification);
             messagingTemplate.convertAndSend(
                     "/topic/notifications/" + notification.getUser().getId(),
-                    toNotificationResponse(notification)
+                    response
             );
+            eventPublisher.publishEvent(new NotificationPushEvent(notification.getUser().getId(), response));
         }
 
         return BroadcastResponse.builder()

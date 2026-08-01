@@ -2,6 +2,7 @@ package com.sep.comiverse.entity.enums;
 
 public enum NotificationPreferenceKey {
     SYSTEM_BROADCASTS,
+    COMMENT_REPLIES,
     FORUM_ACTIVITY,
     REVIEW_QUEUE,
     SUBMISSION_STATUS,

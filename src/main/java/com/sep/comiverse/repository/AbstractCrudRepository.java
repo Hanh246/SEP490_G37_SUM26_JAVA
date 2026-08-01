@@ -31,7 +31,7 @@ public interface AbstractCrudRepository <T extends BaseEntity, ID>
     @Query("SELECT CASE WHEN COUNT(e) > 0 THEN true ELSE false END FROM #{#entityName} e WHERE e.id = :id AND e.deleted = false")
     boolean existsById(@Param("id") ID id);
 
-    @Query("UPDATE #{#entityName} e SET e.deleted = true, e.updatedAt = CURRENT_TIMESTAMP WHERE e.id = :id")
+    @Query("UPDATE #{#entityName} e SET e.deleted = true, e.updatedAt = CURRENT_INSTANT WHERE e.id = :id")
     @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true)
     @org.springframework.transaction.annotation.Transactional
     void softDeleteById(@Param("id") ID id);

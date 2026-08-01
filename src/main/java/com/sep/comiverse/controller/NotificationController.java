@@ -4,8 +4,11 @@ import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.dto.response.NotificationResponse;
 import com.sep.comiverse.dto.response.NotificationPreferencesResponse;
 import com.sep.comiverse.dto.request.UpdateNotificationPreferencesRequest;
+import com.sep.comiverse.dto.request.RegisterPushDeviceRequest;
+import com.sep.comiverse.dto.request.UnregisterPushDeviceRequest;
 import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.NotificationService;
+import com.sep.comiverse.service.PushDeviceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +27,33 @@ public class NotificationController {
 
     private final NotificationService notificationService;
     private final com.sep.comiverse.service.NotificationPreferenceService notificationPreferenceService;
+    private final PushDeviceService pushDeviceService;
+
+    @PostMapping("/devices")
+    @Operation(summary = "Register a push device", description = "Associate an FCM registration token with the signed-in account")
+    public ResponseEntity<BaseResponse<Void>> registerPushDevice(
+            @jakarta.validation.Valid @RequestBody RegisterPushDeviceRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        pushDeviceService.register(principal.getId(), request);
+        return ResponseEntity.ok(BaseResponse.<Void>builder()
+                .success(true)
+                .message("Push device registered")
+                .build());
+    }
+
+    @DeleteMapping("/devices")
+    @Operation(summary = "Unregister a push device", description = "Remove an FCM registration token from the signed-in account")
+    public ResponseEntity<BaseResponse<Void>> unregisterPushDevice(
+            @jakarta.validation.Valid @RequestBody UnregisterPushDeviceRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        pushDeviceService.unregister(principal.getId(), request.getToken());
+        return ResponseEntity.ok(BaseResponse.<Void>builder()
+                .success(true)
+                .message("Push device unregistered")
+                .build());
+    }
 
     @GetMapping("/preferences")
     public ResponseEntity<BaseResponse<NotificationPreferencesResponse>> getPreferences(

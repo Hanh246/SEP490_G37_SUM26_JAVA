@@ -52,9 +52,30 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<BaseResponse<Object>> handleAccessDeniedException(org.springframework.security.access.AccessDeniedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(BaseResponse.builder()
+                        .success(false)
+                        .message("Access denied: " + ex.getMessage())
+                        .build());
+    }
+
+    @ExceptionHandler({jakarta.persistence.EntityNotFoundException.class, java.util.NoSuchElementException.class})
+    public ResponseEntity<BaseResponse<Object>> handleNotFoundException(Exception ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(BaseResponse.builder()
+                        .success(false)
+                        .message(ex.getMessage() != null ? ex.getMessage() : "Requested resource not found")
+                        .build());
+    }
+
     // Handle all unforeseen system errors
     @ExceptionHandler(Exception.class)
     public ResponseEntity<BaseResponse<Object>> handleGeneralException(Exception ex) {
+        if (ex instanceof org.springframework.security.access.AccessDeniedException accessDeniedException) {
+            throw accessDeniedException;
+        }
         ex.printStackTrace();
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(BaseResponse.builder()

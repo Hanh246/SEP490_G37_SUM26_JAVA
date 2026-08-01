@@ -18,6 +18,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.util.List;
@@ -42,6 +43,8 @@ class NotificationServiceTest {
     private SimpMessagingTemplate messagingTemplate;
     @Mock
     private NotificationPreferenceService preferenceService;
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     private NotificationService notificationService;
 
@@ -51,7 +54,8 @@ class NotificationServiceTest {
                 notificationRepository,
                 userRepository,
                 messagingTemplate,
-                preferenceService
+                preferenceService,
+                eventPublisher
         );
     }
 
@@ -117,6 +121,7 @@ class NotificationServiceTest {
                     eq("/topic/notifications/" + userId),
                     any(Object.class)
             );
+            verify(eventPublisher).publishEvent(any(Object.class));
         } else {
             verify(notificationRepository, never()).save(any(NotificationEntity.class));
             verify(messagingTemplate, never()).convertAndSend(anyString(), any(Object.class));
@@ -188,8 +193,10 @@ class NotificationServiceTest {
     private static Stream<Arguments> directDeliveryMatrix() {
         return Stream.of(
                         new Object[]{"READER", NotificationPreferenceKey.SYSTEM_BROADCASTS},
+                        new Object[]{"READER", NotificationPreferenceKey.COMMENT_REPLIES},
                         new Object[]{"READER", NotificationPreferenceKey.FORUM_ACTIVITY},
                         new Object[]{"ADMIN", NotificationPreferenceKey.SYSTEM_BROADCASTS},
+                        new Object[]{"ADMIN", NotificationPreferenceKey.COMMENT_REPLIES},
                         new Object[]{"ADMIN", NotificationPreferenceKey.FORUM_ACTIVITY},
                         new Object[]{"MODERATOR", NotificationPreferenceKey.REVIEW_QUEUE},
                         new Object[]{"AUTHOR", NotificationPreferenceKey.SUBMISSION_STATUS},
