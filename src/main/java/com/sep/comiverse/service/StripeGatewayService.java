@@ -178,6 +178,53 @@ public class StripeGatewayService {
         return postForm("/v1/billing_portal/sessions", form, null);
     }
 
+    public JsonNode retrieveConnectedAccount(String accountId) {
+        requireSecretKey();
+        if (accountId == null || !accountId.matches("^acct_[A-Za-z0-9]+$")) {
+            throw new CustomException(400, "Invalid Stripe connected account ID", HttpStatus.BAD_REQUEST);
+        }
+        try {
+            return restClient.get()
+                    .uri("/v1/accounts/{id}", accountId)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + secretKey)
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (RestClientResponseException ex) {
+            throw stripeException(ex, "Unable to retrieve Stripe connected account");
+        }
+    }
+
+    public JsonNode createTransfer(
+            String connectedAccountId,
+            BigDecimal amount,
+            String currency,
+            UUID payoutRequestId,
+            UUID userId,
+            String payoutMonth
+    ) {
+        if (amount == null || amount.signum() <= 0) {
+            throw new CustomException(400, "Payout amount must be greater than zero", HttpStatus.BAD_REQUEST);
+        }
+        if (currency == null || !currency.matches("^[A-Za-z]{3}$")) {
+            throw new CustomException(400, "Payout currency must be a 3-letter ISO code", HttpStatus.BAD_REQUEST);
+        }
+
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("amount", toMinorUnit(amount, currency).toString());
+        form.add("currency", currency.toLowerCase(Locale.ROOT));
+        form.add("destination", connectedAccountId);
+        form.add("description", "ComiVerse payout " + payoutMonth);
+        form.add("transfer_group", "COMIVERSE_PAYOUT_" + payoutRequestId);
+        form.add("metadata[payout_request_id]", payoutRequestId.toString());
+        form.add("metadata[user_id]", userId.toString());
+        form.add("metadata[payout_month]", payoutMonth);
+        return postForm(
+                "/v1/transfers",
+                form,
+                "creator-payout-" + payoutRequestId
+        );
+    }
+
     public JsonNode verifyAndParseWebhook(String payload, String signatureHeader) {
         if (webhookSecret.isBlank()) {
             throw new CustomException(503, "Stripe webhook secret is not configured", HttpStatus.SERVICE_UNAVAILABLE);

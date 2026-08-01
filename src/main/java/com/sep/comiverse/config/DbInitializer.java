@@ -2,6 +2,7 @@ package com.sep.comiverse.config;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,6 +15,7 @@ import java.util.stream.Collectors;
 
 @Component
 @RequiredArgsConstructor
+@Order(1)
 public class DbInitializer implements CommandLineRunner {
 
     private final IUserRepository userRepository;
@@ -38,7 +40,7 @@ public class DbInitializer implements CommandLineRunner {
 
     @Override
     @Transactional
-    public void run(String... args) throws Exception {
+    public void run(String... args) {
         // ComicEntity no longer has the legacy `status` column.
         // Publication lifecycle is stored in `publication_status`.
         jdbcTemplate.execute("UPDATE comics SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
@@ -60,51 +62,9 @@ public class DbInitializer implements CommandLineRunner {
         createChatFlags();
         createForumThreads();
 
-        // Self-healing check: restore empty leaderNames to 'trantest56787' for orphaned teams
-        try {
-            List<ProjectTeamEntity> emptyLeaderTeams = projectTeamRepository.findAll().stream()
-                    .filter(t -> t.getLeaderName() == null || t.getLeaderName().isBlank() || "No Leader".equalsIgnoreCase(t.getLeaderName()))
-                    .toList();
-            for (ProjectTeamEntity team : emptyLeaderTeams) {
-                if (team.getTitle() != null && (team.getTitle().equals("trantest56787") || team.getTitle().equals("TransTest123455") || team.getTitle().contains("trantest"))) {
-                    team.setLeaderName(team.getTitle());
-                } else {
-                    team.setLeaderName("trantest56787");
-                }
-                team.setLeaderInitials("TL");
-                projectTeamRepository.save(team);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        repairMissingProjectTeamLeaders();
 
-        // Create HNSW index for cosine similarity on comics
-        try {
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_comics_summary_vector_hnsw ON comics USING hnsw (summary_vector vector_cosine_ops)");
-            System.out.println("✅ Database Setup: HNSW Index created/verified on comics table");
-        } catch (Exception e) {
-            System.err.println("⚠️ Warning: Failed to create HNSW index: " + e.getMessage());
-        }
-
-        // Create HNSW index for cosine similarity on users
-        try {
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_users_user_vector_hnsw ON users USING hnsw (user_vector vector_cosine_ops)");
-            System.out.println("✅ Database Setup: HNSW Index created/verified on users table");
-        } catch (Exception e) {
-            System.err.println("⚠️ Warning: Failed to create HNSW index on users table: " + e.getMessage());
-        }
-
-        // Create standard indexes for project_team_id foreign keys to optimize workspace lookups
-        try {
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_chapters_project_team_id ON chapters (project_team_id)");
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_team_tasks_project_team_id ON team_tasks (project_team_id)");
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_team_join_requests_project_team_id ON team_join_requests (project_team_id)");
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_team_announcements_project_team_id ON team_announcements (project_team_id)");
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_team_messages_project_team_id ON team_messages (project_team_id)");
-            System.out.println("✅ Database Setup: Foreign key indexes created/verified");
-        } catch (Exception e) {
-            System.err.println("⚠️ Warning: Failed to create foreign key indexes: " + e.getMessage());
-        }
+        System.out.println("✅ Database seed and migrations completed");
     }
 
     /**
@@ -174,6 +134,32 @@ public class DbInitializer implements CommandLineRunner {
                   AND cardinality(images) = 1
                   AND (images[1] LIKE '%,https://%' OR images[1] LIKE '%,http://%');
                 """);
+    }
+
+    /**
+     * Repairs legacy project teams that do not have a usable leader display name.
+     * Do not swallow database exceptions here: this method runs inside the seed
+     * transaction, so any database error must roll the transaction back cleanly.
+     */
+    private void repairMissingProjectTeamLeaders() {
+        List<ProjectTeamEntity> emptyLeaderTeams = projectTeamRepository.findAll().stream()
+                .filter(team -> team.getLeaderName() == null
+                        || team.getLeaderName().isBlank()
+                        || "No Leader".equalsIgnoreCase(team.getLeaderName()))
+                .toList();
+
+        for (ProjectTeamEntity team : emptyLeaderTeams) {
+            String title = team.getTitle();
+            if (title != null && (title.equals("trantest56787")
+                    || title.equals("TransTest123455")
+                    || title.toLowerCase().contains("trantest"))) {
+                team.setLeaderName(title);
+            } else {
+                team.setLeaderName("trantest56787");
+            }
+            team.setLeaderInitials("TL");
+            projectTeamRepository.save(team);
+        }
     }
 
     private void createRoles() {

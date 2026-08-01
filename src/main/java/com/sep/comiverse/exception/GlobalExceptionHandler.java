@@ -2,10 +2,12 @@ package com.sep.comiverse.exception;
 
 import com.sep.comiverse.dto.response.BaseResponse;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -24,6 +26,15 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<BaseResponse<Object>> handleAccessDenied(Exception ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(BaseResponse.builder()
+                        .success(false)
+                        .message("Access denied: your account role cannot use this feature")
+                        .build());
+    }
+
     // Handle validation exceptions caused by @Valid
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<BaseResponse<Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
@@ -33,7 +44,7 @@ public class GlobalExceptionHandler {
             String errorMessage = error.getDefaultMessage();
             errors.put(fieldName, errorMessage);
         });
-        
+
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(BaseResponse.builder()
                         .success(false)
@@ -50,6 +61,31 @@ public class GlobalExceptionHandler {
                         .success(false)
                         .message("Invalid " + parameterName + " format")
                         .build());
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<BaseResponse<Object>> handleMultipartLimit(MaxUploadSizeExceededException ex) {
+        boolean tooManyParts = hasCauseNamed(ex, "FileCountLimitExceededException");
+        String message = tooManyParts
+                ? "Too many files or multipart fields in one upload. A chapter folder supports at most 200 page images."
+                : "Upload exceeds the 250MB request limit.";
+
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(BaseResponse.builder()
+                        .success(false)
+                        .message(message)
+                        .build());
+    }
+
+    private boolean hasCauseNamed(Throwable throwable, String simpleClassName) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current.getClass().getSimpleName().equals(simpleClassName)) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     // Handle all unforeseen system errors

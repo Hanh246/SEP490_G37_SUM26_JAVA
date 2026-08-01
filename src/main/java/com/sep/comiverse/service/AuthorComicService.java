@@ -53,6 +53,9 @@ public class AuthorComicService {
     public AuthorComicResponse createComic(AuthorComicCreateRequest request) {
         validateCreateRequest(request);
 
+        String normalizedTitle = request.getTitle().trim();
+        ensureComicTitleAvailable(normalizedTitle, null);
+
         Set<GenreEntity> genres = resolveGenres(request.getGenres());
         ComicPublicationStatus publicationStatus = request.getPublicationStatus() == null
                 ? ComicPublicationStatus.ONGOING
@@ -60,7 +63,7 @@ public class AuthorComicService {
 
         ComicEntity comic = ComicEntity.builder()
                 .authorId(request.getAuthorId())
-                .title(request.getTitle().trim())
+                .title(normalizedTitle)
                 .summary(trimToNull(request.getSummary()))
                 .language(normalizeRequiredLanguage(request.getLanguage()))
                 .minimumAge(normalizeMinimumAge(request.getMinimumAge()))
@@ -133,8 +136,11 @@ public class AuthorComicService {
 
         if (StringUtils.hasText(request.getTitle())) {
             String title = request.getTitle().trim();
-            requiresModerationReview |= differentString(comic.getTitle(), title);
-            comic.setTitle(title);
+            if (differentString(comic.getTitle(), title)) {
+                ensureComicTitleAvailable(title, comicId);
+                requiresModerationReview = true;
+                comic.setTitle(title);
+            }
         }
         if (request.getSummary() != null) {
             String summary = trimToNull(request.getSummary());
@@ -374,6 +380,26 @@ public class AuthorComicService {
                 .createdAt(comic.getCreatedAt())
                 .updatedAt(comic.getUpdatedAt())
                 .build();
+    }
+
+    @Transactional(readOnly = true)
+    public boolean titleExists(String title) {
+        return StringUtils.hasText(title)
+                && comicRepository.existsActiveByNormalizedTitle(title.trim());
+    }
+
+    private void ensureComicTitleAvailable(String title, UUID excludedComicId) {
+        boolean exists = excludedComicId == null
+                ? comicRepository.existsActiveByNormalizedTitle(title)
+                : comicRepository.existsActiveByNormalizedTitleExcludingId(title, excludedComicId);
+
+        if (exists) {
+            throw new CustomException(
+                    409,
+                    "A comic with this title already exists. Please choose another title.",
+                    HttpStatus.CONFLICT
+            );
+        }
     }
 
     private void validateCreateRequest(AuthorComicCreateRequest request) {
