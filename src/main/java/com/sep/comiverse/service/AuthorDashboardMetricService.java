@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.time.format.TextStyle;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -49,11 +51,11 @@ public class AuthorDashboardMetricService {
     private final IComicMetricSnapshotRepository metricSnapshotRepository;
 
     @Transactional(readOnly = true)
-    public AuthorDashboardMetricsResponse getDashboardMetrics(UUID authorId, Integer requestedMonths) {
+    public AuthorDashboardMetricsResponse getDashboardMetrics(UUID authorId, String period) {
         if (authorId == null) {
             throw new CustomException(400, "Author id is required", HttpStatus.BAD_REQUEST);
         }
-        int months = normalizeMonths(requestedMonths);
+        
         List<ComicEntity> comics = comicRepository.findAllByAuthorIdAndDeletedFalseOrderByCreatedAtAsc(authorId);
         List<ChapterEntity> chapters = chapterRepository.findAllByComic_AuthorIdAndDeletedFalseOrderByCreatedAtAsc(authorId);
         List<SubmissionEntity> submissions = submissionRepository
@@ -80,7 +82,7 @@ public class AuthorDashboardMetricService {
 
         return AuthorDashboardMetricsResponse.builder()
                 .summary(buildSummary(comics, chapters, submissions, latestSnapshotByComic))
-                .monthlyMetrics(buildMonthlyMetrics(months, comics, chapters, submissions, snapshots))
+                .monthlyMetrics(buildChartMetrics(period, comics, chapters, submissions, snapshots))
                 .topComics(buildTopComics(comics, chapterCountByComic, latestSnapshotByComic))
                 .recentActivities(buildRecentActivities(submissions))
                 .generatedAt(Instant.now())
@@ -129,69 +131,85 @@ public class AuthorDashboardMetricService {
                 .build();
     }
 
-    private List<AuthorDashboardMetricsResponse.MonthlyMetric> buildMonthlyMetrics(
-            int months,
+    private List<AuthorDashboardMetricsResponse.MonthlyMetric> buildChartMetrics(
+            String period,
             List<ComicEntity> comics,
             List<ChapterEntity> chapters,
             List<SubmissionEntity> submissions,
             List<ComicMetricSnapshotEntity> snapshots
     ) {
-        YearMonth currentMonth = YearMonth.now(ZoneOffset.UTC);
-        YearMonth firstMonth = currentMonth.minusMonths(months - 1L);
+        LocalDate endDate = LocalDate.now(ZoneOffset.UTC);
+        int points = 7;
+        if ("MONTH".equalsIgnoreCase(period)) points = 30;
+        else if ("YEAR".equalsIgnoreCase(period)) points = 12;
 
-        Map<YearMonth, Map<UUID, ComicMetricSnapshotEntity>> latestSnapshotPerComicByMonth = new LinkedHashMap<>();
-        snapshots.stream()
-                .filter(snapshot -> snapshot.getComicId() != null && snapshot.getCreatedAt() != null)
+        Set<UUID> activeComicIds = comics.stream().map(ComicEntity::getId).collect(Collectors.toSet());
+
+        List<ComicMetricSnapshotEntity> validSnapshots = snapshots.stream()
+                .filter(s -> s.getComicId() != null && s.getCreatedAt() != null)
+                .filter(s -> activeComicIds.contains(s.getComicId()))
                 .sorted(Comparator.comparing(ComicMetricSnapshotEntity::getCreatedAt))
-                .forEach(snapshot -> {
-                    YearMonth month = toYearMonth(snapshot.getCreatedAt());
-                    if (month.isBefore(firstMonth) || month.isAfter(currentMonth)) {
-                        return;
-                    }
-                    latestSnapshotPerComicByMonth
-                            .computeIfAbsent(month, ignored -> new LinkedHashMap<>())
-                            .put(snapshot.getComicId(), snapshot);
-                });
+                .toList();
 
         List<AuthorDashboardMetricsResponse.MonthlyMetric> result = new ArrayList<>();
-        for (int index = 0; index < months; index++) {
-            YearMonth month = firstMonth.plusMonths(index);
-            Map<UUID, ComicMetricSnapshotEntity> monthlySnapshots = latestSnapshotPerComicByMonth
-                    .getOrDefault(month, Map.of());
 
-            long views = monthlySnapshots.values().stream()
-                    .mapToLong(snapshot -> defaultLong(snapshot.getViewCount()))
-                    .sum();
-            long followers = monthlySnapshots.values().stream()
-                    .mapToLong(snapshot -> defaultLong(snapshot.getSavedCount()))
-                    .sum();
-            BigDecimal revenue = monthlySnapshots.values().stream()
+        for (int i = points - 1; i >= 0; i--) {
+            LocalDate periodEnd;
+            String label;
+            String key;
+            
+            if ("YEAR".equalsIgnoreCase(period)) {
+                YearMonth ym = YearMonth.now(ZoneOffset.UTC).minusMonths(i);
+                periodEnd = (i == 0) ? endDate : ym.atEndOfMonth();
+                label = ym.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
+                key = ym.toString();
+            } else {
+                LocalDate date = endDate.minusDays(i);
+                periodEnd = date;
+                if ("WEEK".equalsIgnoreCase(period)) {
+                    label = date.getDayOfWeek().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
+                } else {
+                    label = String.valueOf(date.getDayOfMonth());
+                }
+                key = date.toString();
+            }
+
+            Instant periodEndInstant = periodEnd.atTime(23, 59, 59).toInstant(ZoneOffset.UTC);
+
+            Map<UUID, ComicMetricSnapshotEntity> snapshotMap = new LinkedHashMap<>();
+            for (ComicMetricSnapshotEntity s : validSnapshots) {
+                if (!s.getCreatedAt().isAfter(periodEndInstant)) {
+                    snapshotMap.put(s.getComicId(), s);
+                }
+            }
+
+            long views = snapshotMap.values().stream().mapToLong(s -> defaultLong(s.getViewCount())).sum();
+            long followers = snapshotMap.values().stream().mapToLong(s -> defaultLong(s.getSavedCount())).sum();
+            BigDecimal revenue = snapshotMap.values().stream()
                     .map(ComicMetricSnapshotEntity::getEstimatedRevenue)
                     .filter(Objects::nonNull)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-            // The current month must show the freshest counters even when the scheduled
-            // snapshot job has not run yet.
-            if (month.equals(currentMonth)) {
-                views = comics.stream().mapToLong(comic -> defaultLong(comic.getViewCount())).sum();
-                followers = comics.stream().mapToLong(comic -> defaultLong(comic.getSaveCount())).sum();
+            if (i == 0) {
+                views = comics.stream().mapToLong(c -> defaultLong(c.getViewCount())).sum();
+                followers = comics.stream().mapToLong(c -> defaultLong(c.getSaveCount())).sum();
             }
 
             long chaptersUploaded = chapters.stream()
-                    .filter(chapter -> isInMonth(chapter.getCreatedAt(), month))
+                    .filter(c -> isActivityInPeriod(c.getCreatedAt(), periodEnd, period))
                     .count();
             long reviewsSubmitted = submissions.stream()
-                    .filter(submission -> isInMonth(submission.getCreatedAt(), month))
+                    .filter(s -> isActivityInPeriod(s.getCreatedAt(), periodEnd, period))
                     .count();
             long chaptersApproved = submissions.stream()
-                    .filter(submission -> submission.getChapterId() != null)
+                    .filter(s -> s.getChapterId() != null)
                     .filter(this::isApproved)
-                    .filter(submission -> isInMonth(activityTime(submission), month))
+                    .filter(s -> isActivityInPeriod(activityTime(s), periodEnd, period))
                     .count();
 
             result.add(AuthorDashboardMetricsResponse.MonthlyMetric.builder()
-                    .monthKey(month.toString())
-                    .label(month.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH))
+                    .monthKey(key)
+                    .label(label)
                     .views(views)
                     .followers(followers)
                     .estimatedRevenue(revenue)
@@ -269,12 +287,16 @@ public class AuthorDashboardMetricService {
         return submission.getUpdatedAt() != null ? submission.getUpdatedAt() : submission.getCreatedAt();
     }
 
-    private boolean isInMonth(Instant instant, YearMonth month) {
-        return instant != null && toYearMonth(instant).equals(month);
-    }
-
-    private YearMonth toYearMonth(Instant instant) {
-        return YearMonth.from(instant.atZone(ZoneOffset.UTC));
+    private boolean isActivityInPeriod(Instant instant, LocalDate periodDate, String period) {
+        if (instant == null) return false;
+        if ("YEAR".equalsIgnoreCase(period)) {
+            YearMonth ym = YearMonth.from(instant.atZone(ZoneOffset.UTC));
+            YearMonth targetYm = YearMonth.from(periodDate);
+            return ym.equals(targetYm);
+        } else {
+            LocalDate date = instant.atZone(ZoneOffset.UTC).toLocalDate();
+            return date.equals(periodDate);
+        }
     }
 
     private boolean isPublished(ComicEntity comic) {
@@ -308,12 +330,7 @@ public class AuthorDashboardMetricService {
         };
     }
 
-    private int normalizeMonths(Integer requestedMonths) {
-        if (requestedMonths == null) {
-            return DEFAULT_MONTHS;
-        }
-        return Math.max(1, Math.min(MAX_MONTHS, requestedMonths));
-    }
+
 
     private long defaultLong(Number value) {
         return value == null ? 0L : value.longValue();

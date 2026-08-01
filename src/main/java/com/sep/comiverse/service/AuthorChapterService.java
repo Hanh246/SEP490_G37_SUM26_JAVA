@@ -160,17 +160,19 @@ public class AuthorChapterService {
             throw new CustomException(400, "Chapter must have at least one image before review submission", HttpStatus.BAD_REQUEST);
         }
 
-        submissionRepository.findTopByChapterIdAndAuthorIdAndQueueTypeIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(
-                        chapterId, authorId, "author")
-                .ifPresent(lastSubmission -> {
-                    String status = lastSubmission.getStatus() == null ? "" : lastSubmission.getStatus().trim().toLowerCase(Locale.ROOT);
-                    if ("pending".equals(status)) {
-                        throw new CustomException(409, "Chapter has already been submitted for review", HttpStatus.CONFLICT);
-                    }
-                    if ("approved".equals(status)) {
-                        throw new CustomException(409, "Approved chapters cannot be submitted again", HttpStatus.CONFLICT);
-                    }
-                });
+        if (chapter.getModerationStatus() == ChapterStatus.SUBMITTED_FOR_REVIEW) {
+            throw new CustomException(409, "Chapter has already been submitted for review", HttpStatus.CONFLICT);
+        }
+        if (chapter.getModerationStatus() == ChapterStatus.PUBLISHED) {
+            throw new CustomException(409, "Approved chapters cannot be submitted again", HttpStatus.CONFLICT);
+        }
+
+        // Content Fingerprinting: Block exact duplicates of previously rejected content
+        if (chapter.getContentHash() != null && chapterRepository.existsByContentHashAndModerationStatus(chapter.getContentHash(), ChapterStatus.REJECTED)) {
+            // Only block if THIS chapter itself isn't the rejected one we are trying to resubmit (wait, if THIS chapter is the rejected one, its contentHash matches!
+            // Wait, if they are resubmitting a rejected chapter WITHOUT modifying it, the hash is the same! We MUST block it.)
+            throw new CustomException(409, "This chapter content was previously rejected. You must modify the images (fix the issues) before resubmitting.", HttpStatus.CONFLICT);
+        }
 
         Date now = new Date();
         SubmissionEntity submission = SubmissionEntity.builder()
@@ -260,6 +262,7 @@ public class AuthorChapterService {
 
         evictDeletedChapterCaches(comicId, chapterId);
         refreshComicChapterMetadata(comic);
+        authorComicService.revokeComicProfileSubmissionIfEmpty(comicId, authorId);
     }
 
     private void evictDeletedChapterCaches(UUID comicId, UUID chapterId) {

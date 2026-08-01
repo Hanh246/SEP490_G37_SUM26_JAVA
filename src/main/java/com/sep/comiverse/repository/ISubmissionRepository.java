@@ -59,5 +59,7 @@ public interface ISubmissionRepository extends AbstractCrudRepository<Submission
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM SubmissionEntity s WHERE s.chapterId = :chapterId")
     void hardDeleteAllByChapterId(@Param("chapterId") UUID chapterId);
+
+    List<SubmissionEntity> findAllByChapterIdAndDeletedFalse(UUID chapterId);
 }
 

@@ -68,8 +68,30 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
     }
 
     @GetMapping("/all")
+    @Transactional
     public ResponseEntity<BaseResponse<List<SubmissionDTO>>> listAll(org.springframework.security.core.Authentication authentication) {
         List<SubmissionDTO> all = crudPlugin.listAll();
+
+        // ── Self-healing data reconciliation ──
+        // Fix stale submissions where chapter is already PUBLISHED but submission is still PENDING.
+        // This auto-corrects data inconsistency from past approvals that only updated the chapters table.
+        List<SubmissionDTO> reconciled = new java.util.ArrayList<>();
+        for (SubmissionDTO dto : all) {
+            if ("pending".equalsIgnoreCase(dto.getStatus()) && dto.getChapterId() != null) {
+                ChapterEntity linkedChapter = chapterRepository.findById(dto.getChapterId()).orElse(null);
+                if (linkedChapter != null && linkedChapter.getModerationStatus() == ChapterStatus.PUBLISHED) {
+                    // Chapter already published — auto-fix this submission to 'approved'
+                    SubmissionEntity staleSubmission = submissionRepository.findById(dto.getId()).orElse(null);
+                    if (staleSubmission != null) {
+                        staleSubmission.setStatus("approved");
+                        submissionRepository.save(staleSubmission);
+                        dto.setStatus("approved");
+                    }
+                }
+            }
+            reconciled.add(dto);
+        }
+        all = reconciled;
         
         if (authentication != null && authentication.getPrincipal() instanceof com.sep.comiverse.security.UserPrincipal principal) {
             com.sep.comiverse.entity.UserEntity user = principal.user();

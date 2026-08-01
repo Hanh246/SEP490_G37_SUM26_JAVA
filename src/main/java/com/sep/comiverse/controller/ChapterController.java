@@ -48,6 +48,9 @@ public class ChapterController {
     @org.springframework.beans.factory.annotation.Autowired
     private IComicRepository comicRepository;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.sep.comiverse.repository.ISubmissionRepository submissionRepository;
+
     public ChapterController(ChapterCrudPlugin chapterCrudPlugin, JwtTokenUtil jwtTokenUtil) {
         this.chapterCrudPlugin = chapterCrudPlugin;
         this.jwtTokenUtil = jwtTokenUtil;
@@ -183,6 +186,29 @@ public class ChapterController {
             chapter.setApprovedAt(java.time.Instant.now());
 
             ChapterEntity savedChapter = chapterRepository.save(chapter);
+
+            // ── CRITICAL: Sync submissions table to prevent data inconsistency ──
+            // When a chapter is approved directly (not via /submissions/{id}/approve),
+            // we must also update any pending submission records for this chapter.
+            // Without this, the Review Queue (which queries submissions table) will still
+            // show these chapters as PENDING even though they are PUBLISHED in chapters table.
+            try {
+                java.util.List<com.sep.comiverse.entity.SubmissionEntity> pendingSubmissions =
+                        submissionRepository.findAllByChapterIdAndDeletedFalse(id);
+                UUID moderatorId = principal != null ? principal.getId() : null;
+                for (com.sep.comiverse.entity.SubmissionEntity sub : pendingSubmissions) {
+                    if (!"approved".equalsIgnoreCase(sub.getStatus())) {
+                        sub.setStatus("approved");
+                        if (moderatorId != null) {
+                            sub.setModeratorId(moderatorId);
+                        }
+                        submissionRepository.save(sub);
+                    }
+                }
+            } catch (Exception subEx) {
+                // Log but don't fail the chapter approval if submission sync has issues
+                System.err.println("[ChapterController.approveChapter] Warning: Failed to sync submissions table for chapter " + id + ": " + subEx.getMessage());
+            }
 
             ComicEntity comic = null;
             if (savedChapter.getComic() != null) {
