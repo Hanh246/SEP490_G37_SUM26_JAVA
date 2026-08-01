@@ -88,7 +88,7 @@ public class CommentService {
                 userId,
                 request.getMentionId(),
                 parentComment != null ? parentComment.getUserId() : null,
-                "/comics/" + request.getComicId() + "?comment=" + saved.getId()
+                "/comic/" + request.getComicId() + "?comment=" + saved.getId()
         );
 
         return mapToComicCommentDTO(saved);
@@ -101,10 +101,9 @@ public class CommentService {
             throw new CustomException(401, "UNAUTHORIZED", HttpStatus.UNAUTHORIZED);
         }
 
-        // 2. Verify Chapter exists
-        if (!chapterRepository.existsById(request.getChapterId())) {
-            throw new CustomException(404, "Chapter not found", HttpStatus.NOT_FOUND);
-        }
+        // 2. Verify Chapter exists and retain its comic for the mobile deep link.
+        UUID comicId = chapterRepository.findComicIdByChapterId(request.getChapterId())
+                .orElseThrow(() -> new CustomException(404, "Chapter not found", HttpStatus.NOT_FOUND));
 
         ChapterCommentEntity parentComment = null;
         UUID finalParentId = null;
@@ -145,7 +144,8 @@ public class CommentService {
                 userId,
                 request.getMentionId(),
                 parentComment != null ? parentComment.getUserId() : null,
-                "/chapters/" + request.getChapterId() + "?comment=" + saved.getId()
+                "/comic/" + comicId + "/chapter/" + request.getChapterId()
+                        + "?comment=" + saved.getId()
         );
 
         return mapToChapterCommentDTO(saved);
@@ -356,7 +356,7 @@ public class CommentService {
                     message,
                     "COMMENT",
                     actionUrl,
-                    NotificationPreferenceKey.FORUM_ACTIVITY
+                    NotificationPreferenceKey.COMMENT_REPLIES
             );
         }
     }

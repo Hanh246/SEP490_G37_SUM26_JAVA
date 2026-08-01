@@ -255,7 +255,7 @@ public class CommentServiceTest {
         request.setContent("Chapter root comment");
         request.setParentId(null);
 
-        when(chapterRepository.existsById(chapterId)).thenReturn(true);
+        when(chapterRepository.findComicIdByChapterId(chapterId)).thenReturn(Optional.of(comicId));
         when(userService.findUserById(userId)).thenReturn(mockUserSnapshot());
 
         ChapterCommentEntity mockSaved = ChapterCommentEntity.builder()
@@ -371,7 +371,7 @@ public class CommentServiceTest {
         request.setContent("Chapter comment with mention");
         request.setMentionId(mentionId);
 
-        when(chapterRepository.existsById(chapterId)).thenReturn(true);
+        when(chapterRepository.findComicIdByChapterId(chapterId)).thenReturn(Optional.of(comicId));
         when(userService.findUserById(userId)).thenReturn(mockUserSnapshot());
 
         UserSnapshot mentionSnapshot = new UserSnapshot();
@@ -523,8 +523,8 @@ public class CommentServiceTest {
                 eq("New reply to your comment"),
                 contains("replied to your comment"),
                 eq("COMMENT"),
-                eq("/comics/" + comicId + "?comment=" + commentId),
-                eq(NotificationPreferenceKey.FORUM_ACTIVITY)
+                eq("/comic/" + comicId + "?comment=" + commentId),
+                eq(NotificationPreferenceKey.COMMENT_REPLIES)
         );
     }
 
