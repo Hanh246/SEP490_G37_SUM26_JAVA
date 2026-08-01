@@ -7,7 +7,9 @@ import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.INotificationRepository;
 import com.sep.comiverse.repository.IUserRepository;
+import com.sep.comiverse.service.push.NotificationPushEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,7 @@ public class NotificationService {
     private final IUserRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final NotificationPreferenceService notificationPreferenceService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public boolean notifyUser(UUID userId, String title, String message, String type, NotificationPreferenceKey preferenceKey) {
@@ -56,6 +59,7 @@ public class NotificationService {
                     NotificationEntity saved = notificationRepository.save(entity);
                     NotificationResponse response = toResponse(saved);
                     messagingTemplate.convertAndSend("/topic/notifications/" + user.getId(), response);
+                    eventPublisher.publishEvent(new NotificationPushEvent(user.getId(), response));
                     return true;
                 })
                 .orElse(false);
@@ -99,6 +103,7 @@ public class NotificationService {
         for (NotificationEntity saved : savedList) {
             NotificationResponse response = toResponse(saved);
             messagingTemplate.convertAndSend("/topic/notifications/" + saved.getUser().getId(), response);
+            eventPublisher.publishEvent(new NotificationPushEvent(saved.getUser().getId(), response));
         }
 
         return recipients.size();
@@ -157,6 +162,7 @@ public class NotificationService {
         for (NotificationEntity saved : savedList) {
             NotificationResponse response = toResponse(saved);
             messagingTemplate.convertAndSend("/topic/notifications/" + saved.getUser().getId(), response);
+            eventPublisher.publishEvent(new NotificationPushEvent(saved.getUser().getId(), response));
         }
 
         return recipients.size();

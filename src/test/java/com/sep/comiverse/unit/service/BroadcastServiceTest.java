@@ -18,6 +18,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.util.List;
@@ -42,6 +43,8 @@ class BroadcastServiceTest {
     private NotificationPreferenceService preferenceService;
     @Mock
     private SimpMessagingTemplate messagingTemplate;
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     private BroadcastService broadcastService;
 
@@ -51,7 +54,8 @@ class BroadcastServiceTest {
                 notificationRepository,
                 userRepository,
                 preferenceService,
-                messagingTemplate
+                messagingTemplate,
+                eventPublisher
         );
     }
 
@@ -83,6 +87,7 @@ class BroadcastServiceTest {
                 eq("/topic/notifications/" + disabledReader.getId()),
                 any(Object.class)
         );
+        verify(eventPublisher).publishEvent(any(Object.class));
     }
 
     @Test

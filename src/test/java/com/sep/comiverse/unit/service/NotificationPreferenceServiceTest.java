@@ -165,23 +165,25 @@ class NotificationPreferenceServiceTest {
     }
 
     private static Stream<Arguments> rolePreferenceMatrix() {
-        Set<String> common = Set.of("SYSTEM_BROADCASTS", "FORUM_ACTIVITY");
+        Set<String> common = Set.of("SYSTEM_BROADCASTS", "COMMENT_REPLIES", "FORUM_ACTIVITY");
         return Stream.of(
                 Arguments.of("READER", common),
                 Arguments.of("ADMIN", common),
-                Arguments.of("MODERATOR", Set.of("SYSTEM_BROADCASTS", "FORUM_ACTIVITY", "REVIEW_QUEUE")),
-                Arguments.of("STAFF", Set.of("SYSTEM_BROADCASTS", "FORUM_ACTIVITY", "REVIEW_QUEUE")),
-                Arguments.of("AUTHOR", Set.of("SYSTEM_BROADCASTS", "FORUM_ACTIVITY", "SUBMISSION_STATUS")),
-                Arguments.of("TRANSLATOR", Set.of("SYSTEM_BROADCASTS", "FORUM_ACTIVITY", "PROJECT_OPPORTUNITIES", "TEAM_UPDATES")),
-                Arguments.of("PROJECT_LEADER", Set.of("SYSTEM_BROADCASTS", "FORUM_ACTIVITY", "PROJECT_OPPORTUNITIES", "TEAM_UPDATES", "TEAM_JOIN_REQUESTS"))
+                Arguments.of("MODERATOR", Set.of("SYSTEM_BROADCASTS", "COMMENT_REPLIES", "FORUM_ACTIVITY", "REVIEW_QUEUE")),
+                Arguments.of("STAFF", Set.of("SYSTEM_BROADCASTS", "COMMENT_REPLIES", "FORUM_ACTIVITY", "REVIEW_QUEUE")),
+                Arguments.of("AUTHOR", Set.of("SYSTEM_BROADCASTS", "COMMENT_REPLIES", "FORUM_ACTIVITY", "SUBMISSION_STATUS")),
+                Arguments.of("TRANSLATOR", Set.of("SYSTEM_BROADCASTS", "COMMENT_REPLIES", "FORUM_ACTIVITY", "PROJECT_OPPORTUNITIES", "TEAM_UPDATES")),
+                Arguments.of("PROJECT_LEADER", Set.of("SYSTEM_BROADCASTS", "COMMENT_REPLIES", "FORUM_ACTIVITY", "PROJECT_OPPORTUNITIES", "TEAM_UPDATES", "TEAM_JOIN_REQUESTS"))
         );
     }
 
     private static Stream<Arguments> roleDeliveryMatrix() {
         return Stream.of(
                         new Object[]{"READER", NotificationPreferenceKey.SYSTEM_BROADCASTS},
+                        new Object[]{"READER", NotificationPreferenceKey.COMMENT_REPLIES},
                         new Object[]{"READER", NotificationPreferenceKey.FORUM_ACTIVITY},
                         new Object[]{"ADMIN", NotificationPreferenceKey.SYSTEM_BROADCASTS},
+                        new Object[]{"ADMIN", NotificationPreferenceKey.COMMENT_REPLIES},
                         new Object[]{"ADMIN", NotificationPreferenceKey.FORUM_ACTIVITY},
                         new Object[]{"MODERATOR", NotificationPreferenceKey.REVIEW_QUEUE},
                         new Object[]{"AUTHOR", NotificationPreferenceKey.SUBMISSION_STATUS},

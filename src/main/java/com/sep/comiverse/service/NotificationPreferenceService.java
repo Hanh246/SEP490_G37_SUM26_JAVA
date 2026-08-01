@@ -20,6 +20,7 @@ public class NotificationPreferenceService {
 
     private static final Set<NotificationPreferenceKey> COMMON_KEYS = EnumSet.of(
             NotificationPreferenceKey.SYSTEM_BROADCASTS,
+            NotificationPreferenceKey.COMMENT_REPLIES,
             NotificationPreferenceKey.FORUM_ACTIVITY
     );
 
