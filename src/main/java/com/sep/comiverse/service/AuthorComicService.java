@@ -306,8 +306,8 @@ public class AuthorComicService {
                 .cover(comic.getCover())
                 .content("Comic profile is waiting for moderator review.")
                 .build());
-        notificationService.notifyRoles(
-                List.of("MODERATOR"),
+        notificationService.notifyModeratorsWithLanguage(
+                comic.getLanguage(),
                 "New comic review",
                 comic.getTitle() + " was submitted by an author for moderation.",
                 "UPDATE",

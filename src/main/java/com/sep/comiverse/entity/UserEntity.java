@@ -58,6 +58,9 @@ public class UserEntity extends BaseEntity {
     @Column(name = "email_verification_expires_at")
     private LocalDateTime emailVerificationExpiresAt;
 
+    @Column(name = "assigned_languages")
+    private String assignedLanguages;
+
     @Column(name = "premium_plan")
     private String premiumPlan;
 

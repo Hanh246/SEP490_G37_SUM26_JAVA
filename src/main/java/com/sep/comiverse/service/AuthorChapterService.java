@@ -431,8 +431,8 @@ public class AuthorChapterService {
     }
 
     private void notifyModeratorsAboutChapter(ComicEntity comic, ChapterEntity chapter) {
-        notificationService.notifyRoles(
-                List.of("MODERATOR"),
+        notificationService.notifyModeratorsWithLanguage(
+                comic.getLanguage(),
                 "New chapter review",
                 comic.getTitle() + " - Chapter " + chapter.getChapterNumber() + " is waiting for moderation.",
                 "UPDATE",

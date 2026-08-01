@@ -7,7 +7,9 @@ import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.INotificationRepository;
 import com.sep.comiverse.repository.IUserRepository;
+import com.sep.comiverse.service.push.NotificationPushEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,7 @@ public class NotificationService {
     private final IUserRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final NotificationPreferenceService notificationPreferenceService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public boolean notifyUser(UUID userId, String title, String message, String type, NotificationPreferenceKey preferenceKey) {
@@ -56,6 +59,7 @@ public class NotificationService {
                     NotificationEntity saved = notificationRepository.save(entity);
                     NotificationResponse response = toResponse(saved);
                     messagingTemplate.convertAndSend("/topic/notifications/" + user.getId(), response);
+                    eventPublisher.publishEvent(new NotificationPushEvent(user.getId(), response));
                     return true;
                 })
                 .orElse(false);
@@ -99,6 +103,66 @@ public class NotificationService {
         for (NotificationEntity saved : savedList) {
             NotificationResponse response = toResponse(saved);
             messagingTemplate.convertAndSend("/topic/notifications/" + saved.getUser().getId(), response);
+            eventPublisher.publishEvent(new NotificationPushEvent(saved.getUser().getId(), response));
+        }
+
+        return recipients.size();
+    }
+
+    @Transactional
+    public int notifyModeratorsWithLanguage(
+            String language,
+            String title,
+            String message,
+            String type,
+            NotificationPreferenceKey preferenceKey
+    ) {
+        if (preferenceKey == null) {
+            return 0;
+        }
+
+        Specification<UserEntity> spec = (root, query, cb) -> cb.and(
+                cb.or(cb.isNull(root.get("deleted")), cb.isFalse(root.get("deleted"))),
+                cb.or(cb.isNull(root.get("status")), cb.equal(cb.upper(root.get("status")), "ACTIVE")),
+                cb.equal(cb.upper(root.get("role").get("roleName")), "MODERATOR")
+        );
+
+        List<UserEntity> allModerators = userRepository.findAll(spec);
+        List<UserEntity> recipients = new java.util.ArrayList<>();
+        
+        for (UserEntity mod : allModerators) {
+            if (!notificationPreferenceService.isEnabled(mod, preferenceKey)) {
+                continue;
+            }
+            // Check language scope
+            if (mod.getAssignedLanguages() == null || mod.getAssignedLanguages().isBlank()) {
+                // If no scope is defined, fallback to default or assume they receive it?
+                // For safety, they shouldn't receive it unless they have the language.
+                // But previously they received all. To be strict:
+                continue;
+            }
+            
+            boolean hasLanguage = false;
+            for (String lang : mod.getAssignedLanguages().split(",")) {
+                if (lang.trim().equalsIgnoreCase(language)) {
+                    hasLanguage = true;
+                    break;
+                }
+            }
+            
+            if (hasLanguage) {
+                recipients.add(mod);
+            }
+        }
+
+        List<NotificationEntity> savedList = notificationRepository.saveAll(recipients.stream()
+                .map(user -> buildWorkflowNotification(user, title, message, type, "MODERATOR", null))
+                .toList());
+
+        for (NotificationEntity saved : savedList) {
+            NotificationResponse response = toResponse(saved);
+            messagingTemplate.convertAndSend("/topic/notifications/" + saved.getUser().getId(), response);
+            eventPublisher.publishEvent(new NotificationPushEvent(saved.getUser().getId(), response));
         }
 
         return recipients.size();

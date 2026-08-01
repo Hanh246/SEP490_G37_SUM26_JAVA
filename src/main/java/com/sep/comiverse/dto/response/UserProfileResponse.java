@@ -26,4 +26,5 @@ public class UserProfileResponse {
     private String premiumPlan;
     private LocalDateTime premiumExpiresAt;
     private Boolean premiumActive;
+    private java.util.List<String> assignedLanguages;
 }

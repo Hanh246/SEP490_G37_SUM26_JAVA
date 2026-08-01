@@ -116,6 +116,9 @@ public class ChapterCrudPlugin
                     .viewCount(chapter.getViewCount())
                     .isPremium(chapterPremiumPolicyService.isPremiumChapter(chapter.getChapterNumber()))
                     .createdAt(chapter.getCreatedAt())
+                    .moderationStatus(chapter.getModerationStatus())
+                    .approvedBy(chapter.getApprovedBy())
+                    .approvedAt(chapter.getApprovedAt())
                     .build();
 
             try {
@@ -249,6 +252,9 @@ public class ChapterCrudPlugin
                     .viewCount(c.getViewCount() != null ? c.getViewCount() : 0)
                     .isPremium(chapterPremiumPolicyService.isPremiumChapter(c.getChapterNumber()))
                     .createdAt(c.getCreatedAt())
+                    .moderationStatus(c.getModerationStatus())
+                    .approvedBy(c.getApprovedBy())
+                    .approvedAt(c.getApprovedAt())
                     .build()
             ).sorted((a, b) -> toChapterSortNumber(a.getChapterNumber()).compareTo(toChapterSortNumber(b.getChapterNumber()))).toList();
         }
@@ -290,6 +296,9 @@ public class ChapterCrudPlugin
                     .viewCount(dto.getViewCount())
                     .isPremium(chapterPremiumPolicyService.isPremiumChapter(dto.getChapterNumber()))
                     .createdAt(dto.getCreatedAt())
+                    .moderationStatus(dto.getModerationStatus())
+                    .approvedBy(dto.getApprovedBy())
+                    .approvedAt(dto.getApprovedAt())
                     .build();
 
             try {

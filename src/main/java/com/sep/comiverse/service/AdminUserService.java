@@ -25,7 +25,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AdminUserService {
 
-    private static final String DEFAULT_ADMIN_RESET_PASSWORD = "123456";
+    private static final String DEFAULT_ADMIN_RESET_PASSWORD = "abcd1234";
 
     private final IUserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -138,6 +138,10 @@ public class AdminUserService {
             user.setRole(role);
         }
 
+        if (request.getAssignedLanguages() != null) {
+            user.setAssignedLanguages(String.join(",", request.getAssignedLanguages()));
+        }
+
         userRepository.save(user);
         return toAdminUserResponse(user);
     }
@@ -198,6 +202,13 @@ public class AdminUserService {
             displayStatus = "Active";
         }
 
+        java.util.List<String> parsedLangs = new java.util.ArrayList<>();
+        if (user.getAssignedLanguages() != null && !user.getAssignedLanguages().isBlank()) {
+            for (String lang : user.getAssignedLanguages().split(",")) {
+                parsedLangs.add(lang.trim());
+            }
+        }
+
         return AdminUserResponse.builder()
                 .id(user.getId())
                 .userId("USR-" + user.getId().toString().substring(0, 8).toUpperCase())
@@ -213,6 +224,7 @@ public class AdminUserService {
                 .createdDate(user.getCreatedAt() != null ? java.util.Date.from(user.getCreatedAt()) : null)
                 .updatedDate(user.getUpdatedAt() != null ? java.util.Date.from(user.getUpdatedAt()) : null)
                 .dateOfBirth(user.getDateOfBirth())
+                .assignedLanguages(parsedLangs)
                 .build();
     }
 
