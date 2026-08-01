@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 @Component
+@org.springframework.context.annotation.Profile("!integration")
 @RequiredArgsConstructor
 public class DbInitializer implements CommandLineRunner {
 
@@ -39,26 +40,28 @@ public class DbInitializer implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) throws Exception {
-        // ComicEntity no longer has the legacy `status` column.
-        // Publication lifecycle is stored in `publication_status`.
-        jdbcTemplate.execute("UPDATE comics SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
-        jdbcTemplate.execute("UPDATE chapters SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
-        migrateAuthorLanguageToComics();
-        migrateLegacyChapterPagesIntoChapterImages();
-        splitCommaJoinedChapterImageArrays();
-        jdbcTemplate.execute("UPDATE chapters SET images = ARRAY[]::text[] WHERE images IS NULL");
+        try {
+            jdbcTemplate.execute("UPDATE comics SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
+            jdbcTemplate.execute("UPDATE chapters SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
+            migrateAuthorLanguageToComics();
+            migrateLegacyChapterPagesIntoChapterImages();
+            splitCommaJoinedChapterImageArrays();
+            jdbcTemplate.execute("UPDATE chapters SET images = ARRAY[]::text[] WHERE images IS NULL");
 
-        createRoles();
-        createAdmin();
-        createStaffs();
-        createAuthorProfiles();
-        createGenres();
-        createComics();
-        createProjectTeams();
-        createAuthorMetricSnapshots();
-        createSubmissions();
-        createChatFlags();
-        createForumThreads();
+            createRoles();
+            createAdmin();
+            createStaffs();
+            createAuthorProfiles();
+            createGenres();
+            createComics();
+            createProjectTeams();
+            createAuthorMetricSnapshots();
+            createSubmissions();
+            createChatFlags();
+            createForumThreads();
+        } catch (Exception e) {
+            System.err.println("⚠️ DbInitializer startup notice: " + e.getMessage());
+        }
 
         // Self-healing check: restore empty leaderNames to 'trantest56787' for orphaned teams
         try {

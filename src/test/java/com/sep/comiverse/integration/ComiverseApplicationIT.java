@@ -5,9 +5,9 @@ import com.sep.comiverse.integration.support.ComiverseIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
-@ComiverseIntegrationTest
-@SpringBootTest(classes = ComiverseApplication.class)
-class ComiverseApplicationIT {
+import com.sep.comiverse.integration.support.AbstractIntegrationTest;
+
+class ComiverseApplicationIT extends AbstractIntegrationTest {
 
 	@Test
 	void contextLoads() {

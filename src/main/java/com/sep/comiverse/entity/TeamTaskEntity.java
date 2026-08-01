@@ -38,9 +38,6 @@ public class TeamTaskEntity {
     @Column(name = "status")
     private String status;
 
-    @Column(name = "assignee_ids")
-    private List<UUID> assigneeIds;
-
     @Column(name = "assignee_id")
     private UUID assigneeId;
 

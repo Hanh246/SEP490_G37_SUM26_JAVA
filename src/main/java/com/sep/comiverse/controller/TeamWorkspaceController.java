@@ -231,7 +231,7 @@ public class TeamWorkspaceController {
                 .projectTeamId(teamId)
                 .title(request.getTitle())
                 .status(request.getStatus())
-                .assigneeIds(request.getAssigneeIds())
+                .assigneeId(request.getAssigneeId())
                 .chapter(chapter)
                 .dueDate(request.getDueDate())
                 .build();
@@ -439,13 +439,13 @@ public class TeamWorkspaceController {
         if (updates.containsKey("dueDate")) {
             task.setDueDate((String) updates.get("dueDate"));
         }
-        if (updates.containsKey("assigneeIds")) {
-            @SuppressWarnings("unchecked")
-            List<String> rawIds = (List<String>) updates.get("assigneeIds");
-            List<UUID> assigneeIds = rawIds.stream()
-                    .map(UUID::fromString)
-                    .collect(Collectors.toList());
-            task.setAssigneeIds(assigneeIds);
+        if (updates.containsKey("assigneeId")) {
+            Object raw = updates.get("assigneeId");
+            if (raw == null) {
+                task.setAssigneeId(null);
+            } else {
+                task.setAssigneeId(UUID.fromString(raw.toString()));
+            }
         }
 
         TeamTaskEntity saved = taskRepository.save(task);

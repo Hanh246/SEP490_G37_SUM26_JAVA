@@ -65,8 +65,8 @@ public class LeaderboardScheduler {
         """;
 
         MapSqlParameterSource params = new MapSqlParameterSource()
-                .addValue("startDate", startDate)
-                .addValue("endDate", endDate);
+                .addValue("startDate", java.sql.Date.valueOf(startDate))
+                .addValue("endDate", java.sql.Date.valueOf(endDate));
 
         return jdbcTemplate.query(sql, params, (rs, rowNum) ->
                 rs.getObject("comic_id", UUID.class)

@@ -78,7 +78,7 @@ public class UserEntity extends BaseEntity {
     private String bio;
 
     @Convert(converter = com.sep.comiverse.entity.converter.VectorConverter.class)
-    @Column(name = "user_vector", columnDefinition = "vector(768)")
+    @Column(name = "user_vector")
     private float[] userVector;
 
     @Column(name = "vector_updated_at")

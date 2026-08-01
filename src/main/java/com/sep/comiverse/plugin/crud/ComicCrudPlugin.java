@@ -192,7 +192,7 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
 
         if (dto == null) {
             ComicEntity entity = comicRepository.findById(comicId)
-                    .orElseThrow(() -> new RuntimeException("Comic not found"));
+                    .orElseThrow(() -> new com.sep.comiverse.exception.CustomException(404, "Comic not found", org.springframework.http.HttpStatus.NOT_FOUND));
 
             dto = plugin.toDto(entity);
 

@@ -23,7 +23,7 @@ public class TranslatorEntity extends BaseEntity{
     private UserEntity user;
 
     @JdbcTypeCode(SqlTypes.ARRAY)
-    @Column(name = "specializations", columnDefinition = "text[]", nullable = false)
+    @Column(name = "specializations", nullable = false)
     private List<String> specializations = new ArrayList<>();
 
     @Column(name = "experience_years", nullable = false)

@@ -48,7 +48,7 @@ public class ChapterEntity extends BaseEntity {
      */
     @Builder.Default
     @JdbcTypeCode(SqlTypes.ARRAY)
-    @Column(name = "images", columnDefinition = "text[]", nullable = false)
+    @Column(name = "images", nullable = false)
     private List<String> images = new ArrayList<>();
 
     @Builder.Default
