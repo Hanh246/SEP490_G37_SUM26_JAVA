@@ -29,7 +29,7 @@ public class AuthorDashboardController {
     @GetMapping("/metrics")
     @Operation(summary = "Get author dashboard metrics", description = "Returns summary cards, monthly chart data, top comics, and recent review activity for the authenticated author")
     public ResponseEntity<BaseResponse<AuthorDashboardMetricsResponse>> getDashboardMetrics(
-            @RequestParam(value = "months", required = false, defaultValue = "12") Integer months,
+            @RequestParam(value = "period", required = false, defaultValue = "WEEK") String period,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         if (principal == null) {
@@ -37,7 +37,7 @@ public class AuthorDashboardController {
         }
         return ResponseEntity.ok(BaseResponse.<AuthorDashboardMetricsResponse>builder()
                 .success(true)
-                .data(authorDashboardMetricService.getDashboardMetrics(principal.getId(), months))
+                .data(authorDashboardMetricService.getDashboardMetrics(principal.getId(), period))
                 .build());
     }
 }

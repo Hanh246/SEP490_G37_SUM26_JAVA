@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.UUID;
 
 @Component
+@org.springframework.context.annotation.Profile("!integration")
 public class DebugRunner2 implements CommandLineRunner {
     private final IChapterRepository chapterRepository;
     private final ISubmissionRepository submissionRepository;
@@ -22,23 +23,27 @@ public class DebugRunner2 implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) throws Exception {
-        System.out.println("DEBUG RUNNER 2 STARTING======================================");
-        UUID id = UUID.fromString("019fb3ba-799b-7e5d-9b26-2fcc702fb565");
-        
-        ChapterEntity chapter = chapterRepository.findById(id).orElse(null);
-        if (chapter != null) {
-            System.out.println("IT IS A CHAPTER! Title: " + chapter.getTitle());
-        } else {
-            System.out.println("NOT A CHAPTER!");
+        try {
+            System.out.println("DEBUG RUNNER 2 STARTING======================================");
+            UUID id = UUID.fromString("019fb3ba-799b-7e5d-9b26-2fcc702fb565");
+            
+            ChapterEntity chapter = chapterRepository.findById(id).orElse(null);
+            if (chapter != null) {
+                System.out.println("IT IS A CHAPTER! Title: " + chapter.getTitle());
+            } else {
+                System.out.println("NOT A CHAPTER!");
+            }
+            
+            SubmissionEntity submission = submissionRepository.findById(id).orElse(null);
+            if (submission != null) {
+                System.out.println("IT IS A SUBMISSION! Title: " + submission.getTitle() + ", chapterId: " + submission.getChapterId());
+            } else {
+                System.out.println("NOT A SUBMISSION!");
+            }
+            
+            System.out.println("DEBUG RUNNER 2 ENDING======================================");
+        } catch (Exception e) {
+            System.err.println("DebugRunner2 notice: " + e.getMessage());
         }
-        
-        SubmissionEntity submission = submissionRepository.findById(id).orElse(null);
-        if (submission != null) {
-            System.out.println("IT IS A SUBMISSION! Title: " + submission.getTitle() + ", chapterId: " + submission.getChapterId());
-        } else {
-            System.out.println("NOT A SUBMISSION!");
-        }
-        
-        System.out.println("DEBUG RUNNER 2 ENDING======================================");
     }
 }

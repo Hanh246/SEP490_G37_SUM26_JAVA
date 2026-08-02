@@ -2,6 +2,9 @@ package com.sep.comiverse.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -50,8 +53,12 @@ public class OcrService {
         Map<String, Object> content = Map.of("parts", List.of(textPart, imagePart));
         Map<String, Object> payload = Map.of("contents", List.of(content));
 
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);
+
         try {
-            ResponseEntity<Map> response = restTemplate.postForEntity(url, payload, Map.class);
+            ResponseEntity<Map> response = restTemplate.postForEntity(url, entity, Map.class);
             return parseGeminiTextResponse(response.getBody());
         } catch (Exception e) {
             log.error("OCR failed: {}", e.getMessage(), e);

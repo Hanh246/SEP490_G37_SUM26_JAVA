@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 @Component
+@org.springframework.context.annotation.Profile("!integration")
 @RequiredArgsConstructor
 @Order(1)
 public class DbInitializer implements CommandLineRunner {
@@ -40,6 +41,7 @@ public class DbInitializer implements CommandLineRunner {
 
     @Override
     @Transactional
+    
     public void run(String... args) {
         // ComicEntity no longer has the legacy `status` column.
         // Publication lifecycle is stored in `publication_status`.
@@ -53,17 +55,20 @@ public class DbInitializer implements CommandLineRunner {
         migrateCompletedTeamTasks();
         jdbcTemplate.execute("UPDATE authors SET country_code = 'VN' WHERE country_code IS NULL OR BTRIM(country_code) = ''");
 
-        createRoles();
-        createAdmin();
-        createStaffs();
-        createAuthorProfiles();
-        createGenres();
-        createComics();
-        createProjectTeams();
-        createAuthorMetricSnapshots();
-        createSubmissions();
-        createChatFlags();
-        createForumThreads();
+            createRoles();
+            createAdmin();
+            createStaffs();
+            createAuthorProfiles();
+            createGenres();
+            createComics();
+            createProjectTeams();
+            createAuthorMetricSnapshots();
+            createSubmissions();
+            createChatFlags();
+            createForumThreads();
+        } catch (Exception e) {
+            System.err.println("⚠️ DbInitializer startup notice: " + e.getMessage());
+        }
 
         repairMissingProjectTeamLeaders();
 

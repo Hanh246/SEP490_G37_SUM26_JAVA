@@ -105,6 +105,11 @@
 			<artifactId>postgresql</artifactId>
 		</dependency>
 		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
 			<version>1.18.36</version>
@@ -159,7 +164,7 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
 				<configuration>
-					<argLine>-Duser.timezone=UTC</argLine>
+					<argLine>-XX:+EnableDynamicAgentLoading -Duser.timezone=UTC</argLine>
 					<includes>
 						<include>**/unit/**/*Test.java</include>
 					</includes>
@@ -176,7 +181,7 @@
 							<goal>verify</goal>
 						</goals>
 						<configuration>
-							<argLine>-Duser.timezone=UTC</argLine>
+							<argLine>-XX:+EnableDynamicAgentLoading -Duser.timezone=UTC</argLine>
 							<includes>
 								<include>**/integration/**/*IT.java</include>
 							</includes>
@@ -216,7 +221,7 @@
 									<goal>verify</goal>
 								</goals>
 								<configuration>
-									<argLine>-Duser.timezone=UTC</argLine>
+									<argLine>-XX:+EnableDynamicAgentLoading -Duser.timezone=UTC</argLine>
 									<failIfNoTests>false</failIfNoTests>
 									<includes>
 										<include>**/system/**/*ST.java</include>

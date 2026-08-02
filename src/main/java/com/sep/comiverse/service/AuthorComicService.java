@@ -228,6 +228,19 @@ public class AuthorComicService {
         comicRepository.save(comic);
     }
 
+    @Transactional
+    public void revokeComicProfileSubmissionIfEmpty(UUID comicId, UUID authorId) {
+        long chapterCount = chapterRepository.countByComic_IdAndDeletedFalse(comicId);
+        if (chapterCount < 1) {
+            ComicEntity comic = getOwnedComic(comicId, authorId);
+            if (comic.getModerationStatus() == ComicModerationStatus.SUBMITTED_FOR_REVIEW) {
+                cancelPendingComicSubmissions(comicId, authorId);
+                comic.setModerationStatus(ComicModerationStatus.DRAFT);
+                comicRepository.save(comic);
+            }
+        }
+    }
+
     @Transactional(readOnly = true)
     public ComicMetricsResponse getComicMetrics(UUID comicId, UUID authorId) {
         ComicEntity comic = getOwnedComic(comicId, authorId);

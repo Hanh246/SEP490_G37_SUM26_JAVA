@@ -135,4 +135,17 @@ public class ChatService {
         if (userId == null) return null;
         return userService.findUserById(userId);
     }
+
+    @Transactional
+    public void deleteMessage(UUID messageId, UUID currentUserId) {
+        MessageEntity entity = messageRepository.findById(messageId)
+                .orElseThrow(() -> new CustomException(404, "Message not found", HttpStatus.NOT_FOUND));
+        
+        // Ensure that the user attempting to delete the message is the sender
+        if (!entity.getSenderId().equals(currentUserId)) {
+            throw new CustomException(403, "You can only delete your own messages", HttpStatus.FORBIDDEN);
+        }
+
+        messageRepository.deleteById(messageId);
+    }
 }

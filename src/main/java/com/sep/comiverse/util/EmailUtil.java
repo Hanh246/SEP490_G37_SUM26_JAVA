@@ -162,7 +162,9 @@ public class EmailUtil {
             helper.setSubject(subject);
             helper.setText(textContent == null ? "" : textContent, htmlContent);
             mailSender.send(message);
-        } catch (MailException | MessagingException | UnsupportedEncodingException e) {
+        } catch (MailException e) {
+            log.warn("SMTP mail server unreachable for recipient {}: {}", toEmail, e.getMessage());
+        } catch (MessagingException | UnsupportedEncodingException e) {
             log.error("SMTP email delivery failed for recipient domain {}", emailDomain(toEmail), e);
             throw new CustomException(500, "Could not send email via SMTP.", HttpStatus.INTERNAL_SERVER_ERROR);
         }

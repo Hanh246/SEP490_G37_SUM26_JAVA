@@ -34,7 +34,13 @@ public interface ITeamTaskRepository extends JpaRepository<TeamTaskEntity, UUID>
             @Param("to") Instant to
     );
 
+    @Query("SELECT COUNT(t) FROM TeamTaskEntity t WHERE t.projectTeamId = :teamId AND t.assigneeId = :assigneeId AND t.status IN ('TODO', 'IN_PROGRESS', 'PENDING_REVIEW')")
+    long countIncompleteTasksByTeamAndAssignee(@Param("teamId") UUID teamId, @Param("assigneeId") UUID assigneeId);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM TeamTaskEntity t WHERE t.chapter.id = :chapterId")
     void hardDeleteAllByChapterId(@Param("chapterId") UUID chapterId);
+
+    @Query("SELECT COUNT(t) FROM TeamTaskEntity t WHERE t.assigneeId = :assigneeId AND t.status IN ('TODO', 'IN_PROGRESS', 'PENDING_REVIEW')")
+    long countActiveTasksByAssigneeId(@Param("assigneeId") UUID assigneeId);
 }

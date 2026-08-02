@@ -30,6 +30,6 @@ public interface INotificationRepository extends AbstractCrudRepository<Notifica
 
     @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true)
     @org.springframework.transaction.annotation.Transactional
-    @Query("UPDATE NotificationEntity n SET n.deleted = true, n.updatedAt = CURRENT_TIMESTAMP WHERE n.broadcastId = :broadcastId")
+    @Query("UPDATE NotificationEntity n SET n.deleted = true, n.updatedAt = CURRENT_INSTANT WHERE n.broadcastId = :broadcastId")
     void softDeleteByBroadcastId(@org.springframework.data.repository.query.Param("broadcastId") UUID broadcastId);
 }
