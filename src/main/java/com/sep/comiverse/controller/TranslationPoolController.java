@@ -223,9 +223,12 @@ public class TranslationPoolController {
                     team.setMembers(new java.util.ArrayList<>());
                 }
                 boolean alreadyMember = team.getMembers().stream()
-                        .anyMatch(member -> member.getId().equals(leader.getId()));
+                        .anyMatch(member -> member.getUser() != null && member.getUser().getId().equals(leader.getId()));
                 if (!alreadyMember) {
-                    team.getMembers().add(leader);
+                    com.sep.comiverse.entity.ProjectTeamMemberEntity newMember = new com.sep.comiverse.entity.ProjectTeamMemberEntity();
+                    newMember.setUser(leader);
+                    newMember.setTeam(team);
+                    team.getMembers().add(newMember);
                 }
             });
         }
