@@ -98,11 +98,11 @@ public class ComicEntity extends BaseEntity {
     private Integer chapterCount = 0;
 
     @JdbcTypeCode(SqlTypes.ARRAY)
-    @Column(name = "genre_ids")
+    @Column(name = "genre_ids", columnDefinition = "uuid[]")
     private List<UUID> genreIds;
 
     @Convert(converter = com.sep.comiverse.entity.converter.VectorConverter.class)
-    @Column(name = "summary_vector")
+    @Column(name = "summary_vector", columnDefinition = "vector(768)")
     private float[] summaryVector;
 
     @Column(name = "approved_by")
