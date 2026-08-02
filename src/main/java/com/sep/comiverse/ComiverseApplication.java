@@ -6,7 +6,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.autoconfigure.domain.EntityScan;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
+import org.springframework.scheduling.annotation.EnableScheduling;
+
 @SpringBootApplication
+@EnableScheduling
 @EntityScan(basePackages = "com.sep.comiverse.entity")
 @EnableJpaRepositories(basePackages = "com.sep.comiverse.repository")
 public class ComiverseApplication {
