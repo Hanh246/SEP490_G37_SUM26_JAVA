@@ -10,6 +10,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import com.sep.comiverse.dto.ReadingHistoryCacheDTO;
 import com.sep.comiverse.dto.pagination.CursorResponseDTO;
@@ -54,8 +57,12 @@ public class RecommendationService {
                 "outputDimensionality", 768
         );
 
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);
+
         try {
-            ResponseEntity<Map> responseEntity = restTemplate.postForEntity(url, payload, Map.class);
+            ResponseEntity<Map> responseEntity = restTemplate.postForEntity(url, entity, Map.class);
             Map<String, Object> body = responseEntity.getBody();
             if (body != null && body.containsKey("embedding")) {
                 Map<String, Object> embedding = (Map<String, Object>) body.get("embedding");
