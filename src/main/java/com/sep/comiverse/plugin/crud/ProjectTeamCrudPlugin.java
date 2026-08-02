@@ -97,6 +97,13 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
                 dto.setPriority(existing.getPriority());
             }
         }
+        if (dto.getLeaderId() != null && !dto.getLeaderId().equals(previousLeaderId) && previousLeaderId != null) {
+            long incompleteCount = teamTaskRepository.countIncompleteTasksByTeamAndAssignee(id, previousLeaderId);
+            if (incompleteCount > 0) {
+                throw new com.sep.comiverse.exception.CustomException(400, "Không thể đổi Leader. Project Leader hiện tại đang có " + incompleteCount + " task chưa hoàn thành trong team này. Vui lòng yêu cầu Leader hoàn thành hoặc bỏ nhận (unassign) các task này trước.", org.springframework.http.HttpStatus.BAD_REQUEST);
+            }
+        }
+
         ProjectTeamDTO updated = super.update(id, dto);
         boolean leaderChanged = updated.getLeaderId() != null && !updated.getLeaderId().equals(previousLeaderId);
         boolean assignmentChanged = !java.util.Objects.equals(previousComicName, updated.getComicName())

@@ -30,7 +30,6 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/submissions")
-@PreAuthorize("hasAnyAuthority('MODERATOR', 'ADMIN')")
 public class SubmissionController extends BaseController<SubmissionEntity, SubmissionDTO, UUID, PaginationSearchDTO> {
 
     @Autowired
@@ -118,6 +117,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
     }
 
     @PutMapping("/{id}/approve")
+    @PreAuthorize("hasAnyAuthority('MODERATOR', 'ADMIN')")
     @Transactional
     public ResponseEntity<BaseResponse<SubmissionDTO>> approve(
             @PathVariable UUID id,
@@ -336,9 +336,13 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         return matcher.group(1).replace(',', '.');
     }
 
-    private void handleSubmissionRejected(SubmissionEntity submission, String modName) {
+    /**
+     * Handles side-effects of rejecting a submission.
+     * @return true if the comic profile was auto-rejected because all chapters are now rejected.
+     */
+    private boolean handleSubmissionRejected(SubmissionEntity submission, String modName) {
         if (submission == null || !"author".equalsIgnoreCase(submission.getQueueType())) {
-            return;
+            return false;
         }
         if (submission.getChapterId() != null) {
             chapterRepository.findById(submission.getChapterId()).ifPresent(chapter -> {
@@ -352,7 +356,40 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 
                 chapterRepository.save(chapter);
             });
-            return;
+
+            // Auto-reject comic profile if no viable chapters remain
+            if (submission.getComicId() != null) {
+                long pendingCount = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
+                        submission.getComicId(), ChapterStatus.PENDING_REVIEW);
+                long publishedCount = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
+                        submission.getComicId(), ChapterStatus.PUBLISHED);
+
+                if (pendingCount == 0 && publishedCount == 0) {
+                    // All chapters are rejected — auto-reject the comic profile submission
+                    String autoReason = "All chapters were rejected. Comic profile auto-rejected.";
+
+                    submissionRepository.findTopByComicIdAndChapterIdIsNullAndQueueTypeIgnoreCaseAndStatusIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(
+                            submission.getComicId(), "author", "pending"
+                    ).ifPresent(comicSub -> {
+                        comicSub.setStatus("rejected");
+                        comicSub.setRejectionReason(autoReason);
+                        comicSub.setModeratorId(submission.getModeratorId());
+                        submissionRepository.save(comicSub);
+                    });
+
+                    comicRepository.findById(submission.getComicId()).ifPresent(comic -> {
+                        comic.setModerationStatus(ComicModerationStatus.REJECTED);
+                        comic.setRejectionReason(autoReason);
+                        comicRepository.save(comic);
+                    });
+
+                    // Notify the author
+                    notifySubmissionOwner(submission, false, autoReason);
+
+                    return true;
+                }
+            }
+            return false;
         }
         if (submission.getComicId() != null) {
             comicRepository.findById(submission.getComicId()).ifPresent(comic -> {
@@ -373,9 +410,11 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 }
             });
         }
+        return false;
     }
 
     @PutMapping("/{id}/reject")
+    @PreAuthorize("hasAnyAuthority('MODERATOR', 'ADMIN')")
     @Transactional
     public ResponseEntity<BaseResponse<SubmissionDTO>> reject(
             @PathVariable UUID id,
@@ -394,12 +433,16 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         }
 
         SubmissionEntity savedSubmission = submissionRepository.save(submission);
+        boolean comicAutoRejected = false;
         if (!alreadyRejected) {
             String targetDesc = "author".equalsIgnoreCase(submission.getQueueType()) ? "Comic profile" : "chapter " + submission.getChapter();
             auditLogService.log("REVIEW_QUEUE", "Rejected " + targetDesc + " of " + submission.getTitle() + " (Reason: " + reason + ")");
             String modName = principal != null ? (principal.getFullName() != null ? principal.getFullName() : principal.getUsername()) : "Moderator";
-            handleSubmissionRejected(submission, modName);
+            comicAutoRejected = handleSubmissionRejected(submission, modName);
             notifySubmissionOwner(submission, false, reason);
+            if (comicAutoRejected) {
+                auditLogService.log("REVIEW_QUEUE", "Auto-rejected comic profile of " + submission.getTitle() + " (all chapters rejected)");
+            }
         }
 
         ComicEntity comic = resolveComic(submission);
@@ -407,9 +450,12 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             chapterCrudPlugin.evictChaptersCache(comic.getId());
         }
 
+        SubmissionDTO responseDto = crudPlugin.getPlugin().toDto(savedSubmission);
+        responseDto.setComicAutoRejected(comicAutoRejected);
+
         return ResponseEntity.ok(BaseResponse.<SubmissionDTO>builder()
                 .success(true)
-                .data(crudPlugin.getPlugin().toDto(savedSubmission))
+                .data(responseDto)
                 .build());
     }
 

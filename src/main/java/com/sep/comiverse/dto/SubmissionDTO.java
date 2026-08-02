@@ -35,4 +35,5 @@ public class SubmissionDTO {
     private Integer minimumAge;
     private String publicationStatus;
     private String summary;
+    private Boolean comicAutoRejected;
 }

@@ -34,6 +34,7 @@ public class ComicController {
     private final RecommendationService recommendationService;
     private final JwtTokenUtil jwtTokenUtil;
     private final com.sep.comiverse.service.AuditLogService auditLogService;
+    private final com.sep.comiverse.service.NotificationService notificationService;
 
     @GetMapping
     @Operation(summary = "Retrieve a paginated public collection of published comics")
@@ -118,24 +119,6 @@ public class ComicController {
     public ResponseEntity<BaseResponse<List<ComicDTO>>> listAllForStaff(org.springframework.security.core.Authentication authentication) {
         List<ComicDTO> all = comicCrudPlugin.listAllForStaff();
 
-        if (authentication != null && authentication.getPrincipal() instanceof com.sep.comiverse.security.UserPrincipal principal) {
-            com.sep.comiverse.entity.UserEntity user = principal.user();
-            if ("MODERATOR".equalsIgnoreCase(user.getRole().getRoleName())) {
-                String langs = user.getAssignedLanguages();
-                if (langs != null && !langs.isBlank()) {
-                    List<String> scope = java.util.Arrays.stream(langs.toLowerCase().split(","))
-                            .map(String::trim).toList();
-                    all = all.stream().filter(c -> {
-                        String comicLang = c.getLanguage();
-                        if (comicLang == null) return false;
-                        return scope.stream().anyMatch(l -> comicLang.toLowerCase().contains(l) || l.contains(comicLang.toLowerCase()));
-                    }).toList();
-                } else {
-                    all = java.util.Collections.emptyList();
-                }
-            }
-        }
-
         return ResponseEntity.ok(BaseResponse.<List<ComicDTO>>builder()
                 .success(true)
                 .data(all)
@@ -201,16 +184,79 @@ public class ComicController {
     }
 
     /**
-     * ADMIN CRUD - sửa comic trực tiếp.
+     * ADMIN/MODERATOR CRUD - edit comic metadata.
+     * Moderators can only edit: language, genres, minimumAge, publicationStatus.
+     * Title, summary, cover are Author's intellectual property — Mod should Reject to request changes.
      */
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ADMIN', 'MODERATOR')")
     public ResponseEntity<BaseResponse<ComicDTO>> update(
             @PathVariable UUID id,
-            @RequestBody ComicDTO dto
+            @RequestBody ComicDTO dto,
+            @org.springframework.security.core.annotation.AuthenticationPrincipal
+                    com.sep.comiverse.security.UserPrincipal principal
     ) {
+        // Read existing comic BEFORE update for change detection
+        ComicDTO before = comicCrudPlugin.read(id).orElse(null);
+
+        boolean isModerator = principal != null && "MODERATOR".equalsIgnoreCase(principal.getRole());
+
+        // Security guardrail: strip Author-owned fields if caller is Moderator
+        if (isModerator) {
+            dto.setTitle(null);
+            dto.setSummary(null);
+            dto.setCover(null);
+        }
+
         ComicDTO updated = comicCrudPlugin.update(id, dto);
-        auditLogService.log("COMIC_MANAGEMENT", "Updated comic metadata: " + updated.getTitle());
+
+        // Build detailed change log
+        String modName = principal != null
+                ? (principal.getFullName() != null ? principal.getFullName() : principal.getUsername())
+                : "Staff";
+        StringBuilder changes = new StringBuilder();
+        if (before != null) {
+            if (dto.getLanguage() != null && !dto.getLanguage().equals(before.getLanguage())) {
+                changes.append("Language (").append(before.getLanguage()).append(" → ").append(dto.getLanguage()).append("), ");
+            }
+            if (dto.getMinimumAge() != null && !dto.getMinimumAge().equals(before.getMinimumAge())) {
+                changes.append("Age Rating (").append(before.getMinimumAge()).append(" → ").append(dto.getMinimumAge()).append("), ");
+            }
+            if (dto.getPublicationStatus() != null && !dto.getPublicationStatus().equals(before.getPublicationStatus())) {
+                changes.append("Publication Status (").append(before.getPublicationStatus()).append(" → ").append(dto.getPublicationStatus()).append("), ");
+            }
+            if (dto.getGenreIds() != null) {
+                changes.append("Genres updated, ");
+            }
+            // Non-moderator (Admin) changes to title/summary
+            if (!isModerator) {
+                if (dto.getTitle() != null && !dto.getTitle().equals(before.getTitle())) {
+                    changes.append("Title (").append(before.getTitle()).append(" → ").append(dto.getTitle()).append("), ");
+                }
+            }
+        }
+        String changeDesc = changes.length() > 2
+                ? changes.substring(0, changes.length() - 2)
+                : "metadata";
+        auditLogService.log("COMIC_MANAGEMENT",
+                modName + " updated " + updated.getTitle() + ": " + changeDesc);
+
+        // Notify the Author about the edit (only when a Moderator edits someone else's comic)
+        if (isModerator && before != null && before.getAuthorId() != null && changes.length() > 0) {
+            String notifTitle = "Comic metadata updated by Moderator";
+            String notifMessage = "Moderator " + modName + " updated your comic \"" + updated.getTitle() + "\": " + changeDesc + ".";
+            try {
+                notificationService.notifyUser(
+                        before.getAuthorId(),
+                        notifTitle,
+                        notifMessage,
+                        "UPDATE",
+                        com.sep.comiverse.entity.enums.NotificationPreferenceKey.SUBMISSION_STATUS
+                );
+            } catch (Exception e) {
+                // Non-critical — don't fail the update if notification fails
+            }
+        }
 
         return ResponseEntity.ok(BaseResponse.<ComicDTO>builder()
                 .success(true)

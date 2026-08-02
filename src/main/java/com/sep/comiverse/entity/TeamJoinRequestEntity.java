@@ -42,4 +42,10 @@ public class TeamJoinRequestEntity {
 
     @Column(name = "cv_file_name")
     private String cvFileName;
+
+    @Transient
+    private Integer activeProjectsCount;
+
+    @Transient
+    private Integer activeTasksCount;
 }

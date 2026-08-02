@@ -102,7 +102,7 @@ public class ComicEntity extends BaseEntity {
     private List<UUID> genreIds;
 
     @Convert(converter = com.sep.comiverse.entity.converter.VectorConverter.class)
-    @Column(name = "summary_vector")
+    @Column(name = "summary_vector", columnDefinition = "vector")
     private float[] summaryVector;
 
     @Column(name = "approved_by")

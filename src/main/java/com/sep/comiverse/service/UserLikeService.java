@@ -35,12 +35,16 @@ public class UserLikeService {
                     .userId(userId)
                     .build();
             userLikeRepository.save(like);
-            redisTemplate.opsForHash().increment(UserInteractionSyncScheduler.COMIC_LIKE_HASH, comicIdStr, 1);
+            try {
+                redisTemplate.opsForHash().increment(UserInteractionSyncScheduler.COMIC_LIKE_HASH, comicIdStr, 1);
+            } catch (Exception ignored) {}
             return true;
         } else {
             userLikeRepository.findByComicIdAndUserId(comicId, userId)
                     .ifPresent(userLikeRepository::delete);
-            redisTemplate.opsForHash().increment(UserInteractionSyncScheduler.COMIC_LIKE_HASH, comicIdStr, -1);
+            try {
+                redisTemplate.opsForHash().increment(UserInteractionSyncScheduler.COMIC_LIKE_HASH, comicIdStr, -1);
+            } catch (Exception ignored) {}
             return false;
         }
     }

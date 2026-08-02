@@ -61,5 +61,9 @@ public interface ISubmissionRepository extends AbstractCrudRepository<Submission
     void hardDeleteAllByChapterId(@Param("chapterId") UUID chapterId);
 
     List<SubmissionEntity> findAllByChapterIdAndDeletedFalse(UUID chapterId);
+
+    Optional<SubmissionEntity> findTopByComicIdAndChapterIdIsNullAndQueueTypeIgnoreCaseAndStatusIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(
+            UUID comicId, String queueType, String status
+    );
 }
 
