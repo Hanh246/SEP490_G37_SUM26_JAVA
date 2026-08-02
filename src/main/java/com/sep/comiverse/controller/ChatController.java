@@ -79,4 +79,18 @@ public class ChatController {
                         .build()
         );
     }
+
+    @DeleteMapping("/{messageId}")
+    @Operation(summary = "Delete chat message", description = "Delete a chat message (only allowed if you are the sender)")
+    public ResponseEntity<BaseResponse<Void>> deleteMessage(
+            @PathVariable UUID messageId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        chatService.deleteMessage(messageId, principal.getId());
+        return ResponseEntity.ok(
+                BaseResponse.<Void>builder()
+                        .success(true)
+                        .build()
+        );
+    }
 }

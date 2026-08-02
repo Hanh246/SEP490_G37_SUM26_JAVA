@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.NotificationService;
 import com.sep.comiverse.service.UserPresenceService;
@@ -42,6 +43,7 @@ public class TeamWorkspaceController {
     private final IPageTranslationRepository iPageTranslationRepository;
     private final NotificationService notificationService;
     private final UserPresenceService userPresenceService;
+    private final SimpMessagingTemplate messagingTemplate;
 
     // ── ANNOUNCEMENTS ────────────────────────────────
     @GetMapping("/{teamId}/announcements")
@@ -93,6 +95,15 @@ public class TeamWorkspaceController {
             ann.setIsPinned(ann.getIsPinned() == null ? true : !ann.getIsPinned());
             return ResponseEntity.ok(announcementRepository.save(ann));
         }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/announcements/{id}")
+    public ResponseEntity<?> deleteAnnouncement(@PathVariable UUID id) {
+        if (announcementRepository.existsById(id)) {
+            announcementRepository.deleteById(id);
+            return ResponseEntity.ok().build();
+        }
+        return ResponseEntity.notFound().build();
     }
 
     @GetMapping("/announcements/{announcementId}/comments")
@@ -203,7 +214,33 @@ public class TeamWorkspaceController {
     @PostMapping("/{teamId}/messages")
     public ResponseEntity<TeamMessageEntity> createMessage(@PathVariable UUID teamId, @RequestBody TeamMessageEntity message) {
         message.setProjectTeamId(teamId);
-        return ResponseEntity.ok(messageRepository.save(message));
+        TeamMessageEntity saved = messageRepository.save(message);
+        messagingTemplate.convertAndSend("/topic/team-workspace/" + teamId, saved);
+        return ResponseEntity.ok(saved);
+    }
+
+    @DeleteMapping("/{teamId}/messages/{messageId}")
+    public ResponseEntity<?> deleteMessage(@PathVariable UUID teamId, @PathVariable UUID messageId) {
+        if (messageRepository.existsById(messageId)) {
+            messageRepository.deleteById(messageId);
+            return ResponseEntity.ok(Map.of("success", true));
+        }
+        return ResponseEntity.notFound().build();
+    }
+
+    @PostMapping("/{teamId}/messages/warn")
+    public ResponseEntity<TeamMessageEntity> warnMember(@PathVariable UUID teamId, @RequestBody Map<String, String> payload) {
+        String memberName = payload.get("memberName");
+        TeamMessageEntity warningMsg = TeamMessageEntity.builder()
+                .projectTeamId(teamId)
+                .sender("SYSTEM")
+                .avatar("⚠️")
+                .text("Member " + memberName + " has been warned by the Project Leader.")
+                .time(java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")))
+                .build();
+        TeamMessageEntity saved = messageRepository.save(warningMsg);
+        messagingTemplate.convertAndSend("/topic/team-workspace/" + teamId, saved);
+        return ResponseEntity.ok(saved);
     }
 
     // ── TASKS ────────────────────────────────────────
@@ -316,7 +353,16 @@ public class TeamWorkspaceController {
     // ── JOIN REQUESTS ────────────────────────────────
     @GetMapping("/{teamId}/requests")
     public ResponseEntity<List<TeamJoinRequestEntity>> getRequests(@PathVariable UUID teamId) {
-        return ResponseEntity.ok(joinRequestRepository.findByProjectTeamId(teamId));
+        List<TeamJoinRequestEntity> requests = joinRequestRepository.findByProjectTeamId(teamId);
+        for (TeamJoinRequestEntity request : requests) {
+            if (request.getRequesterId() != null) {
+                int activeProjects = (int) projectTeamRepository.countActiveTeamsByUserId(request.getRequesterId());
+                int activeTasks = (int) taskRepository.countActiveTasksByAssigneeId(request.getRequesterId());
+                request.setActiveProjectsCount(activeProjects);
+                request.setActiveTasksCount(activeTasks);
+            }
+        }
+        return ResponseEntity.ok(requests);
     }
 
     @GetMapping("/requests/by-name")

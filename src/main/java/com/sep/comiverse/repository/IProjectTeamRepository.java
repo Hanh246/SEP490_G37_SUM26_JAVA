@@ -29,4 +29,7 @@ public interface IProjectTeamRepository extends AbstractCrudRepository<ProjectTe
 
     @Query("SELECT CASE WHEN COUNT(pt) > 0 THEN true ELSE false END FROM ProjectTeamEntity pt LEFT JOIN pt.members m WHERE pt.id = :teamId AND pt.deleted = false AND (m.id = :userId OR pt.leaderId = :userId)")
     boolean isUserMemberOfTeam(@Param("teamId") UUID teamId, @Param("userId") UUID userId);
+
+    @Query("SELECT COUNT(DISTINCT pt) FROM ProjectTeamEntity pt LEFT JOIN pt.members m WHERE pt.deleted = false AND pt.status != 'completed' AND (m.id = :userId OR pt.leaderId = :userId)")
+    long countActiveTeamsByUserId(@Param("userId") UUID userId);
 }

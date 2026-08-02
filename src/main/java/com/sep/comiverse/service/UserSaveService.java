@@ -36,12 +36,16 @@ public class UserSaveService {
                     .userId(userId)
                     .build();
             userSaveRepository.save(save);
-            redisTemplate.opsForHash().increment(UserInteractionSyncScheduler.COMIC_SAVE_HASH, comicIdStr, 1);
+            try {
+                redisTemplate.opsForHash().increment(UserInteractionSyncScheduler.COMIC_SAVE_HASH, comicIdStr, 1);
+            } catch (Exception ignored) {}
             return true;
         } else {
             userSaveRepository.findByComicIdAndUserId(comicId, userId)
                     .ifPresent(userSaveRepository::delete);
-            redisTemplate.opsForHash().increment(UserInteractionSyncScheduler.COMIC_SAVE_HASH, comicIdStr, -1);
+            try {
+                redisTemplate.opsForHash().increment(UserInteractionSyncScheduler.COMIC_SAVE_HASH, comicIdStr, -1);
+            } catch (Exception ignored) {}
             return false;
         }
     }
