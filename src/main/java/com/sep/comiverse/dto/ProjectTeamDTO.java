@@ -31,4 +31,5 @@ public class ProjectTeamDTO {
     private Boolean assignedToMe;
     private Boolean isRecruiting;
     private Integer maxMembers;
+    private Long inProgressTasksCount;
 }
