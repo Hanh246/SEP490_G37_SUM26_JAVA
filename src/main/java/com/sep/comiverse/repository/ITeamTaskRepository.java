@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -13,8 +15,24 @@ import java.util.UUID;
 @Repository
 public interface ITeamTaskRepository extends JpaRepository<TeamTaskEntity, UUID> {
     List<TeamTaskEntity> findByProjectTeamId(UUID projectTeamId);
+
     @Query("SELECT t FROM TeamTaskEntity t LEFT JOIN FETCH t.chapter WHERE t.id = :id")
     Optional<TeamTaskEntity> findByIdWithChapter(@Param("id") UUID id);
+
+    @Query("""
+            SELECT t FROM TeamTaskEntity t
+            LEFT JOIN FETCH t.chapter c
+            WHERE t.assigneeId = :assigneeId
+              AND t.completedAt >= :from
+              AND t.completedAt < :to
+              AND LOWER(t.status) IN ('completed', 'complete', 'done')
+            ORDER BY t.completedAt DESC
+            """)
+    List<TeamTaskEntity> findCompletedForAssigneeInPeriod(
+            @Param("assigneeId") UUID assigneeId,
+            @Param("from") Instant from,
+            @Param("to") Instant to
+    );
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM TeamTaskEntity t WHERE t.chapter.id = :chapterId")

@@ -49,6 +49,9 @@ public class DbInitializer implements CommandLineRunner {
         migrateLegacyChapterPagesIntoChapterImages();
         splitCommaJoinedChapterImageArrays();
         jdbcTemplate.execute("UPDATE chapters SET images = ARRAY[]::text[] WHERE images IS NULL");
+        migrateRevenueAnalyticsSchema();
+        migrateCompletedTeamTasks();
+        jdbcTemplate.execute("UPDATE authors SET country_code = 'VN' WHERE country_code IS NULL OR BTRIM(country_code) = ''");
 
         createRoles();
         createAdmin();
@@ -118,6 +121,162 @@ public class DbInitializer implements CommandLineRunner {
                         ) p
                         WHERE c.id = p.chapter_id
                           AND (c.images IS NULL OR cardinality(c.images) = 0);
+                    END IF;
+                END $$;
+                """);
+    }
+
+    /**
+     * Normalizes legacy revenue analytics columns used by Author monthly payout.
+     * Older databases may contain comicId/comicid or created_at while the current
+     * SQL and entity mappings use comic_id and create_at.
+     */
+    private void migrateRevenueAnalyticsSchema() {
+        jdbcTemplate.execute("""
+                DO $$
+                BEGIN
+                    IF to_regclass('public.comic_daily_views') IS NOT NULL THEN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'comic_daily_views'
+                              AND column_name = 'comic_id'
+                        ) THEN
+                            IF EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = 'public'
+                                  AND table_name = 'comic_daily_views'
+                                  AND column_name = 'comicId'
+                            ) THEN
+                                EXECUTE 'ALTER TABLE public.comic_daily_views RENAME COLUMN "comicId" TO comic_id';
+                            ELSIF EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = 'public'
+                                  AND table_name = 'comic_daily_views'
+                                  AND column_name = 'comicid'
+                            ) THEN
+                                EXECUTE 'ALTER TABLE public.comic_daily_views RENAME COLUMN comicid TO comic_id';
+                            END IF;
+                        END IF;
+
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'comic_daily_views'
+                              AND column_name = 'log_date'
+                        ) AND EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'comic_daily_views'
+                              AND column_name = 'view_date'
+                        ) THEN
+                            EXECUTE 'ALTER TABLE public.comic_daily_views RENAME COLUMN view_date TO log_date';
+                        END IF;
+                    END IF;
+
+                    IF to_regclass('public.user_saves') IS NOT NULL THEN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'user_saves'
+                              AND column_name = 'create_at'
+                        ) AND EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'user_saves'
+                              AND column_name = 'created_at'
+                        ) THEN
+                            EXECUTE 'ALTER TABLE public.user_saves RENAME COLUMN created_at TO create_at';
+                        END IF;
+                    END IF;
+                END $$;
+                """);
+    }
+
+    private void migrateCompletedTeamTasks() {
+        jdbcTemplate.execute("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'team_tasks'
+                          AND column_name = 'completed_at'
+                    ) THEN
+                        -- TeamTaskEntity does not necessarily contain BaseEntity audit
+                        -- columns. Use dynamic SQL so a missing legacy timestamp column
+                        -- cannot make application startup fail.
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'team_tasks'
+                              AND column_name = 'update_at'
+                        ) AND EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'team_tasks'
+                              AND column_name = 'create_at'
+                        ) THEN
+                            EXECUTE $sql$
+                                UPDATE team_tasks
+                                SET completed_at = COALESCE(update_at, create_at, CURRENT_TIMESTAMP)
+                                WHERE completed_at IS NULL
+                                  AND LOWER(COALESCE(status, '')) IN ('completed', 'complete', 'done')
+                            $sql$;
+                        ELSIF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'team_tasks'
+                              AND column_name = 'update_at'
+                        ) THEN
+                            EXECUTE $sql$
+                                UPDATE team_tasks
+                                SET completed_at = COALESCE(update_at, CURRENT_TIMESTAMP)
+                                WHERE completed_at IS NULL
+                                  AND LOWER(COALESCE(status, '')) IN ('completed', 'complete', 'done')
+                            $sql$;
+                        ELSIF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'team_tasks'
+                              AND column_name = 'create_at'
+                        ) THEN
+                            EXECUTE $sql$
+                                UPDATE team_tasks
+                                SET completed_at = COALESCE(create_at, CURRENT_TIMESTAMP)
+                                WHERE completed_at IS NULL
+                                  AND LOWER(COALESCE(status, '')) IN ('completed', 'complete', 'done')
+                            $sql$;
+                        ELSE
+                            -- There is no trustworthy historical timestamp to migrate.
+                            -- Leave completed_at NULL so legacy tasks cannot generate
+                            -- incorrect payout revenue. Set it manually when needed.
+                            RAISE NOTICE 'Skipping completed_at backfill: team_tasks has no create_at/update_at column';
+                        END IF;
+                    END IF;
+
+                    -- Hibernate maps List<UUID> to uuid[] in PostgreSQL. Use dynamic
+                    -- SQL only when the legacy column is actually an ARRAY so an older
+                    -- varchar/json representation cannot abort application startup.
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'team_tasks'
+                          AND column_name = 'assignee_id'
+                    ) AND EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'team_tasks'
+                          AND column_name = 'assignee_ids'
+                          AND data_type = 'ARRAY'
+                    ) THEN
+                        EXECUTE $sql$
+                            UPDATE team_tasks
+                            SET assignee_id = assignee_ids[1]
+                            WHERE assignee_id IS NULL
+                              AND assignee_ids IS NOT NULL
+                              AND cardinality(assignee_ids) > 0
+                        $sql$;
                     END IF;
                 END $$;
                 """);
@@ -253,6 +412,7 @@ public class DbInitializer implements CommandLineRunner {
                         .legalName(authorUser.getFullName())
                         .contactEmail(authorUser.getEmail())
                         .avatarUrl(authorUser.getAvatarUrl())
+                        .countryCode("VN")
                         .bio("Sample author profile for seeded comics.")
                         .build();
                 authorRepository.save(author);

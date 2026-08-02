@@ -1,13 +1,15 @@
 package com.sep.comiverse.controller;
 
 import com.sep.comiverse.dto.request.CreatePayoutRequest;
-import com.sep.comiverse.dto.request.LinkPayoutAccountRequest;
+import com.sep.comiverse.dto.request.CreateStripePayoutOnboardingRequest;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.dto.response.CreatorPayoutAccountResponse;
 import com.sep.comiverse.dto.response.CreatorPayoutOverviewResponse;
 import com.sep.comiverse.dto.response.CreatorPayoutRequestResponse;
+import com.sep.comiverse.dto.response.StripePayoutOnboardingLinkResponse;
 import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.CreatorPayoutService;
+import com.sep.comiverse.service.CreatorStripePayoutProfileService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -15,7 +17,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class CreatorPayoutController {
 
     private final CreatorPayoutService creatorPayoutService;
+    private final CreatorStripePayoutProfileService payoutProfileService;
 
     @GetMapping("/overview")
     public ResponseEntity<BaseResponse<CreatorPayoutOverviewResponse>> getOverview(
@@ -40,15 +42,36 @@ public class CreatorPayoutController {
                 .build());
     }
 
-    @PutMapping("/account")
-    public ResponseEntity<BaseResponse<CreatorPayoutAccountResponse>> linkAccount(
-            @Valid @RequestBody LinkPayoutAccountRequest request,
+    @GetMapping("/account")
+    public ResponseEntity<BaseResponse<CreatorPayoutAccountResponse>> getAccount(
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ResponseEntity.ok(BaseResponse.<CreatorPayoutAccountResponse>builder()
                 .success(true)
-                .message("Stripe sandbox connected account linked")
-                .data(creatorPayoutService.linkPayoutAccount(principal, request))
+                .data(payoutProfileService.getProfile(principal))
+                .build());
+    }
+
+    @PostMapping("/account/onboarding")
+    public ResponseEntity<BaseResponse<StripePayoutOnboardingLinkResponse>> createOnboardingLink(
+            @Valid @RequestBody(required = false) CreateStripePayoutOnboardingRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(BaseResponse.<StripePayoutOnboardingLinkResponse>builder()
+                .success(true)
+                .message("Stripe sandbox onboarding link created")
+                .data(payoutProfileService.createOnboardingLink(principal, request))
+                .build());
+    }
+
+    @PostMapping("/account/sync")
+    public ResponseEntity<BaseResponse<CreatorPayoutAccountResponse>> syncAccount(
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(BaseResponse.<CreatorPayoutAccountResponse>builder()
+                .success(true)
+                .message("Stripe payout account status synchronized")
+                .data(payoutProfileService.syncProfile(principal))
                 .build());
     }
 

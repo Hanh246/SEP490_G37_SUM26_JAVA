@@ -69,6 +69,21 @@ public class CreatorPayoutRequestEntity extends BaseEntity {
     @Column(name = "amount", nullable = false, precision = 19, scale = 2)
     private BigDecimal amount;
 
+    @Column(name = "gross_amount_vnd", precision = 19, scale = 2)
+    private BigDecimal grossAmountVnd;
+
+    @Column(name = "base_amount_vnd", precision = 19, scale = 2)
+    private BigDecimal baseAmountVnd;
+
+    @Column(name = "monthly_limit_vnd", precision = 19, scale = 2)
+    private BigDecimal monthlyLimitVnd;
+
+    @Column(name = "exchange_rate_vnd_per_unit", precision = 19, scale = 6)
+    private BigDecimal exchangeRateVndPerUnit;
+
+    @Column(name = "account_country", length = 2)
+    private String accountCountry;
+
     @Builder.Default
     @Column(name = "currency", nullable = false, length = 3)
     private String currency = "VND";

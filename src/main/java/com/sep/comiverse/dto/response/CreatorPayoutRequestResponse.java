@@ -23,6 +23,11 @@ public class CreatorPayoutRequestResponse {
     private CreatorPayoutRole role;
     private String payoutMonth;
     private BigDecimal amount;
+    private BigDecimal grossAmountVnd;
+    private BigDecimal baseAmountVnd;
+    private BigDecimal monthlyLimitVnd;
+    private BigDecimal exchangeRateVndPerUnit;
+    private String accountCountry;
     private String currency;
     private CreatorPayoutStatus status;
     private String stripeConnectedAccountId;
