@@ -58,8 +58,6 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
     private static final Pattern CHAPTER_NUMBER_PATTERN =
             Pattern.compile("(?i)chapter\\s+([0-9]+(?:[,.][0-9]+)?)");
-    @Autowired
-    private com.sep.comiverse.repository.ITeamTaskRepository teamTaskRepository;
 
     @Autowired
     public SubmissionController(SubmissionCrudPlugin crud) {
@@ -191,6 +189,8 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 }
                 refreshComicMetadataAfterPublishedChapter(comic, savedChapter);
                 comicRepository.save(comic);
+                
+                notifyTeamOfNewChapters(comic, savedChapter.getTitle());
             }
 
             return;
@@ -211,14 +211,21 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
             comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
             List<ChapterEntity> comicChapters = chapterRepository.findAllByComic_IdAndDeletedFalse(comic.getId());
+            boolean anyNewChapterPublished = false;
             for (ChapterEntity ch : comicChapters) {
                 if (ch.getModerationStatus() != ChapterStatus.PUBLISHED) {
                     ch.setModerationStatus(ChapterStatus.PUBLISHED);
                     ch.setApprovedById(modId);
                     ch.setApprovedAt(java.time.Instant.now());
                     chapterRepository.save(ch);
+                    anyNewChapterPublished = true;
                 }
             }
+            
+            if (anyNewChapterPublished) {
+                notifyTeamOfNewChapters(comic, "Multiple chapters");
+            }
+            
             if (!comicChapters.isEmpty()) {
                 refreshComicMetadataAfterPublishedChapter(comic, comicChapters.get(0));
             }
@@ -478,9 +485,25 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 message,
                 approved ? "UPDATE" : "WARNING",
                 translatorSubmission
-                        ? NotificationPreferenceKey.TEAM_UPDATES
-                        : NotificationPreferenceKey.SUBMISSION_STATUS
+                        ? com.sep.comiverse.entity.enums.NotificationPreferenceKey.TEAM_UPDATES
+                        : com.sep.comiverse.entity.enums.NotificationPreferenceKey.SUBMISSION_STATUS
         );
+    }
+    
+    private void notifyTeamOfNewChapters(ComicEntity comic, String title) {
+        if (comic == null) return;
+        List<com.sep.comiverse.entity.ProjectTeamEntity> teams = projectTeamRepository.findAllByComicNameIgnoreCase(comic.getTitle());
+        for (com.sep.comiverse.entity.ProjectTeamEntity team : teams) {
+            if (team.getLeaderId() != null) {
+                notificationService.notifyUser(
+                        team.getLeaderId(),
+                        "New chapter in Backlog",
+                        "A new chapter '" + title + "' has been approved and added to the backlog of " + team.getTitle(),
+                        "UPDATE",
+                        com.sep.comiverse.entity.enums.NotificationPreferenceKey.TEAM_UPDATES
+                );
+            }
+        }
     }
 
     private ProjectTeamEntity findSubmissionTeam(SubmissionEntity submission) {

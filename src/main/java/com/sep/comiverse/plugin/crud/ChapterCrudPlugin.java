@@ -57,19 +57,23 @@ public class ChapterCrudPlugin
     private static final String CHAPTER_DETAIL_CACHE_PREFIX = "chapter:detail:meta:";
     private static final String COMIC_CHAPTERS_LIST_CACHE_PREFIX = "comic:chapters:list:";
 
+    private final com.sep.comiverse.repository.IChapterTranslationRepository chapterTranslationRepository;
+
     @Autowired
     public ChapterCrudPlugin(IChapterRepository repository,
                              PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry,
                              RedisTemplate<String, Object> redisTemplate,
                              IUserRepository userRepository,
+                             ChapterPremiumPolicyService chapterPremiumPolicyService,
                              PremiumPlanService premiumPlanService,
-                             ChapterPremiumPolicyService chapterPremiumPolicyService){
+                             com.sep.comiverse.repository.IChapterTranslationRepository chapterTranslationRepository) {
         super(repository, pluginRegistry, ChapterEntity.class);
         this.chapterRepository = repository;
         this.redisTemplate = redisTemplate;
         this.userRepository = userRepository;
-        this.premiumPlanService = premiumPlanService;
         this.chapterPremiumPolicyService = chapterPremiumPolicyService;
+        this.premiumPlanService = premiumPlanService;
+        this.chapterTranslationRepository = chapterTranslationRepository;
     }
 
     @Transactional(readOnly = true)
@@ -288,6 +292,18 @@ public class ChapterCrudPlugin
             cachedResults = chapterRepository.findChapterMetadataByComicId(comicId, ChapterStatus.PUBLISHED);
 
             if (cachedResults != null && !cachedResults.isEmpty()) {
+                // Populate translated languages
+                java.util.List<Object[]> langMapping = chapterTranslationRepository.findLanguageCodesByChapterForComic(comicId);
+                java.util.Map<UUID, java.util.List<String>> chapterLangs = new java.util.HashMap<>();
+                for (Object[] row : langMapping) {
+                    UUID chapId = (UUID) row[0];
+                    String langCode = (String) row[1];
+                    chapterLangs.computeIfAbsent(chapId, k -> new java.util.ArrayList<>()).add(langCode);
+                }
+                for (ChapterLiteDTO dto : cachedResults) {
+                    dto.setTranslatedLanguages(chapterLangs.getOrDefault(dto.getId(), new java.util.ArrayList<>()));
+                }
+
                 List<ChapterLiteDTO> listToCache = new java.util.ArrayList<>(cachedResults);
                 try {
                     redisTemplate.opsForValue().set(cacheKey, listToCache, Duration.ofHours(3));
@@ -310,6 +326,7 @@ public class ChapterCrudPlugin
                     .moderationStatus(dto.getModerationStatus())
                     .approvedById(dto.getApprovedById())
                     .approvedAt(dto.getApprovedAt())
+                    .translatedLanguages(dto.getTranslatedLanguages())
                     .build();
 
             try {
