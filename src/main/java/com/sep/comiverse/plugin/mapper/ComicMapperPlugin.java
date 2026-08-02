@@ -22,6 +22,17 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
     private final IUserRepository userRepository;
     private final com.sep.comiverse.repository.IChapterRepository chapterRepository;
     private final Map<UUID, String> authorNameCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<UUID, String> moderatorNameCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private String resolveModeratorName(UUID moderatorId) {
+        if (moderatorId == null) return null;
+        return moderatorNameCache.computeIfAbsent(moderatorId, id -> 
+                userRepository.findById(id)
+                        .map(user -> user.getFullName() != null && !user.getFullName().isBlank() 
+                                ? user.getFullName() : user.getUsername())
+                        .orElse("Unknown Moderator")
+        );
+    }
 
     @Autowired
     public ComicMapperPlugin(ModelMapper modelMapper,
@@ -85,6 +96,8 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
         } else {
             dto.setAuthorName("Unknown Author");
         }
+        
+        dto.setApprovedBy(resolveModeratorName(model.getApprovedById()));
 
         if (model.getGenres() != null) {
             Set<GenreDTO> genreDtos = model.getGenres().stream()

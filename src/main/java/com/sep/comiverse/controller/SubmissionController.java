@@ -128,10 +128,10 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
 
         boolean alreadyApproved = "approved".equalsIgnoreCase(submission.getStatus());
         submission.setStatus("approved");
-        String modName = "System Moderator";
+        UUID modId = null;
         if (principal != null) {
             submission.setModeratorId(principal.getId());
-            modName = principal.getFullName() != null ? principal.getFullName() : principal.getUsername();
+            modId = principal.getId();
         }
         SubmissionEntity savedSubmission = submissionRepository.save(submission);
 
@@ -141,7 +141,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                     : "Comic profile";
             auditLogService.log("REVIEW_QUEUE", "Approved " + targetDesc + " of " + submission.getTitle());
             if ("author".equalsIgnoreCase(submission.getQueueType())) {
-                handleAuthorApproval(submission, modName);
+                handleAuthorApproval(submission, modId);
             }
             ComicEntity comic = resolveComic(submission);
             if (comic != null) {
@@ -156,7 +156,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 .build());
     }
 
-    private void handleAuthorApproval(SubmissionEntity submission, String modName) {
+    private void handleAuthorApproval(SubmissionEntity submission, UUID modId) {
         if (submission == null) {
             return;
         }
@@ -175,7 +175,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                     ));
 
             chapter.setModerationStatus(ChapterStatus.PUBLISHED);
-            chapter.setApprovedBy(modName);
+            chapter.setApprovedById(modId);
             chapter.setApprovedAt(java.time.Instant.now());
             ChapterEntity savedChapter = chapterRepository.save(chapter);
 
@@ -186,7 +186,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             if (comic != null) {
                 if (comic.getModerationStatus() != ComicModerationStatus.PUBLISHED) {
                     comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
-                    comic.setApprovedBy(modName);
+                    comic.setApprovedById(modId);
                     comic.setApprovedAt(java.time.Instant.now());
                 }
                 refreshComicMetadataAfterPublishedChapter(comic, savedChapter);
@@ -214,7 +214,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             for (ChapterEntity ch : comicChapters) {
                 if (ch.getModerationStatus() != ChapterStatus.PUBLISHED) {
                     ch.setModerationStatus(ChapterStatus.PUBLISHED);
-                    ch.setApprovedBy(modName);
+                    ch.setApprovedById(modId);
                     ch.setApprovedAt(java.time.Instant.now());
                     chapterRepository.save(ch);
                 }
@@ -239,7 +239,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             for (ChapterEntity ch : comicChapters) {
                 if (ch.getModerationStatus() != ChapterStatus.PUBLISHED) {
                     ch.setModerationStatus(ChapterStatus.PUBLISHED);
-                    ch.setApprovedBy(modName);
+                    ch.setApprovedById(modId);
                     ch.setApprovedAt(java.time.Instant.now());
                     chapterRepository.save(ch);
                 }
@@ -340,7 +340,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
      * Handles side-effects of rejecting a submission.
      * @return true if the comic profile was auto-rejected because all chapters are now rejected.
      */
-    private boolean handleSubmissionRejected(SubmissionEntity submission, String modName) {
+    private boolean handleSubmissionRejected(SubmissionEntity submission, UUID modId) {
         if (submission == null || !"author".equalsIgnoreCase(submission.getQueueType())) {
             return false;
         }
@@ -348,7 +348,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             chapterRepository.findById(submission.getChapterId()).ifPresent(chapter -> {
                 chapter.setModerationStatus(ChapterStatus.REJECTED);
                 chapter.setRejectionReason(submission.getRejectionReason());
-                chapter.setRejectedBy(modName);
+                chapter.setRejectedById(modId);
                 
                 // Tombstone: Clear heavy images array to prevent DB bloat.
                 // The content hash was already saved during upload to prevent re-uploads.
@@ -403,7 +403,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                     if (ch.getModerationStatus() != ChapterStatus.PUBLISHED) {
                         ch.setModerationStatus(ChapterStatus.REJECTED);
                         ch.setRejectionReason(submission.getRejectionReason());
-                        ch.setRejectedBy(modName);
+                        ch.setRejectedById(modId);
                         ch.setImages(new java.util.ArrayList<>());
                         chapterRepository.save(ch);
                     }
@@ -437,8 +437,8 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         if (!alreadyRejected) {
             String targetDesc = "author".equalsIgnoreCase(submission.getQueueType()) ? "Comic profile" : "chapter " + submission.getChapter();
             auditLogService.log("REVIEW_QUEUE", "Rejected " + targetDesc + " of " + submission.getTitle() + " (Reason: " + reason + ")");
-            String modName = principal != null ? (principal.getFullName() != null ? principal.getFullName() : principal.getUsername()) : "Moderator";
-            comicAutoRejected = handleSubmissionRejected(submission, modName);
+            UUID modId = principal != null ? principal.getId() : null;
+            comicAutoRejected = handleSubmissionRejected(submission, modId);
             notifySubmissionOwner(submission, false, reason);
             if (comicAutoRejected) {
                 auditLogService.log("REVIEW_QUEUE", "Auto-rejected comic profile of " + submission.getTitle() + " (all chapters rejected)");
