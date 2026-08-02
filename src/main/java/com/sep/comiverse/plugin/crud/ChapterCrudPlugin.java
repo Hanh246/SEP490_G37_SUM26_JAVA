@@ -38,6 +38,17 @@ public class ChapterCrudPlugin
     private final IUserRepository userRepository;
     private final PremiumPlanService premiumPlanService;
     private final ChapterPremiumPolicyService chapterPremiumPolicyService;
+    private final java.util.Map<UUID, String> moderatorNameCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private String resolveModeratorName(UUID moderatorId) {
+        if (moderatorId == null) return null;
+        return moderatorNameCache.computeIfAbsent(moderatorId, id -> 
+                userRepository.findById(id)
+                        .map(user -> user.getFullName() != null && !user.getFullName().isBlank() 
+                                ? user.getFullName() : user.getUsername())
+                        .orElse("Unknown Moderator")
+        );
+    }
 
     private static final Set<String> PREMIUM_BYPASS_ROLES = Set.of(
             "ADMIN", "MODERATOR", "AUTHOR", "TRANSLATOR", "PROJECT_LEADER"
@@ -117,7 +128,7 @@ public class ChapterCrudPlugin
                     .isPremium(chapterPremiumPolicyService.isPremiumChapter(chapter.getChapterNumber()))
                     .createdAt(chapter.getCreatedAt())
                     .moderationStatus(chapter.getModerationStatus())
-                    .approvedBy(chapter.getApprovedBy())
+                    .approvedById(chapter.getApprovedById())
                     .approvedAt(chapter.getApprovedAt())
                     .build();
 
@@ -253,7 +264,7 @@ public class ChapterCrudPlugin
                     .isPremium(chapterPremiumPolicyService.isPremiumChapter(c.getChapterNumber()))
                     .createdAt(c.getCreatedAt())
                     .moderationStatus(c.getModerationStatus())
-                    .approvedBy(c.getApprovedBy())
+                    .approvedById(c.getApprovedById())
                     .approvedAt(c.getApprovedAt())
                     .build()
             ).sorted((a, b) -> toChapterSortNumber(a.getChapterNumber()).compareTo(toChapterSortNumber(b.getChapterNumber()))).toList();
@@ -297,7 +308,7 @@ public class ChapterCrudPlugin
                     .isPremium(chapterPremiumPolicyService.isPremiumChapter(dto.getChapterNumber()))
                     .createdAt(dto.getCreatedAt())
                     .moderationStatus(dto.getModerationStatus())
-                    .approvedBy(dto.getApprovedBy())
+                    .approvedById(dto.getApprovedById())
                     .approvedAt(dto.getApprovedAt())
                     .build();
 

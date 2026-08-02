@@ -176,13 +176,13 @@ public class ChapterController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         try {
-            String modName = principal != null && principal.getFullName() != null ? principal.getFullName() : (principal != null ? principal.getUsername() : "System Moderator");
+            UUID modId = principal != null ? principal.getId() : null;
 
             ChapterEntity chapter = chapterRepository.findById(id)
                     .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Chapter with id " + id + " not found"));
 
             chapter.setModerationStatus(ChapterStatus.PUBLISHED);
-            chapter.setApprovedBy(modName);
+            chapter.setApprovedById(modId);
             chapter.setApprovedAt(java.time.Instant.now());
 
             ChapterEntity savedChapter = chapterRepository.save(chapter);
@@ -217,7 +217,7 @@ public class ChapterController {
             if (comic != null) {
                 if (comic.getModerationStatus() != ComicModerationStatus.PUBLISHED) {
                     comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
-                    comic.setApprovedBy(modName);
+                    comic.setApprovedById(modId);
                     comic.setApprovedAt(java.time.Instant.now());
                 }
 

@@ -9,6 +9,7 @@ import org.hibernate.type.SqlTypes;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Data
 @Entity
@@ -65,14 +66,14 @@ public class ChapterEntity extends BaseEntity {
 
     // projectTeam removed
 
-    @Column(name = "approved_by")
-    private String approvedBy;
+    @Column(name = "approved_by_id")
+    private UUID approvedById;
 
     @Column(name = "approved_at")
     private Instant approvedAt;
 
-    @Column(name = "rejected_by")
-    private String rejectedBy;
+    @Column(name = "rejected_by_id")
+    private UUID rejectedById;
 
     @Column(name = "content_hash", length = 64)
     private String contentHash;

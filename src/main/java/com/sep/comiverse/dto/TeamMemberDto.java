@@ -19,4 +19,5 @@ public class TeamMemberDto {
     private String avatar;
     private Boolean online;
     private Instant lastSeenAt;
+    private Instant joinDate;
 }
