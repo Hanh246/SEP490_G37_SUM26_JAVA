@@ -39,6 +39,7 @@ import java.util.UUID;
         indexes = {
                 @Index(name = "idx_payment_transaction_user", columnList = "user_id, create_at"),
                 @Index(name = "idx_payment_transaction_status", columnList = "status, create_at"),
+                @Index(name = "idx_payment_transaction_paid", columnList = "status, paid_at"),
                 @Index(name = "idx_payment_transaction_subscription", columnList = "stripe_subscription_id")
         }
 )
