@@ -1,16 +1,11 @@
 package com.sep.comiverse.controller;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import com.sep.comiverse.dto.pagination.PaginationMetadata;
 import com.sep.comiverse.dto.pagination.PaginationResponse;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.dto.request.ChapterUploadRequest;
 import com.sep.comiverse.dto.response.AuthorUploadTaskResponse;
 import com.sep.comiverse.dto.response.BaseResponse;
-import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.dto.response.ChapterPreviewResponse;
 import com.sep.comiverse.dto.response.SubmitChapterReviewResponse;
 import com.sep.comiverse.security.UserPrincipal;
@@ -23,7 +18,6 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -39,67 +33,12 @@ import java.util.UUID;
 @RequestMapping("/author/comics/{comicId}/chapters")
 @RequiredArgsConstructor
 @PreAuthorize("hasAuthority('AUTHOR')")
-@Tag(name = "Author - Chapters", description = "APIs for author chapter folder upload, preview, and review submission")
+@Tag(name = "Author - Chapters", description = "APIs for author chapter ZIP upload, preview, and review submission")
 public class AuthorChapterController {
 
     private final AuthorChapterService authorChapterService;
     private final AuthorUploadTaskService authorUploadTaskService;
     private final AuthorUploadAsyncService authorUploadAsyncService;
-    private final ObjectMapper objectMapper;
-
-    @PostMapping(value = "/upload-folder", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(
-            summary = "Upload a chapter image folder asynchronously",
-            description = "Receives page images selected from one folder with any name, uses the explicit chapterNumber field, returns an upload task immediately, then validates, sorts, and uploads the pages to Cloudinary in the background."
-    )
-    public ResponseEntity<BaseResponse<AuthorUploadTaskResponse>> uploadChapterFolder(
-            @PathVariable UUID comicId,
-            @Valid @ModelAttribute ChapterUploadRequest request,
-            @RequestParam("files") List<MultipartFile> files,
-            @RequestParam(value = "relativePaths", required = false) List<String> relativePaths,
-            @RequestParam(value = "relativePathsJson", required = false) String relativePathsJson,
-            @AuthenticationPrincipal UserPrincipal principal
-    ) {
-        applyPrincipalAuthorId(request, principal);
-        List<String> safeRelativePaths = resolveRelativePaths(relativePaths, relativePathsJson);
-        List<BytesMultipartFile> safeFiles = BytesMultipartFile.fromMany(files, "files");
-        AuthorUploadTaskResponse task = authorUploadTaskService.createTask(
-                request.getAuthorId(),
-                "CHAPTER_FOLDER",
-                "Chapter folder accepted. Backend is validating and uploading its pages."
-        );
-        authorUploadAsyncService.processChapterFolder(
-                task.getTaskId(),
-                comicId,
-                request,
-                safeFiles,
-                safeRelativePaths
-        );
-        return ResponseEntity.accepted().body(BaseResponse.<AuthorUploadTaskResponse>builder()
-                .success(true)
-                .message("Chapter folder accepted. Track status with the returned taskId.")
-                .data(task)
-                .build());
-    }
-
-    private List<String> resolveRelativePaths(List<String> relativePaths, String relativePathsJson) {
-        if (relativePathsJson != null && !relativePathsJson.isBlank()) {
-            try {
-                List<String> parsed = objectMapper.readValue(
-                        relativePathsJson,
-                        new TypeReference<List<String>>() { }
-                );
-                return parsed == null ? List.of() : List.copyOf(parsed);
-            } catch (JsonProcessingException ex) {
-                throw new CustomException(
-                        400,
-                        "Invalid chapter folder path manifest",
-                        HttpStatus.BAD_REQUEST
-                );
-            }
-        }
-        return relativePaths == null ? List.of() : List.copyOf(relativePaths);
-    }
 
     @PostMapping(value = "/upload-zip", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Upload chapter ZIP asynchronously", description = "Receives one chapter ZIP file, returns an upload task immediately after the file is accepted, then extracts images and uploads pages to Cloudinary in the background.")
@@ -126,8 +65,8 @@ public class AuthorChapterController {
                 .build());
     }
 
-    @GetMapping({"/upload-folder/status/{taskId}", "/upload-zip/status/{taskId}"})
-    @Operation(summary = "Get chapter upload status", description = "Returns current background processing status for a chapter folder or legacy ZIP upload task")
+    @GetMapping("/upload-zip/status/{taskId}")
+    @Operation(summary = "Get chapter ZIP upload status", description = "Returns current background processing status for a chapter ZIP upload task")
     public ResponseEntity<BaseResponse<AuthorUploadTaskResponse>> getChapterUploadStatus(
             @PathVariable UUID comicId,
             @PathVariable UUID taskId,

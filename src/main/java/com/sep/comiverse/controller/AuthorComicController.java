@@ -51,16 +51,6 @@ public class AuthorComicController {
 
 
 
-    @GetMapping("/title-exists")
-    @Operation(summary = "Check whether a comic title already exists", description = "Checks active comics using a trimmed, case-insensitive title comparison.")
-    public ResponseEntity<BaseResponse<Boolean>> titleExists(@RequestParam String title) {
-        return ResponseEntity.ok(BaseResponse.<Boolean>builder()
-                .success(true)
-                .data(authorComicService.titleExists(title))
-                .build());
-    }
-
-
     @PostMapping("/{comicId}/submit-review")
     @Operation(summary = "Submit comic for review", description = "Submits an owned comic profile to moderation. The comic must contain at least one non-deleted chapter.")
     public ResponseEntity<BaseResponse<AuthorComicResponse>> submitComicForReview(

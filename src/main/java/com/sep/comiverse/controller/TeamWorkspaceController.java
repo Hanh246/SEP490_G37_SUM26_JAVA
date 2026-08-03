@@ -491,7 +491,7 @@ public class TeamWorkspaceController {
         if (team == null) {
             return ResponseEntity.notFound().build();
         }
-
+        
         if (team.getMembers() != null) {
             boolean removed = team.getMembers().removeIf(m -> m.getUser().getId().equals(memberId));
             if (removed) {
@@ -500,7 +500,7 @@ public class TeamWorkspaceController {
                 return ResponseEntity.ok(Map.of("success", true));
             }
         }
-
+        
         return ResponseEntity.notFound().build();
     }
 

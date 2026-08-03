@@ -4,10 +4,12 @@ import com.sep.comiverse.dto.request.SubscriptionPlanRequest;
 import com.sep.comiverse.dto.request.UpdateSubscriptionPlanStatusRequest;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.dto.response.PaymentLogPageResponse;
+import com.sep.comiverse.dto.response.PaymentStatisticsResponse;
 import com.sep.comiverse.dto.response.SubscriptionPlanResponse;
 import com.sep.comiverse.entity.enums.PaymentTransactionStatus;
 import com.sep.comiverse.service.StripeSubscriptionService;
 import com.sep.comiverse.service.SubscriptionPlanService;
+import com.sep.comiverse.service.PaymentStatisticsService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -32,6 +34,7 @@ import java.util.UUID;
 public class AdminSubscriptionController {
     private final SubscriptionPlanService planService;
     private final StripeSubscriptionService subscriptionService;
+    private final PaymentStatisticsService paymentStatisticsService;
 
     @GetMapping("/plans")
     public ResponseEntity<BaseResponse<List<SubscriptionPlanResponse>>> getPlans() {
@@ -86,6 +89,18 @@ public class AdminSubscriptionController {
         return ResponseEntity.ok(BaseResponse.<PaymentLogPageResponse>builder()
                 .success(true)
                 .data(subscriptionService.getPaymentLogs(status, query, page, size))
+                .build());
+    }
+
+    @GetMapping("/payments/statistics")
+    public ResponseEntity<BaseResponse<PaymentStatisticsResponse>> getPaymentStatistics(
+            @RequestParam(defaultValue = "30") int days,
+            @RequestParam(required = false) String currency,
+            @RequestParam(defaultValue = "Asia/Ho_Chi_Minh") String zoneId
+    ) {
+        return ResponseEntity.ok(BaseResponse.<PaymentStatisticsResponse>builder()
+                .success(true)
+                .data(paymentStatisticsService.getStatistics(days, currency, zoneId))
                 .build());
     }
 }

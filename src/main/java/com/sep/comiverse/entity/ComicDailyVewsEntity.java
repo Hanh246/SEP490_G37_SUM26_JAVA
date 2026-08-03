@@ -20,7 +20,7 @@ import java.util.UUID;
 @EqualsAndHashCode(callSuper = true)
 public class ComicDailyVewsEntity extends BaseEntity {
 
-    @Column(name = "comic_id", nullable = false)
+    @Column(name = "comicId", nullable = false)
     private UUID comicId;
 
     @Column(name = "log_date", nullable = false)
