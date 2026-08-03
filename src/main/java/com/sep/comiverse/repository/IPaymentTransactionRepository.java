@@ -9,6 +9,8 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Repository
@@ -44,4 +46,27 @@ public interface IPaymentTransactionRepository extends AbstractCrudRepository<Pa
             @Param("query") String query,
             Pageable pageable
     );
+
+    @Query("""
+            SELECT p FROM PaymentTransactionEntity p
+            WHERE p.deleted = false
+              AND UPPER(p.currency) = UPPER(:currency)
+              AND (
+                    (p.createdAt >= :from AND p.createdAt < :to)
+                    OR (p.paidAt IS NOT NULL AND p.paidAt >= :from AND p.paidAt < :to)
+              )
+            """)
+    List<PaymentTransactionEntity> findForStatistics(
+            @Param("currency") String currency,
+            @Param("from") Instant from,
+            @Param("to") Instant to
+    );
+
+    @Query("""
+            SELECT DISTINCT UPPER(p.currency)
+            FROM PaymentTransactionEntity p
+            WHERE p.deleted = false
+            ORDER BY UPPER(p.currency)
+            """)
+    List<String> findDistinctCurrencies();
 }
