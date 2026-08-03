@@ -48,9 +48,6 @@ public class AuthorEntity extends BaseEntity {
     @Column(name = "contact_email", length = 255)
     private String contactEmail;
 
-    @Column(name = "country_code", length = 2)
-    private String countryCode;
-
     @Column(name = "external_profile_ref", length = 100)
     private String externalProfileRef;
 

@@ -9,8 +9,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.List;
 
 public record BytesMultipartFile(
         String name,
@@ -33,29 +31,6 @@ public record BytesMultipartFile(
         } catch (IOException e) {
             throw new CustomException(400, "Could not read uploaded archive file", HttpStatus.BAD_REQUEST);
         }
-    }
-
-    public static List<BytesMultipartFile> fromMany(List<MultipartFile> files, String fallbackName) {
-        if (files == null || files.isEmpty()) {
-            throw new CustomException(400, "Chapter folder must contain image files", HttpStatus.BAD_REQUEST);
-        }
-        List<BytesMultipartFile> copies = new ArrayList<>(files.size());
-        for (MultipartFile file : files) {
-            if (file == null || file.isEmpty()) {
-                throw new CustomException(400, "Chapter folder contains an empty file", HttpStatus.BAD_REQUEST);
-            }
-            try {
-                copies.add(new BytesMultipartFile(
-                        file.getName() == null ? fallbackName : file.getName(),
-                        file.getOriginalFilename(),
-                        file.getContentType(),
-                        file.getBytes()
-                ));
-            } catch (IOException e) {
-                throw new CustomException(400, "Could not read a file from the selected chapter folder", HttpStatus.BAD_REQUEST);
-            }
-        }
-        return copies;
     }
 
     @Override

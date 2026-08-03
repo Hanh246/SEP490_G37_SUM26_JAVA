@@ -1,47 +1,22 @@
 package com.sep.comiverse.exception;
 
 import com.sep.comiverse.dto.response.BaseResponse;
-import jakarta.persistence.EntityNotFoundException;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.catalina.connector.ClientAbortException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
-import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
-import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.NoSuchElementException;
 
-@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    /**
-     * Trình duyệt đã đóng kết nối trước khi backend ghi xong response.
-     * Không trả ResponseEntity vì connection không còn sử dụng được.
-     */
-    @ExceptionHandler({
-            AsyncRequestNotUsableException.class,
-            ClientAbortException.class
-    })
-    public void handleClientDisconnected(Exception ex) {
-        log.debug(
-                "Client disconnected before response completed: {}",
-                ex.getMessage()
-        );
-    }
-
     @ExceptionHandler(CustomException.class)
-    public ResponseEntity<BaseResponse<Object>> handleCustomException(
-            CustomException ex
-    ) {
+    public ResponseEntity<BaseResponse<Object>> handleCustomException(CustomException ex) {
         return ResponseEntity.status(ex.getHttpStatus())
                 .body(BaseResponse.builder()
                         .success(false)
@@ -49,47 +24,16 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
-    @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<BaseResponse<Object>> handleAccessDenied(
-            AccessDeniedException ex
-    ) {
-        return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(BaseResponse.builder()
-                        .success(false)
-                        .message(
-                                "Access denied: your account role "
-                                        + "cannot use this feature"
-                        )
-                        .build());
-    }
-
-    /**
-     * Xử lý validation từ @Valid.
-     */
+    // Handle validation exceptions caused by @Valid
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<BaseResponse<Object>> handleValidationExceptions(
-            MethodArgumentNotValidException ex
-    ) {
+    public ResponseEntity<BaseResponse<Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
         Map<String, String> errors = new HashMap<>();
-
-        ex.getBindingResult()
-                .getAllErrors()
-                .forEach(error -> {
-                    String errorMessage = error.getDefaultMessage();
-
-                    if (error instanceof FieldError fieldError) {
-                        errors.put(
-                                fieldError.getField(),
-                                errorMessage
-                        );
-                    } else {
-                        errors.put(
-                                error.getObjectName(),
-                                errorMessage
-                        );
-                    }
-                });
-
+        ex.getBindingResult().getAllErrors().forEach((error) -> {
+            String fieldName = ((FieldError) error).getField();
+            String errorMessage = error.getDefaultMessage();
+            errors.put(fieldName, errorMessage);
+        });
+        
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(BaseResponse.builder()
                         .success(false)
@@ -99,104 +43,44 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-    public ResponseEntity<BaseResponse<Object>> handleArgumentTypeMismatch(
-            MethodArgumentTypeMismatchException ex
-    ) {
-        String parameterName = ex.getName() == null
-                ? "parameter"
-                : ex.getName();
-
+    public ResponseEntity<BaseResponse<Object>> handleArgumentTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        String parameterName = ex.getName() == null ? "parameter" : ex.getName();
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(BaseResponse.builder()
                         .success(false)
-                        .message(
-                                "Invalid "
-                                        + parameterName
-                                        + " format"
-                        )
+                        .message("Invalid " + parameterName + " format")
                         .build());
     }
 
-    /**
-     * Xử lý upload vượt giới hạn dung lượng hoặc số multipart parts.
-     */
-    @ExceptionHandler(MaxUploadSizeExceededException.class)
-    public ResponseEntity<BaseResponse<Object>> handleMultipartLimit(
-            MaxUploadSizeExceededException ex
-    ) {
-        boolean tooManyParts = hasCauseNamed(
-                ex,
-                "FileCountLimitExceededException"
-        );
-
-        String message = tooManyParts
-                ? "Too many files or multipart fields in one upload. "
-                + "A chapter folder supports at most 200 page images."
-                : "Upload exceeds the configured request size limit.";
-
-        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<BaseResponse<Object>> handleAccessDeniedException(org.springframework.security.access.AccessDeniedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(BaseResponse.builder()
                         .success(false)
-                        .message(message)
+                        .message("Access denied: " + ex.getMessage())
                         .build());
     }
 
-    /**
-     * Xử lý trường hợp không tìm thấy entity hoặc phần tử.
-     */
-    @ExceptionHandler({
-            EntityNotFoundException.class,
-            NoSuchElementException.class
-    })
-    public ResponseEntity<BaseResponse<Object>> handleNotFoundException(
-            Exception ex
-    ) {
-        String message = ex.getMessage() == null
-                || ex.getMessage().isBlank()
-                ? "Requested resource not found"
-                : ex.getMessage();
-
+    @ExceptionHandler({jakarta.persistence.EntityNotFoundException.class, java.util.NoSuchElementException.class})
+    public ResponseEntity<BaseResponse<Object>> handleNotFoundException(Exception ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(BaseResponse.builder()
                         .success(false)
-                        .message(message)
+                        .message(ex.getMessage() != null ? ex.getMessage() : "Requested resource not found")
                         .build());
     }
 
-    /**
-     * Xử lý tất cả lỗi hệ thống chưa có handler riêng.
-     */
+    // Handle all unforeseen system errors
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<BaseResponse<Object>> handleGeneralException(
-            Exception ex
-    ) {
-        log.error("Unhandled application error", ex);
-
-        return ResponseEntity.status(
-                        HttpStatus.INTERNAL_SERVER_ERROR
-                )
+    public ResponseEntity<BaseResponse<Object>> handleGeneralException(Exception ex) {
+        if (ex instanceof org.springframework.security.access.AccessDeniedException accessDeniedException) {
+            throw accessDeniedException;
+        }
+        ex.printStackTrace();
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(BaseResponse.builder()
                         .success(false)
-                        .message("Internal server error")
+                        .message("Internal server error: " + ex.getMessage())
                         .build());
-    }
-
-    private boolean hasCauseNamed(
-            Throwable throwable,
-            String simpleClassName
-    ) {
-        Throwable current = throwable;
-
-        while (current != null) {
-            if (current.getClass()
-                    .getSimpleName()
-                    .equals(simpleClassName)) {
-                return true;
-            }
-
-            current = current.getCause();
-        }
-
-        return false;
     }
 }

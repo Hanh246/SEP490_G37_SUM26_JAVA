@@ -44,21 +44,18 @@ public class StripeGatewayService {
     private final String secretKey;
     private final String webhookSecret;
     private final String frontendUrl;
-    private final Set<String> recipientAgreementCountries;
 
     public StripeGatewayService(
             RestClient.Builder restClientBuilder,
             ObjectMapper objectMapper,
             @Value("${stripe.secret-key:}") String secretKey,
             @Value("${stripe.webhook-secret:}") String webhookSecret,
-            @Value("${frontend.url:http://localhost:5173}") String frontendUrl,
-            @Value("${stripe.connect.recipient-countries:VN}") String recipientCountries
+            @Value("${frontend.url:http://localhost:5173}") String frontendUrl
     ) {
         this.objectMapper = objectMapper;
         this.secretKey = secretKey == null ? "" : secretKey.trim();
         this.webhookSecret = webhookSecret == null ? "" : webhookSecret.trim();
         this.frontendUrl = trimTrailingSlash(frontendUrl);
-        this.recipientAgreementCountries = parseCountrySet(recipientCountries);
         this.restClient = restClientBuilder.baseUrl(STRIPE_API_BASE_URL).build();
     }
 
@@ -179,123 +176,6 @@ public class StripeGatewayService {
         form.add("customer", customerId);
         form.add("return_url", frontendUrl + "/profile");
         return postForm("/v1/billing_portal/sessions", form, null);
-    }
-
-    public JsonNode createPayoutConnectedAccount(
-            UUID userId,
-            String email,
-            String country,
-            String creatorRole
-    ) {
-        if (userId == null) {
-            throw new CustomException(400, "User ID is required", HttpStatus.BAD_REQUEST);
-        }
-        String normalizedCountry = country == null ? "VN" : country.trim().toUpperCase(Locale.ROOT);
-        if (!normalizedCountry.matches("^[A-Z]{2}$")) {
-            throw new CustomException(400, "Invalid Stripe account country", HttpStatus.BAD_REQUEST);
-        }
-
-        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-        form.add("country", normalizedCountry);
-        if (email != null && !email.isBlank()) {
-            form.add("email", email.trim());
-        }
-        // Accounts v1 controller properties create a Stripe-managed Express dashboard account.
-        form.add("controller[fees][payer]", "application");
-        form.add("controller[losses][payments]", "application");
-        form.add("controller[stripe_dashboard][type]", "express");
-        form.add("capabilities[transfers][requested]", "true");
-
-        // Vietnam payout-only connected accounts require the recipient service agreement.
-        // Keep this country-driven because not every Stripe Connect country/configuration
-        // supports recipient accounts. Recipient accounts receive transfers only and must
-        // not request the card_payments capability.
-        String serviceAgreement = recipientAgreementCountries.contains(normalizedCountry)
-                ? "recipient"
-                : "full";
-        form.add("tos_acceptance[service_agreement]", serviceAgreement);
-
-        form.add("business_profile[product_description]",
-                "ComiVerse creator rewards and translation payouts");
-        form.add("metadata[user_id]", userId.toString());
-        form.add("metadata[creator_role]", creatorRole == null ? "CREATOR" : creatorRole);
-        form.add("metadata[environment]", "sandbox");
-        form.add("metadata[service_agreement]", serviceAgreement);
-
-        return postForm(
-                "/v1/accounts",
-                form,
-                "creator-connect-account-v2-"
-                        + userId + "-"
-                        + normalizedCountry + "-"
-                        + serviceAgreement
-        );
-    }
-
-    public JsonNode createPayoutAccountOnboardingLink(
-            String accountId,
-            String refreshPath,
-            String returnPath
-    ) {
-        if (accountId == null || !accountId.matches("^acct_[A-Za-z0-9]+$")) {
-            throw new CustomException(400, "Invalid Stripe connected account ID", HttpStatus.BAD_REQUEST);
-        }
-        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-        form.add("account", accountId);
-        form.add("refresh_url", frontendUrl + normalizeFrontendPath(refreshPath));
-        form.add("return_url", frontendUrl + normalizeFrontendPath(returnPath));
-        form.add("type", "account_onboarding");
-        form.add("collection_options[fields]", "eventually_due");
-        form.add("collection_options[future_requirements]", "include");
-        // Account Links are single-use and must not reuse an idempotency key.
-        return postForm("/v1/account_links", form, null);
-    }
-
-    public JsonNode retrieveConnectedAccount(String accountId) {
-        requireSecretKey();
-        if (accountId == null || !accountId.matches("^acct_[A-Za-z0-9]+$")) {
-            throw new CustomException(400, "Invalid Stripe connected account ID", HttpStatus.BAD_REQUEST);
-        }
-        try {
-            return restClient.get()
-                    .uri("/v1/accounts/{id}", accountId)
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + secretKey)
-                    .retrieve()
-                    .body(JsonNode.class);
-        } catch (RestClientResponseException ex) {
-            throw stripeException(ex, "Unable to retrieve Stripe connected account");
-        }
-    }
-
-    public JsonNode createTransfer(
-            String connectedAccountId,
-            BigDecimal amount,
-            String currency,
-            UUID payoutRequestId,
-            UUID userId,
-            String payoutMonth
-    ) {
-        if (amount == null || amount.signum() <= 0) {
-            throw new CustomException(400, "Payout amount must be greater than zero", HttpStatus.BAD_REQUEST);
-        }
-        if (currency == null || !currency.matches("^[A-Za-z]{3}$")) {
-            throw new CustomException(400, "Payout currency must be a 3-letter ISO code", HttpStatus.BAD_REQUEST);
-        }
-
-        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-        form.add("amount", toMinorUnit(amount, currency).toString());
-        form.add("currency", currency.toLowerCase(Locale.ROOT));
-        form.add("destination", connectedAccountId);
-        form.add("description", "ComiVerse payout " + payoutMonth);
-        form.add("transfer_group", "COMIVERSE_PAYOUT_" + payoutRequestId);
-        form.add("metadata[payout_request_id]", payoutRequestId.toString());
-        form.add("metadata[user_id]", userId.toString());
-        form.add("metadata[payout_month]", payoutMonth);
-        return postForm(
-                "/v1/transfers",
-                form,
-                "creator-payout-" + payoutRequestId
-        );
     }
 
     public JsonNode verifyAndParseWebhook(String payload, String signatureHeader) {
@@ -444,26 +324,6 @@ public class StripeGatewayService {
             throw new CustomException(502, message, HttpStatus.BAD_GATEWAY);
         }
         return value;
-    }
-
-    private String normalizeFrontendPath(String value) {
-        if (value == null || value.isBlank()) return "/";
-        String trimmed = value.trim();
-        return trimmed.startsWith("/") ? trimmed : "/" + trimmed;
-    }
-
-    private Set<String> parseCountrySet(String configuredCountries) {
-        if (configuredCountries == null || configuredCountries.isBlank()) {
-            return Set.of("VN");
-        }
-        java.util.LinkedHashSet<String> countries = new java.util.LinkedHashSet<>();
-        for (String item : configuredCountries.split(",")) {
-            String normalized = item == null ? "" : item.trim().toUpperCase(Locale.ROOT);
-            if (normalized.matches("^[A-Z]{2}$")) {
-                countries.add(normalized);
-            }
-        }
-        return countries.isEmpty() ? Set.of("VN") : Set.copyOf(countries);
     }
 
     private String trimTrailingSlash(String value) {

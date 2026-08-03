@@ -2,7 +2,6 @@ package com.sep.comiverse.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.sep.comiverse.service.StripeGatewayService;
-import com.sep.comiverse.service.CreatorStripePayoutProfileService;
 import com.sep.comiverse.service.StripeSubscriptionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +19,6 @@ public class StripeWebhookController {
 
     private final StripeGatewayService stripeGatewayService;
     private final StripeSubscriptionService stripeSubscriptionService;
-    private final CreatorStripePayoutProfileService payoutProfileService;
 
     @PostMapping("/webhook")
     public ResponseEntity<?> handleWebhook(
@@ -49,12 +47,7 @@ public class StripeWebhookController {
                 event.path("type").asText()
         );
 
-        if ("account.updated".equals(event.path("type").asText())) {
-            payoutProfileService.syncFromAccountUpdatedWebhook(
-                    event.path("data").path("object")
-            );
-        }
-
+        // Gọi service xử lý event thật tại đây
         stripeSubscriptionService.processWebhook(event);
 
         return ResponseEntity.ok(Map.of(

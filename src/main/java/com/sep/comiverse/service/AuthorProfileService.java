@@ -14,7 +14,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -42,7 +41,6 @@ public class AuthorProfileService {
         author.setBio(trimToNull(request.getBio()));
         author.setAvatarUrl(trimToNull(request.getAvatarUrl()));
         author.setContactEmail(firstNonBlank(request.getContactEmail(), author.getUser().getEmail()));
-        author.setCountryCode(normalizeCountryCode(request.getCountryCode()));
         author.setExternalProfileRef(trimToNull(request.getExternalProfileRef()));
         author.setNote(trimToNull(request.getNote()));
 
@@ -70,7 +68,6 @@ public class AuthorProfileService {
                 .legalName(user.getFullName())
                 .avatarUrl(user.getAvatarUrl())
                 .contactEmail(user.getEmail())
-                .countryCode("VN")
                 .build();
         return authorRepository.save(author);
     }
@@ -89,16 +86,9 @@ public class AuthorProfileService {
                 .bio(author.getBio())
                 .avatarUrl(author.getAvatarUrl())
                 .contactEmail(author.getContactEmail())
-                .countryCode(author.getCountryCode())
                 .externalProfileRef(author.getExternalProfileRef())
                 .note(author.getNote())
                 .build();
-    }
-
-
-    private String normalizeCountryCode(String value) {
-        if (!StringUtils.hasText(value)) return "VN";
-        return value.trim().toUpperCase(Locale.ROOT);
     }
 
     private String requiredTrim(String value, String message) {

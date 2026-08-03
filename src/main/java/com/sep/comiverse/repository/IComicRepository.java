@@ -116,26 +116,6 @@ public interface IComicRepository
 
     boolean existsByTitle(String title);
 
-    @Query("""
-            SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END
-            FROM ComicEntity c
-            WHERE c.deleted = false
-              AND LOWER(TRIM(c.title)) = LOWER(TRIM(:title))
-            """)
-    boolean existsActiveByNormalizedTitle(@Param("title") String title);
-
-    @Query("""
-            SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END
-            FROM ComicEntity c
-            WHERE c.deleted = false
-              AND c.id <> :comicId
-              AND LOWER(TRIM(c.title)) = LOWER(TRIM(:title))
-            """)
-    boolean existsActiveByNormalizedTitleExcludingId(
-            @Param("title") String title,
-            @Param("comicId") UUID comicId
-    );
-
     Optional<ComicEntity> findByTitle(String title);
 
     Optional<ComicEntity> findByTitleIgnoreCase(String title);

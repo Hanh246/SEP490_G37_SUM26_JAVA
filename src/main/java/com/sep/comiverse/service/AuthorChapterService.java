@@ -95,45 +95,19 @@ public class AuthorChapterService {
         validateUploadRequest(request);
         validateZipFile(zipFile);
 
-        String chapterNumber = resolveChapterNumber(request, zipFile);
-        List<ImageCandidate> images = extractAndValidateImages(zipFile);
-        return persistUploadedChapter(comicId, request, chapterNumber, images);
-    }
-
-    @Transactional
-    public ChapterPreviewResponse uploadChapterFolder(
-            UUID comicId,
-            ChapterUploadRequest request,
-            List<? extends MultipartFile> pageFiles,
-            List<String> relativePaths
-    ) {
-        validateUploadRequest(request);
-        String chapterNumber = resolveChapterNumberFromFolder(request, relativePaths);
-        List<ImageCandidate> images = extractAndValidateFolderImages(pageFiles, relativePaths);
-        return persistUploadedChapter(comicId, request, chapterNumber, images);
-    }
-
-    private ChapterPreviewResponse persistUploadedChapter(
-            UUID comicId,
-            ChapterUploadRequest request,
-            String chapterNumber,
-            List<ImageCandidate> images
-    ) {
         ComicEntity comic = authorComicService.getOwnedComic(comicId, request.getAuthorId());
+        String chapterNumber = resolveChapterNumber(request, zipFile);
         if (chapterRepository.existsByComic_IdAndChapterNumberAndDeletedFalse(comicId, chapterNumber)) {
             throw new CustomException(409, "Chapter number already exists for this comic", HttpStatus.CONFLICT);
         }
 
+        List<ImageCandidate> images = extractAndValidateImages(zipFile);
         images.sort(imageNaturalComparator());
 
+        // Content Fingerprinting: Check if this exact content was previously rejected
         String contentHash = computeContentHash(images);
-        if (contentHash != null
-                && chapterRepository.existsByContentHashAndModerationStatus(contentHash, ChapterStatus.REJECTED)) {
-            throw new CustomException(
-                    400,
-                    "This chapter content was previously rejected and cannot be re-uploaded. Please contact moderation.",
-                    HttpStatus.BAD_REQUEST
-            );
+        if (contentHash != null && chapterRepository.existsByContentHashAndModerationStatus(contentHash, ChapterStatus.REJECTED)) {
+            throw new CustomException(400, "This chapter content was previously rejected and cannot be re-uploaded. Please contact moderation.", HttpStatus.BAD_REQUEST);
         }
 
         List<String> imageUrls = new ArrayList<>();
@@ -159,6 +133,7 @@ public class AuthorChapterService {
                 .build();
         ChapterEntity savedChapter = chapterRepository.save(chapter);
         refreshComicChapterMetadata(comic);
+
         return toPreviewResponse(savedChapter);
     }
 
@@ -540,121 +515,6 @@ public class AuthorChapterService {
         return images;
     }
 
-    private List<ImageCandidate> extractAndValidateFolderImages(
-            List<? extends MultipartFile> pageFiles,
-            List<String> relativePaths
-    ) {
-        if (pageFiles == null || pageFiles.isEmpty()) {
-            throw new CustomException(400, "Chapter folder must contain image files", HttpStatus.BAD_REQUEST);
-        }
-        if (pageFiles.size() > maxPages) {
-            throw new CustomException(
-                    400,
-                    "Chapter folder exceeds maximum page count of " + maxPages,
-                    HttpStatus.BAD_REQUEST
-            );
-        }
-        boolean hasRelativePaths = relativePaths != null && !relativePaths.isEmpty();
-        if (hasRelativePaths && relativePaths.size() != pageFiles.size()) {
-            throw new CustomException(
-                    400,
-                    "Folder path metadata does not match the number of uploaded files",
-                    HttpStatus.BAD_REQUEST
-            );
-        }
-
-        List<ImageCandidate> images = new ArrayList<>();
-        Map<String, Integer> duplicateNameCounter = new HashMap<>();
-        String rootFolder = null;
-
-        for (int index = 0; index < pageFiles.size(); index++) {
-            MultipartFile file = pageFiles.get(index);
-            if (file == null || file.isEmpty()) {
-                throw new CustomException(400, "Chapter folder contains an empty file", HttpStatus.BAD_REQUEST);
-            }
-
-            String rawPath = hasRelativePaths
-                    ? relativePaths.get(index)
-                    : file.getOriginalFilename();
-            String entryName = normalizeEntryName(rawPath);
-            if (!isCandidateFile(entryName)) {
-                continue;
-            }
-
-            String[] pathParts = splitCleanPath(entryName);
-            if (hasRelativePaths) {
-                if (pathParts.length != 2) {
-                    throw new CustomException(
-                            400,
-                            "Select one chapter folder with images directly inside it. Nested path is not allowed: " + entryName,
-                            HttpStatus.BAD_REQUEST
-                    );
-                }
-                if (rootFolder == null) {
-                    rootFolder = pathParts[0];
-                } else if (!rootFolder.equals(pathParts[0])) {
-                    throw new CustomException(
-                            400,
-                            "Files from multiple folders cannot be uploaded as one chapter",
-                            HttpStatus.BAD_REQUEST
-                    );
-                }
-            } else if (pathParts.length != 1) {
-                throw new CustomException(
-                        400,
-                        "Chapter pages must be directly inside one folder",
-                        HttpStatus.BAD_REQUEST
-                );
-            }
-
-            String baseFileName = getBaseName(entryName);
-            if (isZipArchiveFileName(baseFileName)) {
-                throw new CustomException(
-                        400,
-                        "Chapter folder accepts page images only. Remove archive file: " + entryName,
-                        HttpStatus.BAD_REQUEST
-                );
-            }
-            if (!isAllowedImage(baseFileName)) {
-                throw new CustomException(
-                        400,
-                        "Unsupported file in chapter folder: " + entryName,
-                        HttpStatus.BAD_REQUEST
-                );
-            }
-            if (file.getSize() > MAX_IMAGE_SIZE_BYTES) {
-                throw new CustomException(400, "Image exceeds 10MB limit: " + entryName, HttpStatus.BAD_REQUEST);
-            }
-
-            byte[] bytes;
-            try {
-                bytes = file.getBytes();
-            } catch (IOException ex) {
-                throw new CustomException(
-                        400,
-                        "Could not read image from chapter folder: " + entryName,
-                        HttpStatus.BAD_REQUEST
-                );
-            }
-            if (bytes.length == 0) {
-                throw new CustomException(400, "Empty image file in chapter folder: " + entryName, HttpStatus.BAD_REQUEST);
-            }
-
-            String safeDisplayName = makeDuplicateSafeDisplayName(baseFileName, duplicateNameCounter);
-            ImageDimension dimension = readImageDimension(entryName, bytes);
-            images.add(new ImageCandidate(safeDisplayName, entryName, index + 1, bytes, dimension));
-        }
-
-        if (images.isEmpty()) {
-            throw new CustomException(
-                    400,
-                    "Selected chapter folder does not contain any supported images",
-                    HttpStatus.BAD_REQUEST
-            );
-        }
-        return images;
-    }
-
     private byte[] readCurrentEntry(ZipInputStream zipInputStream) throws IOException {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         byte[] buffer = new byte[8192];
@@ -672,11 +532,11 @@ public class AuthorChapterService {
                 if (fileName.toLowerCase(Locale.ROOT).endsWith(".webp")) {
                     return new ImageDimension(null, null);
                 }
-                throw new CustomException(400, "Invalid image file in chapter upload: " + fileName, HttpStatus.BAD_REQUEST);
+                throw new CustomException(400, "Invalid image file in chapter ZIP: " + fileName, HttpStatus.BAD_REQUEST);
             }
             return new ImageDimension(image.getWidth(), image.getHeight());
         } catch (IOException e) {
-            throw new CustomException(400, "Invalid image file in chapter upload: " + fileName, HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Invalid image file in chapter ZIP: " + fileName, HttpStatus.BAD_REQUEST);
         }
     }
 
@@ -703,7 +563,7 @@ public class AuthorChapterService {
             return false;
         }
         if (normalized.startsWith("/") || normalized.contains("../") || normalized.contains("..\\")) {
-            throw new CustomException(400, "Unsafe upload path: " + entryName, HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Unsafe archive entry path: " + entryName, HttpStatus.BAD_REQUEST);
         }
         return true;
     }
@@ -821,24 +681,6 @@ public class AuthorChapterService {
         }
 
         return numberFromFileName;
-    }
-
-    private String resolveChapterNumberFromFolder(
-            ChapterUploadRequest request,
-            List<String> relativePaths
-    ) {
-        // Folder names are unrestricted. Chapter identity comes only from the
-        // explicit chapterNumber field so names such as "raw pages", "第1話",
-        // or the comic title itself are all accepted.
-        String numberFromRequest = normalizeChapterNumber(request.getChapterNumber());
-        if (!StringUtils.hasText(numberFromRequest)) {
-            throw new CustomException(
-                    400,
-                    "Chapter number is required",
-                    HttpStatus.BAD_REQUEST
-            );
-        }
-        return numberFromRequest;
     }
 
     private String parseChapterNumberFromFileName(String fileName) {
