@@ -10,7 +10,8 @@ import java.util.UUID;
 public class CreateTaskRequest {
     private String title;
     private String status;
+    private List<UUID> assigneeIds;
     private UUID assigneeId;
-    private UUID chapterId;   // ← khớp đúng tên field frontend gửi lên
+    private UUID chapterId;   
     private String dueDate;
 }

@@ -19,10 +19,13 @@ import com.sep.comiverse.repository.IProjectTeamRepository;
 import com.sep.comiverse.repository.IReviewCommentRepository;
 import com.sep.comiverse.repository.ITeamTaskRepository;
 import com.sep.comiverse.repository.IUserRepository;
+import com.sep.comiverse.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
@@ -187,7 +190,12 @@ public class ReviewController {
 
     @PutMapping("/tasks/{taskId}/decision")
     @Transactional
-    public ResponseEntity<?> submitDecision(@PathVariable UUID taskId, @RequestBody Map<String, String> body) {
+    @PreAuthorize("hasAuthority('PROJECT_LEADER')")
+    public ResponseEntity<?> submitDecision(
+            @PathVariable UUID taskId,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
         String decision = body.get("decision");
         log.info("[submitDecision] taskId={} decision={}", taskId, decision);
 
@@ -197,9 +205,24 @@ public class ReviewController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("success", false, "message", "Task not found"));
         }
+        ProjectTeamEntity taskTeam = projectTeamRepository.findById(task.getProjectTeamId()).orElse(null);
+        boolean ownsTeam = principal != null && taskTeam != null && (
+                (taskTeam.getLeaderId() != null && principal.getId().equals(taskTeam.getLeaderId()))
+                        || (taskTeam.getLeaderId() == null && taskTeam.getLeaderName() != null
+                        && (taskTeam.getLeaderName().equalsIgnoreCase(principal.getUsername())
+                        || (principal.getFullName() != null
+                        && taskTeam.getLeaderName().equalsIgnoreCase(principal.getFullName()))))
+        );
+        if (!ownsTeam) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "message", "Only this team's Project Leader can review and complete the task"));
+        }
 
         if ("approved".equals(decision)) {
             task.setStatus("completed");
+            if (task.getCompletedAt() == null) {
+                task.setCompletedAt(Instant.now());
+            }
 
             List<PageTranslationEntity> pages = pageTranslationRepository.findByTaskId_IdOrderByPageNumberAsc(taskId);
             log.info("[submitDecision] found {} PageTranslationEntity rows for taskId={}", pages.size(), taskId);
@@ -209,17 +232,16 @@ public class ReviewController {
             pageTranslationRepository.saveAll(pages);
 
             try {
-                UUID modId = null;
-                Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-                if (auth != null && auth.getPrincipal() instanceof com.sep.comiverse.security.UserPrincipal principal) {
-                    modId = principal.getId();
-                }
+                UUID modId = principal != null
+                        ? principal.getId()
+                        : null;
                 publishChapterFromTask(task, pages, modId);
             } catch (Exception ex) {
                 log.error("[submitDecision] Failed to publish chapter for taskId={}", taskId, ex);
             }
         } else if ("changes_requested".equals(decision)) {
             task.setStatus("in_progress");
+            task.setCompletedAt(null);
         } else {
             return ResponseEntity.badRequest()
                     .body(Map.of("success", false, "message", "Invalid decision: " + decision));
