@@ -271,7 +271,10 @@ public class TeamWorkspaceController {
         if (primaryAssigneeId == null && request.getAssigneeIds() != null && !request.getAssigneeIds().isEmpty()) {
             primaryAssigneeId = request.getAssigneeIds().get(0);
         }
-        String assigneeError = validateTranslatorAssignees(teamId, primaryAssigneeId, request.getAssigneeIds());
+        String assigneeError = validateTranslatorAssignee(
+                teamId,
+                primaryAssigneeId
+        );
         if (assigneeError != null) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", assigneeError));
         }
@@ -284,7 +287,6 @@ public class TeamWorkspaceController {
                 .projectTeamId(teamId)
                 .title(request.getTitle())
                 .status(initialStatus)
-                .assigneeIds(request.getAssigneeIds())
                 .assigneeId(primaryAssigneeId)
                 .chapter(chapter)
                 .dueDate(request.getDueDate())
@@ -489,7 +491,7 @@ public class TeamWorkspaceController {
         if (team == null) {
             return ResponseEntity.notFound().build();
         }
-        
+
         if (team.getMembers() != null) {
             boolean removed = team.getMembers().removeIf(m -> m.getUser().getId().equals(memberId));
             if (removed) {
@@ -498,7 +500,7 @@ public class TeamWorkspaceController {
                 return ResponseEntity.ok(Map.of("success", true));
             }
         }
-        
+
         return ResponseEntity.notFound().build();
     }
 
@@ -570,31 +572,75 @@ public class TeamWorkspaceController {
             task.setDueDate((String) updates.get("dueDate"));
         }
         if (updates.containsKey("assigneeIds")) {
-            @SuppressWarnings("unchecked")
-            List<String> rawIds = (List<String>) updates.get("assigneeIds");
-            List<UUID> assigneeIds = rawIds == null ? List.of() : rawIds.stream()
-                    .map(UUID::fromString)
-                    .collect(Collectors.toList());
-            UUID primaryAssigneeId = assigneeIds.isEmpty() ? null : assigneeIds.get(0);
-            String assigneeError = validateTranslatorAssignees(task.getProjectTeamId(), primaryAssigneeId, assigneeIds);
-            if (assigneeError != null) {
-                return ResponseEntity.badRequest().body(Map.of("success", false, "message", assigneeError));
+            Object rawAssigneeIds = updates.get("assigneeIds");
+            UUID primaryAssigneeId = null;
+
+            if (rawAssigneeIds instanceof List<?> rawIds
+                    && !rawIds.isEmpty()
+                    && rawIds.get(0) != null
+                    && !String.valueOf(rawIds.get(0)).isBlank()) {
+                try {
+                    primaryAssigneeId = UUID.fromString(
+                            String.valueOf(rawIds.get(0))
+                    );
+                } catch (IllegalArgumentException ex) {
+                    return ResponseEntity.badRequest()
+                            .body(Map.of(
+                                    "success", false,
+                                    "message", "Invalid assignee ID format"
+                            ));
+                }
             }
-            task.setAssigneeIds(assigneeIds);
+
+            String assigneeError = validateTranslatorAssignee(
+                    task.getProjectTeamId(),
+                    primaryAssigneeId
+            );
+
+            if (assigneeError != null) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of(
+                                "success", false,
+                                "message", assigneeError
+                        ));
+            }
+
             task.setAssigneeId(primaryAssigneeId);
         }
+
         if (updates.containsKey("assigneeId")) {
             Object rawAssigneeId = updates.get("assigneeId");
-            UUID primaryAssigneeId = rawAssigneeId == null || String.valueOf(rawAssigneeId).isBlank()
-                    ? null : UUID.fromString(String.valueOf(rawAssigneeId));
-            String assigneeError = validateTranslatorAssignees(
-                    task.getProjectTeamId(), primaryAssigneeId,
-                    primaryAssigneeId == null ? List.of() : List.of(primaryAssigneeId));
-            if (assigneeError != null) {
-                return ResponseEntity.badRequest().body(Map.of("success", false, "message", assigneeError));
+            UUID primaryAssigneeId = null;
+
+            if (rawAssigneeId != null
+                    && !String.valueOf(rawAssigneeId).isBlank()) {
+                try {
+                    primaryAssigneeId = UUID.fromString(
+                            String.valueOf(rawAssigneeId)
+                    );
+                } catch (IllegalArgumentException ex) {
+                    return ResponseEntity.badRequest()
+                            .body(Map.of(
+                                    "success", false,
+                                    "message", "Invalid assignee ID format"
+                            ));
+                }
             }
+
+            String assigneeError = validateTranslatorAssignee(
+                    task.getProjectTeamId(),
+                    primaryAssigneeId
+            );
+
+            if (assigneeError != null) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of(
+                                "success", false,
+                                "message", assigneeError
+                        ));
+            }
+
             task.setAssigneeId(primaryAssigneeId);
-            task.setAssigneeIds(primaryAssigneeId == null ? List.of() : List.of(primaryAssigneeId));
         }
         if (isCompletedStatus(task.getStatus()) && task.getCompletedAt() == null) {
             task.setCompletedAt(Instant.now());
@@ -617,8 +663,7 @@ public class TeamWorkspaceController {
         if (principal == null || principal.getId() == null || task == null) return false;
         if (canManageTeamTasks(principal, task.getProjectTeamId())) return true;
         if (!"TRANSLATOR".equalsIgnoreCase(principal.getRole())) return false;
-        if (principal.getId().equals(task.getAssigneeId())) return true;
-        return task.getAssigneeIds() != null && task.getAssigneeIds().contains(principal.getId());
+        return principal.getId().equals(task.getAssigneeId());
     }
 
     private boolean canManageTeamTasks(UserPrincipal principal, UUID teamId) {
@@ -633,25 +678,47 @@ public class TeamWorkspaceController {
                 .orElse(false);
     }
 
-    private String validateTranslatorAssignees(UUID teamId, UUID primaryAssigneeId, List<UUID> assigneeIds) {
-        if (primaryAssigneeId == null) {
-            return "A primary Translator assignee is required";
+    private String validateTranslatorAssignee(
+            UUID teamId,
+            UUID assigneeId
+    ) {
+        if (assigneeId == null) {
+            return "A Translator assignee is required";
         }
-        ProjectTeamEntity team = projectTeamRepository.findById(teamId).orElse(null);
-        if (team == null) return "Project team not found";
-        List<UserEntity> teamMembers = team.getMembers() == null ? List.of() : team.getMembers();
-        List<UUID> idsToValidate = assigneeIds == null || assigneeIds.isEmpty()
-                ? List.of(primaryAssigneeId) : assigneeIds;
-        for (UUID assigneeId : idsToValidate) {
-            UserEntity member = teamMembers.stream()
-                    .filter(item -> item != null && assigneeId.equals(item.getId()))
-                    .findFirst().orElse(null);
-            if (member == null) return "Every assignee must be an approved member of this project team";
-            String role = member.getRole() == null ? "" : member.getRole().getRoleName();
-            if (!"TRANSLATOR".equalsIgnoreCase(role)) {
-                return "Only users with the TRANSLATOR role can be assigned payout-eligible tasks";
-            }
+
+        ProjectTeamEntity team = projectTeamRepository
+                .findById(teamId)
+                .orElse(null);
+
+        if (team == null) {
+            return "Project team not found";
         }
+
+        List<ProjectTeamMemberEntity> teamMembers =
+                team.getMembers() == null
+                        ? List.of()
+                        : team.getMembers();
+
+        UserEntity member = teamMembers.stream()
+                .filter(Objects::nonNull)
+                .map(ProjectTeamMemberEntity::getUser)
+                .filter(Objects::nonNull)
+                .filter(user -> assigneeId.equals(user.getId()))
+                .findFirst()
+                .orElse(null);
+
+        if (member == null) {
+            return "The assignee must be an approved member of this project team";
+        }
+
+        String role = member.getRole() == null
+                ? ""
+                : member.getRole().getRoleName();
+
+        if (!"TRANSLATOR".equalsIgnoreCase(role)) {
+            return "Only users with the TRANSLATOR role can be assigned payout-eligible tasks";
+        }
+
         return null;
     }
 

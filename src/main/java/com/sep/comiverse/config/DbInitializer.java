@@ -1,6 +1,7 @@
 package com.sep.comiverse.config;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,6 +25,9 @@ public class DbInitializer implements CommandLineRunner {
     private final PasswordEncoder passwordEncoder;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
+    @Value("${payout.legacy-vnd-per-usd:25000}")
+    private BigDecimal legacyVndPerUsd;
+
     private final IGenreRepository genreRepository;
     private final IComicRepository comicRepository;
     private final IProjectTeamRepository projectTeamRepository;
@@ -41,7 +45,6 @@ public class DbInitializer implements CommandLineRunner {
 
     @Override
     @Transactional
-    
     public void run(String... args) {
         // ComicEntity no longer has the legacy `status` column.
         // Publication lifecycle is stored in `publication_status`.
@@ -52,23 +55,21 @@ public class DbInitializer implements CommandLineRunner {
         splitCommaJoinedChapterImageArrays();
         jdbcTemplate.execute("UPDATE chapters SET images = ARRAY[]::text[] WHERE images IS NULL");
         migrateRevenueAnalyticsSchema();
+        migrateCreatorPayoutAmountsToUsd();
         migrateCompletedTeamTasks();
         jdbcTemplate.execute("UPDATE authors SET country_code = 'VN' WHERE country_code IS NULL OR BTRIM(country_code) = ''");
 
-            createRoles();
-            createAdmin();
-            createStaffs();
-            createAuthorProfiles();
-            createGenres();
-            createComics();
-            createProjectTeams();
-            createAuthorMetricSnapshots();
-            createSubmissions();
-            createChatFlags();
-            createForumThreads();
-        } catch (Exception e) {
-            System.err.println("⚠️ DbInitializer startup notice: " + e.getMessage());
-        }
+        createRoles();
+        createAdmin();
+        createStaffs();
+        createAuthorProfiles();
+        createGenres();
+        createComics();
+        createProjectTeams();
+        createAuthorMetricSnapshots();
+        createSubmissions();
+        createChatFlags();
+        createForumThreads();
 
         repairMissingProjectTeamLeaders();
 
@@ -195,6 +196,77 @@ public class DbInitializer implements CommandLineRunner {
                         END IF;
                     END IF;
                 END $$;
+                """);
+    }
+
+    /**
+     * Converts legacy creator payout values from VND to USD exactly once.
+     *
+     * Existing database column names ending in _vnd are intentionally retained
+     * to avoid destructive schema changes. The creator_payout_settings.currency
+     * marker makes the conversion idempotent.
+     */
+    private void migrateCreatorPayoutAmountsToUsd() {
+        BigDecimal rate = legacyVndPerUsd == null || legacyVndPerUsd.signum() <= 0
+                ? new BigDecimal("25000")
+                : legacyVndPerUsd;
+
+        jdbcTemplate.execute("ALTER TABLE creator_payout_settings ADD COLUMN IF NOT EXISTS currency varchar(3)");
+        jdbcTemplate.execute("ALTER TABLE creator_payout_settings ALTER COLUMN currency SET DEFAULT 'USD'");
+
+        jdbcTemplate.update("""
+                UPDATE creator_payout_settings
+                SET minimum_payout_vnd = ROUND(minimum_payout_vnd / ?, 2),
+                    translator_task_rate_vnd = ROUND(translator_task_rate_vnd / ?, 2),
+                    translator_monthly_limit_vnd = ROUND(translator_monthly_limit_vnd / ?, 2),
+                    author_view_unit_rate_vnd = ROUND(author_view_unit_rate_vnd / ?, 2),
+                    author_follow_unit_rate_vnd = ROUND(author_follow_unit_rate_vnd / ?, 2),
+                    author_monthly_limit_vnd = ROUND(author_monthly_limit_vnd / ?, 2),
+                    currency = 'USD',
+                    update_at = CURRENT_TIMESTAMP
+                WHERE COALESCE(currency, 'VND') <> 'USD'
+                """, rate, rate, rate, rate, rate, rate);
+
+        jdbcTemplate.update("""
+                UPDATE creator_payout_requests
+                SET amount = ROUND(
+                        CASE
+                            WHEN base_amount_vnd IS NOT NULL THEN base_amount_vnd / ?
+                            WHEN UPPER(COALESCE(currency, 'VND')) = 'VND' THEN amount / ?
+                            ELSE amount
+                        END,
+                        2
+                    ),
+                    gross_amount_vnd = CASE
+                        WHEN gross_amount_vnd IS NULL THEN NULL
+                        ELSE ROUND(gross_amount_vnd / ?, 2)
+                    END,
+                    base_amount_vnd = CASE
+                        WHEN base_amount_vnd IS NULL THEN ROUND(amount / ?, 2)
+                        ELSE ROUND(base_amount_vnd / ?, 2)
+                    END,
+                    monthly_limit_vnd = CASE
+                        WHEN monthly_limit_vnd IS NULL THEN NULL
+                        ELSE ROUND(monthly_limit_vnd / ?, 2)
+                    END,
+                    exchange_rate_vnd_per_unit = 1,
+                    currency = 'USD',
+                    calculation_details = CONCAT(
+                        COALESCE(calculation_details, ''),
+                        '; legacy payout migrated to USD at 1 USD = ',
+                        ?,
+                        ' VND'
+                    ),
+                    update_at = CURRENT_TIMESTAMP
+                WHERE UPPER(COALESCE(currency, 'VND')) <> 'USD'
+                   OR COALESCE(exchange_rate_vnd_per_unit, 1) <> 1
+                """, rate, rate, rate, rate, rate, rate, rate.toPlainString());
+
+        jdbcTemplate.update("""
+                UPDATE creator_stripe_payout_profiles
+                SET currency = 'USD',
+                    update_at = CURRENT_TIMESTAMP
+                WHERE UPPER(COALESCE(currency, 'VND')) <> 'USD'
                 """);
     }
 
