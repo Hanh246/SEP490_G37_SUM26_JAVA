@@ -51,6 +51,12 @@ public class ChapterController {
     @org.springframework.beans.factory.annotation.Autowired
     private com.sep.comiverse.repository.ISubmissionRepository submissionRepository;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.sep.comiverse.repository.IProjectTeamRepository projectTeamRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.sep.comiverse.service.NotificationService notificationService;
+
     public ChapterController(ChapterCrudPlugin chapterCrudPlugin, JwtTokenUtil jwtTokenUtil) {
         this.chapterCrudPlugin = chapterCrudPlugin;
         this.jwtTokenUtil = jwtTokenUtil;
@@ -232,6 +238,8 @@ public class ChapterController {
                 
                 comicRepository.save(comic);
                 chapterCrudPlugin.evictChaptersCache(comic.getId());
+                
+                notifyTeamOfNewChapters(comic, savedChapter.getTitle());
             }
 
             ChapterDTO responseDto = null;
@@ -282,5 +290,22 @@ public class ChapterController {
                 .success(true)
                 .data(chapterCrudPlugin.getChaptersByComicId(comicId, includeUnpublished))
                 .build());
+    }
+
+    private void notifyTeamOfNewChapters(ComicEntity comic, String title) {
+        if (comic == null) return;
+        java.util.List<com.sep.comiverse.entity.ProjectTeamEntity> teams = 
+                projectTeamRepository.findAllByComicNameIgnoreCase(comic.getTitle());
+        for (com.sep.comiverse.entity.ProjectTeamEntity team : teams) {
+            if (team.getLeaderId() != null) {
+                notificationService.notifyUser(
+                        team.getLeaderId(),
+                        "New chapter in Backlog",
+                        "A new chapter '" + title + "' has been approved and added to the backlog of " + team.getTitle(),
+                        "UPDATE",
+                        com.sep.comiverse.entity.enums.NotificationPreferenceKey.TEAM_UPDATES
+                );
+            }
+        }
     }
 }

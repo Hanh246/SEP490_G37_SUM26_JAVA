@@ -3,6 +3,7 @@ package com.sep.comiverse.plugin.mapper;
 import com.sep.comiverse.dto.ProjectTeamDTO;
 import com.sep.comiverse.entity.ProjectTeamEntity;
 import com.sep.comiverse.plugin.AbstractMapperPlugin;
+import com.sep.comiverse.repository.ITeamTaskRepository;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -13,9 +14,12 @@ import java.util.stream.Collectors;
 @Component
 public class ProjectTeamMapperPlugin extends AbstractMapperPlugin<ProjectTeamEntity, ProjectTeamDTO, UUID> {
 
+    private final ITeamTaskRepository teamTaskRepository;
+
     @Autowired
-    public ProjectTeamMapperPlugin(ModelMapper modelMapper) {
+    public ProjectTeamMapperPlugin(ModelMapper modelMapper, ITeamTaskRepository teamTaskRepository) {
         super(ProjectTeamEntity.class, ProjectTeamDTO.class, UUID.class, modelMapper);
+        this.teamTaskRepository = teamTaskRepository;
     }
 
     @Override
@@ -24,7 +28,11 @@ public class ProjectTeamMapperPlugin extends AbstractMapperPlugin<ProjectTeamEnt
         ProjectTeamDTO dto = super.toDto(model);
         dto.setComicTitle(model.getComicName());
         dto.setNotes(model.getNotes());
-            return dto;
+        
+        long count = teamTaskRepository.countIncompleteTasksByTeam(model.getId());
+        dto.setInProgressTasksCount(count);
+        
+        return dto;
     }
 
     @Override

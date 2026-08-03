@@ -34,4 +34,8 @@ public interface IChapterTranslationRepository extends JpaRepository<ChapterTran
             @Param("toExclusive") Instant toExclusive
     );
 
+
+    @Query("SELECT ct.chapter.id, ct.languageCode FROM ChapterTranslationEntity ct WHERE ct.chapter.comic.id = :comicId")
+    List<Object[]> findLanguageCodesByChapterForComic(@Param("comicId") UUID comicId);
+
 }

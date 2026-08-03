@@ -14,6 +14,7 @@ import java.util.UUID;
 
 import com.sep.comiverse.repository.ISubmissionRepository;
 import com.sep.comiverse.repository.ITeamTaskRepository;
+import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.entity.TeamTaskEntity;
 import java.util.List;
@@ -23,6 +24,7 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
 
     private final ISubmissionRepository submissionRepository;
     private final ITeamTaskRepository teamTaskRepository;
+    private final IUserRepository userRepository;
 
     @Autowired
     private com.sep.comiverse.service.AuditLogService auditLogService;
@@ -34,10 +36,12 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
     public ProjectTeamCrudPlugin(IProjectTeamRepository repository,
                                  PluginRegistry<IMapperPlugin, Class<?>> pluginRegistry,
                                  ISubmissionRepository submissionRepository,
-                                 ITeamTaskRepository teamTaskRepository) {
+                                 ITeamTaskRepository teamTaskRepository,
+                                 IUserRepository userRepository) {
         super(repository, pluginRegistry, ProjectTeamEntity.class);
         this.submissionRepository = submissionRepository;
         this.teamTaskRepository = teamTaskRepository;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -97,10 +101,19 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
                 dto.setPriority(existing.getPriority());
             }
         }
-        if (dto.getLeaderId() != null && !dto.getLeaderId().equals(previousLeaderId) && previousLeaderId != null) {
-            long incompleteCount = teamTaskRepository.countIncompleteTasksByTeamAndAssignee(id, previousLeaderId);
-            if (incompleteCount > 0) {
-                throw new com.sep.comiverse.exception.CustomException(400, "Không thể đổi Leader. Project Leader hiện tại đang có " + incompleteCount + " task chưa hoàn thành trong team này. Vui lòng yêu cầu Leader hoàn thành hoặc bỏ nhận (unassign) các task này trước.", org.springframework.http.HttpStatus.BAD_REQUEST);
+        if (dto.getLeaderId() != null && !dto.getLeaderId().equals(previousLeaderId)) {
+            var newLeaderOpt = userRepository.findById(dto.getLeaderId());
+            if (newLeaderOpt.isPresent()) {
+                var newLeader = newLeaderOpt.get();
+                if (newLeader.getRole() == null || !"PROJECT_LEADER".equalsIgnoreCase(newLeader.getRole().getRoleName())) {
+                    throw new com.sep.comiverse.exception.CustomException(400, "Assigned user must have the PROJECT_LEADER role.", org.springframework.http.HttpStatus.BAD_REQUEST);
+                }
+            }
+            if (previousLeaderId != null) {
+                long incompleteCount = teamTaskRepository.countIncompleteTasksByTeam(id);
+                if (incompleteCount > 0) {
+                    throw new com.sep.comiverse.exception.CustomException(400, "Cannot reassign leader. There are " + incompleteCount + " incomplete tasks in this team. Please complete or unassign them first.", org.springframework.http.HttpStatus.BAD_REQUEST);
+                }
             }
         }
 
