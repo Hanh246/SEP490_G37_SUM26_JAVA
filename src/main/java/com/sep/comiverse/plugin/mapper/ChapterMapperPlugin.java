@@ -18,11 +18,24 @@ import java.util.UUID;
 public class ChapterMapperPlugin
         extends AbstractMapperPlugin<ChapterEntity, ChapterDTO, UUID> {
     private final IComicRepository comicRepository;
+    private final com.sep.comiverse.repository.IUserRepository userRepository;
+    private final java.util.Map<UUID, String> moderatorNameCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private String resolveModeratorName(UUID moderatorId) {
+        if (moderatorId == null) return null;
+        return moderatorNameCache.computeIfAbsent(moderatorId, id -> 
+                userRepository.findById(id)
+                        .map(user -> user.getFullName() != null && !user.getFullName().isBlank() 
+                                ? user.getFullName() : user.getUsername())
+                        .orElse("Unknown Moderator")
+        );
+    }
 
     @Autowired
-    public ChapterMapperPlugin(ModelMapper modelMapper, IComicRepository comicRepository) {
+    public ChapterMapperPlugin(ModelMapper modelMapper, IComicRepository comicRepository, com.sep.comiverse.repository.IUserRepository userRepository) {
         super(ChapterEntity.class, ChapterDTO.class, UUID.class, modelMapper);
         this.comicRepository = comicRepository;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -34,6 +47,9 @@ public class ChapterMapperPlugin
         if (model.getComic() != null) {
             dto.setComicId(model.getComic().getId());
         }
+        
+        dto.setApprovedBy(resolveModeratorName(model.getApprovedById()));
+        dto.setRejectedBy(resolveModeratorName(model.getRejectedById()));
 
         return dto;
     }

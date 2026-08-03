@@ -232,13 +232,10 @@ public class ReviewController {
             pageTranslationRepository.saveAll(pages);
 
             try {
-                String modName = "System Moderator";
-                if (principal != null) {
-                    modName = principal.getFullName() != null && !principal.getFullName().isBlank()
-                            ? principal.getFullName()
-                            : principal.getUsername();
-                }
-                publishChapterFromTask(task, pages, modName);
+                UUID modId = principal != null
+                        ? principal.getId()
+                        : null;
+                publishChapterFromTask(task, pages, modId);
             } catch (Exception ex) {
                 log.error("[submitDecision] Failed to publish chapter for taskId={}", taskId, ex);
             }
@@ -254,7 +251,7 @@ public class ReviewController {
         return ResponseEntity.ok(Map.of("success", true));
     }
 
-    private void publishChapterFromTask(TeamTaskEntity task, List<PageTranslationEntity> pages, String modName) {
+    private void publishChapterFromTask(TeamTaskEntity task, List<PageTranslationEntity> pages, UUID modId) {
         ChapterEntity chapter = task.getChapter();
         if (chapter == null) {
             log.warn("[publishChapterFromTask] task {} has no chapter linked, skipping publish", task.getId());
@@ -262,7 +259,7 @@ public class ReviewController {
         }
 
         chapter.setModerationStatus(ChapterStatus.PUBLISHED);
-        chapter.setApprovedBy(modName);
+        chapter.setApprovedById(modId);
         chapter.setApprovedAt(Instant.now());
         ChapterEntity savedChapter = chapterRepository.save(chapter);
 

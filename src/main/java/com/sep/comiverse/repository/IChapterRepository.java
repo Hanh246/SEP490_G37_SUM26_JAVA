@@ -90,7 +90,7 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
             c.isPremium,
             c.createdAt,
             c.moderationStatus,
-            c.approvedBy,
+            c.approvedById,
             c.approvedAt
         )
         FROM ChapterEntity c
@@ -114,7 +114,7 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
             c.isPremium,
             c.createdAt,
             c.moderationStatus,
-            c.approvedBy,
+            c.approvedById,
             c.approvedAt
         )
         FROM ChapterEntity c

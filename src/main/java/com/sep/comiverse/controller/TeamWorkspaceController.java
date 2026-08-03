@@ -318,30 +318,41 @@ public class TeamWorkspaceController {
             return ResponseEntity.notFound().build();
         }
 
-        List<UserEntity> members = team.getMembers() != null
+        List<ProjectTeamMemberEntity> members = team.getMembers() != null
                 ? new ArrayList<>(team.getMembers())
                 : new ArrayList<>();
 
-        if (team.getLeaderId() != null && members.stream().noneMatch(u -> team.getLeaderId().equals(u.getId()))) {
-            userRepository.findById(team.getLeaderId()).ifPresent(members::add);
+        if (team.getLeaderId() != null && members.stream().noneMatch(m -> team.getLeaderId().equals(m.getUser().getId()))) {
+            userRepository.findById(team.getLeaderId()).ifPresent(u -> {
+                ProjectTeamMemberEntity mockLeader = ProjectTeamMemberEntity.builder()
+                        .team(team)
+                        .user(u)
+                        .build();
+                mockLeader.setId(u.getId()); // fallback id
+                mockLeader.setCreatedAt(team.getCreatedAt()); // leader joined when team was created
+                members.add(mockLeader);
+            });
         }
 
         if (members.isEmpty()) {
             return ResponseEntity.ok(Collections.emptyList());
         }
 
-
         List<TeamMemberDto> result = members.stream()
-                .map(u -> TeamMemberDto.builder()
-                        .id(u.getId())
-                        .name(u.getFullName())
-                        .role(team.getLeaderId() != null && team.getLeaderId().equals(u.getId())
-                                ? "Group Leader"
-                                : "Member")
-                        .avatar(computeInitials(u.getFullName()))
-                        .online(userPresenceService.isOnline(u.getId()))
-                        .lastSeenAt(u.getLastSeenAt())
-                        .build())
+                .map(m -> {
+                    UserEntity u = m.getUser();
+                    return TeamMemberDto.builder()
+                            .id(u.getId())
+                            .name(u.getFullName())
+                            .role(team.getLeaderId() != null && team.getLeaderId().equals(u.getId())
+                                    ? "Group Leader"
+                                    : "Member")
+                            .avatar(computeInitials(u.getFullName()))
+                            .online(userPresenceService.isOnline(u.getId()))
+                            .lastSeenAt(u.getLastSeenAt())
+                            .joinDate(m.getCreatedAt())
+                            .build();
+                })
                 .collect(Collectors.toList());
 
         return ResponseEntity.ok(result);
@@ -437,9 +448,13 @@ public class TeamWorkspaceController {
                         team.setMembers(new ArrayList<>());
                     }
                     boolean alreadyMember = team.getMembers().stream()
-                            .anyMatch(member -> member.getId().equals(user.getId()));
+                            .anyMatch(member -> member.getUser().getId().equals(user.getId()));
                     if (!alreadyMember) {
-                        team.getMembers().add(user);
+                        ProjectTeamMemberEntity newMember = ProjectTeamMemberEntity.builder()
+                                .team(team)
+                                .user(user)
+                                .build();
+                        team.getMembers().add(newMember);
                     }
                 });
             }
@@ -465,6 +480,25 @@ public class TeamWorkspaceController {
             joinRequestRepository.deleteById(id);
             return ResponseEntity.ok().build();
         }
+        return ResponseEntity.notFound().build();
+    }
+
+    @DeleteMapping("/{teamId}/members/{memberId}")
+    public ResponseEntity<?> removeMember(@PathVariable UUID teamId, @PathVariable UUID memberId) {
+        ProjectTeamEntity team = projectTeamRepository.findById(teamId).orElse(null);
+        if (team == null) {
+            return ResponseEntity.notFound().build();
+        }
+        
+        if (team.getMembers() != null) {
+            boolean removed = team.getMembers().removeIf(m -> m.getUser().getId().equals(memberId));
+            if (removed) {
+                team.setMembersCount(team.getMembers().size());
+                projectTeamRepository.save(team);
+                return ResponseEntity.ok(Map.of("success", true));
+            }
+        }
+        
         return ResponseEntity.notFound().build();
     }
 

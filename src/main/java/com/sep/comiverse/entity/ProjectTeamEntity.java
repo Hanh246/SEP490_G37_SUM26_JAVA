@@ -64,13 +64,8 @@ public class ProjectTeamEntity extends BaseEntity {
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
 
-    @ManyToMany
-    @JoinTable(
-            name = "team_members",
-            joinColumns = @JoinColumn(name = "team_id"),
-            inverseJoinColumns = @JoinColumn(name = "user_id")
-    )
-    private List<UserEntity> members = new ArrayList<>();
+    @OneToMany(mappedBy = "team", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ProjectTeamMemberEntity> members = new ArrayList<>();
 
     @Column(name = "is_recruiting")
     @Builder.Default

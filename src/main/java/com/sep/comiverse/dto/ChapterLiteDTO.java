@@ -18,6 +18,6 @@ public class ChapterLiteDTO {
     private Boolean isPremium;
     private Instant createdAt;
     private ChapterStatus moderationStatus;
-    private String approvedBy;
+    private UUID approvedById;
     private Instant approvedAt;
 }
