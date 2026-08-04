@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,4 +29,19 @@ public interface ITeamTaskRepository extends JpaRepository<TeamTaskEntity, UUID>
 
     @Query("SELECT COUNT(t) FROM TeamTaskEntity t WHERE t.assigneeId = :assigneeId AND t.status IN ('TODO', 'IN_PROGRESS', 'PENDING_REVIEW')")
     long countActiveTasksByAssigneeId(@Param("assigneeId") UUID assigneeId);
+    @Query("""
+            SELECT t FROM TeamTaskEntity t
+            LEFT JOIN FETCH t.chapter
+            WHERE t.assigneeId = :assigneeId
+              AND t.completedAt >= :from
+              AND t.completedAt < :to
+              AND LOWER(COALESCE(t.status, '')) IN ('completed', 'complete', 'done')
+            ORDER BY t.completedAt ASC
+            """)
+    List<TeamTaskEntity> findCompletedForAssigneeInPeriod(
+            @Param("assigneeId") UUID assigneeId,
+            @Param("from") Instant from,
+            @Param("to") Instant to
+    );
+
 }
