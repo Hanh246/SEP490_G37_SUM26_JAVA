@@ -57,7 +57,6 @@ public class DbInitializer implements CommandLineRunner {
         migrateRevenueAnalyticsSchema();
         migrateCreatorPayoutAmountsToUsd();
         migrateCompletedTeamTasks();
-        jdbcTemplate.execute("UPDATE authors SET country_code = 'VN' WHERE country_code IS NULL OR BTRIM(country_code) = ''");
 
         createRoles();
         createAdmin();
@@ -224,7 +223,7 @@ public class DbInitializer implements CommandLineRunner {
                     author_monthly_limit_vnd = ROUND(author_monthly_limit_vnd / ?, 2),
                     currency = 'USD',
                     update_at = CURRENT_TIMESTAMP
-                WHERE COALESCE(currency, 'VND') <> 'USD'
+                WHERE UPPER(COALESCE(NULLIF(BTRIM(currency), ''), 'VND')) = 'VND'
                 """, rate, rate, rate, rate, rate, rate);
 
         jdbcTemplate.update("""
@@ -258,15 +257,14 @@ public class DbInitializer implements CommandLineRunner {
                         ' VND'
                     ),
                     update_at = CURRENT_TIMESTAMP
-                WHERE UPPER(COALESCE(currency, 'VND')) <> 'USD'
-                   OR COALESCE(exchange_rate_vnd_per_unit, 1) <> 1
+                WHERE UPPER(COALESCE(NULLIF(BTRIM(currency), ''), 'VND')) = 'VND'
                 """, rate, rate, rate, rate, rate, rate, rate.toPlainString());
 
         jdbcTemplate.update("""
                 UPDATE creator_stripe_payout_profiles
                 SET currency = 'USD',
                     update_at = CURRENT_TIMESTAMP
-                WHERE UPPER(COALESCE(currency, 'VND')) <> 'USD'
+                WHERE UPPER(COALESCE(NULLIF(BTRIM(currency), ''), 'VND')) = 'VND'
                 """);
     }
 
@@ -280,9 +278,8 @@ public class DbInitializer implements CommandLineRunner {
                           AND table_name = 'team_tasks'
                           AND column_name = 'completed_at'
                     ) THEN
-                        -- TeamTaskEntity does not necessarily contain BaseEntity audit
-                        -- columns. Use dynamic SQL so a missing legacy timestamp column
-                        -- cannot make application startup fail.
+                        -- Backfill legacy completed tasks when audit timestamps exist.
+                        -- New completions are written through TeamTaskEntity.completedAt.
                         IF EXISTS (
                             SELECT 1 FROM information_schema.columns
                             WHERE table_schema = 'public'
@@ -332,9 +329,8 @@ public class DbInitializer implements CommandLineRunner {
                         END IF;
                     END IF;
 
-                    -- Hibernate maps List<UUID> to uuid[] in PostgreSQL. Use dynamic
-                    -- SQL only when the legacy column is actually an ARRAY so an older
-                    -- varchar/json representation cannot abort application startup.
+                    -- One-time compatibility migration from an abandoned multi-assignee
+                    -- branch. Current task ownership uses only assignee_id.
                     IF EXISTS (
                         SELECT 1 FROM information_schema.columns
                         WHERE table_schema = 'public'
@@ -489,7 +485,6 @@ public class DbInitializer implements CommandLineRunner {
                         .legalName(authorUser.getFullName())
                         .contactEmail(authorUser.getEmail())
                         .avatarUrl(authorUser.getAvatarUrl())
-                        .countryCode("VN")
                         .bio("Sample author profile for seeded comics.")
                         .build();
                 authorRepository.save(author);

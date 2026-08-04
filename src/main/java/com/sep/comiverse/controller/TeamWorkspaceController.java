@@ -268,9 +268,6 @@ public class TeamWorkspaceController {
         }
 
         UUID primaryAssigneeId = request.getAssigneeId();
-        if (primaryAssigneeId == null && request.getAssigneeIds() != null && !request.getAssigneeIds().isEmpty()) {
-            primaryAssigneeId = request.getAssigneeIds().get(0);
-        }
         String assigneeError = validateTranslatorAssignee(
                 teamId,
                 primaryAssigneeId
@@ -491,7 +488,7 @@ public class TeamWorkspaceController {
         if (team == null) {
             return ResponseEntity.notFound().build();
         }
-        
+
         if (team.getMembers() != null) {
             boolean removed = team.getMembers().removeIf(m -> m.getUser().getId().equals(memberId));
             if (removed) {
@@ -500,7 +497,7 @@ public class TeamWorkspaceController {
                 return ResponseEntity.ok(Map.of("success", true));
             }
         }
-        
+
         return ResponseEntity.notFound().build();
     }
 
@@ -571,43 +568,6 @@ public class TeamWorkspaceController {
         if (updates.containsKey("dueDate")) {
             task.setDueDate((String) updates.get("dueDate"));
         }
-        if (updates.containsKey("assigneeIds")) {
-            Object rawAssigneeIds = updates.get("assigneeIds");
-            UUID primaryAssigneeId = null;
-
-            if (rawAssigneeIds instanceof List<?> rawIds
-                    && !rawIds.isEmpty()
-                    && rawIds.get(0) != null
-                    && !String.valueOf(rawIds.get(0)).isBlank()) {
-                try {
-                    primaryAssigneeId = UUID.fromString(
-                            String.valueOf(rawIds.get(0))
-                    );
-                } catch (IllegalArgumentException ex) {
-                    return ResponseEntity.badRequest()
-                            .body(Map.of(
-                                    "success", false,
-                                    "message", "Invalid assignee ID format"
-                            ));
-                }
-            }
-
-            String assigneeError = validateTranslatorAssignee(
-                    task.getProjectTeamId(),
-                    primaryAssigneeId
-            );
-
-            if (assigneeError != null) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of(
-                                "success", false,
-                                "message", assigneeError
-                        ));
-            }
-
-            task.setAssigneeId(primaryAssigneeId);
-        }
-
         if (updates.containsKey("assigneeId")) {
             Object rawAssigneeId = updates.get("assigneeId");
             UUID primaryAssigneeId = null;
