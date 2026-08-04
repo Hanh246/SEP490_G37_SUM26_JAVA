@@ -1,7 +1,9 @@
 package com.sep.comiverse.config;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,12 +17,16 @@ import java.util.stream.Collectors;
 @Component
 @org.springframework.context.annotation.Profile("!integration")
 @RequiredArgsConstructor
+@Order(1)
 public class DbInitializer implements CommandLineRunner {
 
     private final IUserRepository userRepository;
     private final IRoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    @Value("${payout.legacy-vnd-per-usd:25000}")
+    private BigDecimal legacyVndPerUsd;
 
     private final IGenreRepository genreRepository;
     private final IComicRepository comicRepository;
@@ -39,75 +45,34 @@ public class DbInitializer implements CommandLineRunner {
 
     @Override
     @Transactional
-    public void run(String... args) throws Exception {
-        try {
-            jdbcTemplate.execute("UPDATE comics SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
-            jdbcTemplate.execute("UPDATE chapters SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
-            migrateAuthorLanguageToComics();
-            migrateLegacyChapterPagesIntoChapterImages();
-            splitCommaJoinedChapterImageArrays();
-            jdbcTemplate.execute("UPDATE chapters SET images = ARRAY[]::text[] WHERE images IS NULL");
+    public void run(String... args) {
+        // ComicEntity no longer has the legacy `status` column.
+        // Publication lifecycle is stored in `publication_status`.
+        jdbcTemplate.execute("UPDATE comics SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
+        jdbcTemplate.execute("UPDATE chapters SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
+        migrateAuthorLanguageToComics();
+        migrateLegacyChapterPagesIntoChapterImages();
+        splitCommaJoinedChapterImageArrays();
+        jdbcTemplate.execute("UPDATE chapters SET images = ARRAY[]::text[] WHERE images IS NULL");
+        migrateRevenueAnalyticsSchema();
+        migrateCreatorPayoutAmountsToUsd();
+        migrateCompletedTeamTasks();
 
-            createRoles();
-            createAdmin();
-            createStaffs();
-            createAuthorProfiles();
-            createGenres();
-            createComics();
-            createProjectTeams();
-            createAuthorMetricSnapshots();
-            createSubmissions();
-            createChatFlags();
-            createForumThreads();
-        } catch (Exception e) {
-            System.err.println("⚠️ DbInitializer startup notice: " + e.getMessage());
-        }
+        createRoles();
+        createAdmin();
+        createStaffs();
+        createAuthorProfiles();
+        createGenres();
+        createComics();
+        createProjectTeams();
+        createAuthorMetricSnapshots();
+        createSubmissions();
+        createChatFlags();
+        createForumThreads();
 
-        // Self-healing check: restore empty leaderNames to 'trantest56787' for orphaned teams
-        try {
-            List<ProjectTeamEntity> emptyLeaderTeams = projectTeamRepository.findAll().stream()
-                    .filter(t -> t.getLeaderName() == null || t.getLeaderName().isBlank() || "No Leader".equalsIgnoreCase(t.getLeaderName()))
-                    .toList();
-            for (ProjectTeamEntity team : emptyLeaderTeams) {
-                if (team.getTitle() != null && (team.getTitle().equals("trantest56787") || team.getTitle().equals("TransTest123455") || team.getTitle().contains("trantest"))) {
-                    team.setLeaderName(team.getTitle());
-                } else {
-                    team.setLeaderName("trantest56787");
-                }
-                team.setLeaderInitials("TL");
-                projectTeamRepository.save(team);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        repairMissingProjectTeamLeaders();
 
-        // Create HNSW index for cosine similarity on comics
-        try {
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_comics_summary_vector_hnsw ON comics USING hnsw (summary_vector vector_cosine_ops)");
-            System.out.println("✅ Database Setup: HNSW Index created/verified on comics table");
-        } catch (Exception e) {
-            System.err.println("⚠️ Warning: Failed to create HNSW index: " + e.getMessage());
-        }
-
-        // Create HNSW index for cosine similarity on users
-        try {
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_users_user_vector_hnsw ON users USING hnsw (user_vector vector_cosine_ops)");
-            System.out.println("✅ Database Setup: HNSW Index created/verified on users table");
-        } catch (Exception e) {
-            System.err.println("⚠️ Warning: Failed to create HNSW index on users table: " + e.getMessage());
-        }
-
-        // Create standard indexes for project_team_id foreign keys to optimize workspace lookups
-        try {
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_chapters_project_team_id ON chapters (project_team_id)");
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_team_tasks_project_team_id ON team_tasks (project_team_id)");
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_team_join_requests_project_team_id ON team_join_requests (project_team_id)");
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_team_announcements_project_team_id ON team_announcements (project_team_id)");
-            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_team_messages_project_team_id ON team_messages (project_team_id)");
-            System.out.println("✅ Database Setup: Foreign key indexes created/verified");
-        } catch (Exception e) {
-            System.err.println("⚠️ Warning: Failed to create foreign key indexes: " + e.getMessage());
-        }
+        System.out.println("✅ Database seed and migrations completed");
     }
 
     /**
@@ -166,6 +131,230 @@ public class DbInitializer implements CommandLineRunner {
                 """);
     }
 
+    /**
+     * Normalizes legacy revenue analytics columns used by Author monthly payout.
+     * Older databases may contain comicId/comicid or created_at while the current
+     * SQL and entity mappings use comic_id and create_at.
+     */
+    private void migrateRevenueAnalyticsSchema() {
+        jdbcTemplate.execute("""
+                DO $$
+                BEGIN
+                    IF to_regclass('public.comic_daily_views') IS NOT NULL THEN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'comic_daily_views'
+                              AND column_name = 'comic_id'
+                        ) THEN
+                            IF EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = 'public'
+                                  AND table_name = 'comic_daily_views'
+                                  AND column_name = 'comicId'
+                            ) THEN
+                                EXECUTE 'ALTER TABLE public.comic_daily_views RENAME COLUMN "comicId" TO comic_id';
+                            ELSIF EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_schema = 'public'
+                                  AND table_name = 'comic_daily_views'
+                                  AND column_name = 'comicid'
+                            ) THEN
+                                EXECUTE 'ALTER TABLE public.comic_daily_views RENAME COLUMN comicid TO comic_id';
+                            END IF;
+                        END IF;
+
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'comic_daily_views'
+                              AND column_name = 'log_date'
+                        ) AND EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'comic_daily_views'
+                              AND column_name = 'view_date'
+                        ) THEN
+                            EXECUTE 'ALTER TABLE public.comic_daily_views RENAME COLUMN view_date TO log_date';
+                        END IF;
+                    END IF;
+
+                    IF to_regclass('public.user_saves') IS NOT NULL THEN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'user_saves'
+                              AND column_name = 'create_at'
+                        ) AND EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'user_saves'
+                              AND column_name = 'created_at'
+                        ) THEN
+                            EXECUTE 'ALTER TABLE public.user_saves RENAME COLUMN created_at TO create_at';
+                        END IF;
+                    END IF;
+                END $$;
+                """);
+    }
+
+    /**
+     * Converts legacy creator payout values from VND to USD exactly once.
+     *
+     * Existing database column names ending in _vnd are intentionally retained
+     * to avoid destructive schema changes. The creator_payout_settings.currency
+     * marker makes the conversion idempotent.
+     */
+    private void migrateCreatorPayoutAmountsToUsd() {
+        BigDecimal rate = legacyVndPerUsd == null || legacyVndPerUsd.signum() <= 0
+                ? new BigDecimal("25000")
+                : legacyVndPerUsd;
+
+        jdbcTemplate.execute("ALTER TABLE creator_payout_settings ADD COLUMN IF NOT EXISTS currency varchar(3)");
+        jdbcTemplate.execute("ALTER TABLE creator_payout_settings ALTER COLUMN currency SET DEFAULT 'USD'");
+
+        jdbcTemplate.update("""
+                UPDATE creator_payout_settings
+                SET minimum_payout_vnd = ROUND(minimum_payout_vnd / ?, 2),
+                    translator_task_rate_vnd = ROUND(translator_task_rate_vnd / ?, 2),
+                    translator_monthly_limit_vnd = ROUND(translator_monthly_limit_vnd / ?, 2),
+                    author_view_unit_rate_vnd = ROUND(author_view_unit_rate_vnd / ?, 2),
+                    author_follow_unit_rate_vnd = ROUND(author_follow_unit_rate_vnd / ?, 2),
+                    author_monthly_limit_vnd = ROUND(author_monthly_limit_vnd / ?, 2),
+                    currency = 'USD',
+                    update_at = CURRENT_TIMESTAMP
+                WHERE UPPER(COALESCE(NULLIF(BTRIM(currency), ''), 'VND')) = 'VND'
+                """, rate, rate, rate, rate, rate, rate);
+
+        jdbcTemplate.update("""
+                UPDATE creator_payout_requests
+                SET amount = ROUND(
+                        CASE
+                            WHEN base_amount_vnd IS NOT NULL THEN base_amount_vnd / ?
+                            WHEN UPPER(COALESCE(currency, 'VND')) = 'VND' THEN amount / ?
+                            ELSE amount
+                        END,
+                        2
+                    ),
+                    gross_amount_vnd = CASE
+                        WHEN gross_amount_vnd IS NULL THEN NULL
+                        ELSE ROUND(gross_amount_vnd / ?, 2)
+                    END,
+                    base_amount_vnd = CASE
+                        WHEN base_amount_vnd IS NULL THEN ROUND(amount / ?, 2)
+                        ELSE ROUND(base_amount_vnd / ?, 2)
+                    END,
+                    monthly_limit_vnd = CASE
+                        WHEN monthly_limit_vnd IS NULL THEN NULL
+                        ELSE ROUND(monthly_limit_vnd / ?, 2)
+                    END,
+                    exchange_rate_vnd_per_unit = 1,
+                    currency = 'USD',
+                    calculation_details = CONCAT(
+                        COALESCE(calculation_details, ''),
+                        '; legacy payout migrated to USD at 1 USD = ',
+                        ?,
+                        ' VND'
+                    ),
+                    update_at = CURRENT_TIMESTAMP
+                WHERE UPPER(COALESCE(NULLIF(BTRIM(currency), ''), 'VND')) = 'VND'
+                """, rate, rate, rate, rate, rate, rate, rate.toPlainString());
+
+        jdbcTemplate.update("""
+                UPDATE creator_stripe_payout_profiles
+                SET currency = 'USD',
+                    update_at = CURRENT_TIMESTAMP
+                WHERE UPPER(COALESCE(NULLIF(BTRIM(currency), ''), 'VND')) = 'VND'
+                """);
+    }
+
+    private void migrateCompletedTeamTasks() {
+        jdbcTemplate.execute("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'team_tasks'
+                          AND column_name = 'completed_at'
+                    ) THEN
+                        -- Backfill legacy completed tasks when audit timestamps exist.
+                        -- New completions are written through TeamTaskEntity.completedAt.
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'team_tasks'
+                              AND column_name = 'update_at'
+                        ) AND EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'team_tasks'
+                              AND column_name = 'create_at'
+                        ) THEN
+                            EXECUTE $sql$
+                                UPDATE team_tasks
+                                SET completed_at = COALESCE(update_at, create_at, CURRENT_TIMESTAMP)
+                                WHERE completed_at IS NULL
+                                  AND LOWER(COALESCE(status, '')) IN ('completed', 'complete', 'done')
+                            $sql$;
+                        ELSIF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'team_tasks'
+                              AND column_name = 'update_at'
+                        ) THEN
+                            EXECUTE $sql$
+                                UPDATE team_tasks
+                                SET completed_at = COALESCE(update_at, CURRENT_TIMESTAMP)
+                                WHERE completed_at IS NULL
+                                  AND LOWER(COALESCE(status, '')) IN ('completed', 'complete', 'done')
+                            $sql$;
+                        ELSIF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'team_tasks'
+                              AND column_name = 'create_at'
+                        ) THEN
+                            EXECUTE $sql$
+                                UPDATE team_tasks
+                                SET completed_at = COALESCE(create_at, CURRENT_TIMESTAMP)
+                                WHERE completed_at IS NULL
+                                  AND LOWER(COALESCE(status, '')) IN ('completed', 'complete', 'done')
+                            $sql$;
+                        ELSE
+                            -- There is no trustworthy historical timestamp to migrate.
+                            -- Leave completed_at NULL so legacy tasks cannot generate
+                            -- incorrect payout revenue. Set it manually when needed.
+                            RAISE NOTICE 'Skipping completed_at backfill: team_tasks has no create_at/update_at column';
+                        END IF;
+                    END IF;
+
+                    -- One-time compatibility migration from an abandoned multi-assignee
+                    -- branch. Current task ownership uses only assignee_id.
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'team_tasks'
+                          AND column_name = 'assignee_id'
+                    ) AND EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'team_tasks'
+                          AND column_name = 'assignee_ids'
+                          AND data_type = 'ARRAY'
+                    ) THEN
+                        EXECUTE $sql$
+                            UPDATE team_tasks
+                            SET assignee_id = assignee_ids[1]
+                            WHERE assignee_id IS NULL
+                              AND assignee_ids IS NOT NULL
+                              AND cardinality(assignee_ids) > 0
+                        $sql$;
+                    END IF;
+                END $$;
+                """);
+    }
+
     private void splitCommaJoinedChapterImageArrays() {
         jdbcTemplate.execute("""
                 UPDATE chapters
@@ -177,6 +366,32 @@ public class DbInitializer implements CommandLineRunner {
                   AND cardinality(images) = 1
                   AND (images[1] LIKE '%,https://%' OR images[1] LIKE '%,http://%');
                 """);
+    }
+
+    /**
+     * Repairs legacy project teams that do not have a usable leader display name.
+     * Do not swallow database exceptions here: this method runs inside the seed
+     * transaction, so any database error must roll the transaction back cleanly.
+     */
+    private void repairMissingProjectTeamLeaders() {
+        List<ProjectTeamEntity> emptyLeaderTeams = projectTeamRepository.findAll().stream()
+                .filter(team -> team.getLeaderName() == null
+                        || team.getLeaderName().isBlank()
+                        || "No Leader".equalsIgnoreCase(team.getLeaderName()))
+                .toList();
+
+        for (ProjectTeamEntity team : emptyLeaderTeams) {
+            String title = team.getTitle();
+            if (title != null && (title.equals("trantest56787")
+                    || title.equals("TransTest123455")
+                    || title.toLowerCase().contains("trantest"))) {
+                team.setLeaderName(title);
+            } else {
+                team.setLeaderName("trantest56787");
+            }
+            team.setLeaderInitials("TL");
+            projectTeamRepository.save(team);
+        }
     }
 
     private void createRoles() {

@@ -16,12 +16,7 @@ import com.sep.comiverse.service.UserPresenceService;
 import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import org.springframework.web.bind.annotation.*;
 
-import com.sep.comiverse.security.UserPrincipal;
-import com.sep.comiverse.service.NotificationService;
-
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -76,7 +71,7 @@ public class TeamWorkspaceController {
             String userIdStr = userId.toString();
             List<String> list = new ArrayList<>(Arrays.asList(likedBy.split(",")));
             list.removeIf(String::isEmpty);
-            
+
             if (list.contains(userIdStr)) {
                 list.remove(userIdStr);
                 ann.setLikes(Math.max(0, (ann.getLikes() == null ? 0 : ann.getLikes()) - 1));
@@ -136,7 +131,7 @@ public class TeamWorkspaceController {
             String userIdStr = userId.toString();
             List<String> list = new ArrayList<>(Arrays.asList(likedBy.split(",")));
             list.removeIf(String::isEmpty);
-            
+
             if (list.contains(userIdStr)) {
                 list.remove(userIdStr);
                 comm.setLikes(Math.max(0, (comm.getLikes() == null ? 0 : comm.getLikes()) - 1));
@@ -268,7 +263,15 @@ public class TeamWorkspaceController {
     }
 
     @PostMapping("/{teamId}/tasks")
-    public ResponseEntity<?> createTask(@PathVariable UUID teamId, @RequestBody CreateTaskRequest request) {
+    public ResponseEntity<?> createTask(
+            @PathVariable UUID teamId,
+            @RequestBody CreateTaskRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (!canManageTeamTasks(principal, teamId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "message", "Only this team's Project Leader can create or assign tasks"));
+        }
 
         ChapterEntity chapter = null;
         if (request.getChapterId() != null) {
@@ -282,13 +285,27 @@ public class TeamWorkspaceController {
                     .body(Map.of("success", false, "message", "chapterId is required"));
         }
 
+        UUID primaryAssigneeId = request.getAssigneeId();
+        String assigneeError = validateTranslatorAssignee(
+                teamId,
+                primaryAssigneeId
+        );
+        if (assigneeError != null) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", assigneeError));
+        }
+        String initialStatus = request.getStatus();
+        if (isCompletedStatus(initialStatus) && !canMarkTaskCompleted(principal)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "message", "Only a Project Leader can mark a task as completed"));
+        }
         TeamTaskEntity task = TeamTaskEntity.builder()
                 .projectTeamId(teamId)
                 .title(request.getTitle())
-                .status(request.getStatus())
-                .assigneeId(request.getAssigneeId())
+                .status(initialStatus)
+                .assigneeId(primaryAssigneeId)
                 .chapter(chapter)
                 .dueDate(request.getDueDate())
+                .completedAt(isCompletedStatus(initialStatus) ? Instant.now() : null)
                 .build();
 
         TeamTaskEntity created = taskRepository.save(task);
@@ -489,7 +506,7 @@ public class TeamWorkspaceController {
         if (team == null) {
             return ResponseEntity.notFound().build();
         }
-        
+
         if (team.getMembers() != null) {
             boolean removed = team.getMembers().removeIf(m -> m.getUser().getId().equals(memberId));
             if (removed) {
@@ -498,18 +515,31 @@ public class TeamWorkspaceController {
                 return ResponseEntity.ok(Map.of("success", true));
             }
         }
-        
+
         return ResponseEntity.notFound().build();
     }
 
     @PutMapping("/tasks/{taskId}/submit-for-review")
-    public ResponseEntity<?> submitForReview(@PathVariable UUID taskId) {
+    public ResponseEntity<?> submitForReview(
+            @PathVariable UUID taskId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
         TeamTaskEntity task = taskRepository.findById(taskId).orElse(null);
         if (task == null) {
             return ResponseEntity.status(404).body(Map.of("success", false, "message", "Task not found"));
         }
+        if (!canSubmitTaskForReview(principal, task)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false,
+                            "message", "Only the assigned Translator or this team's Project Leader can submit this task for review"));
+        }
+        if (isCompletedStatus(task.getStatus())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("success", false, "message", "A completed task cannot be submitted for review again"));
+        }
 
         task.setStatus("under_review");
+        task.setCompletedAt(null);
         taskRepository.save(task);
 
         List<PageTranslationEntity> pages = iPageTranslationRepository.findByTaskId_IdOrderByPageNumberAsc(taskId);
@@ -522,31 +552,152 @@ public class TeamWorkspaceController {
     }
 
     @PutMapping("/tasks/{taskId}")
-    public ResponseEntity<?> updateTask(@PathVariable UUID taskId, @RequestBody Map<String, Object> updates) {
+    public ResponseEntity<?> updateTask(
+            @PathVariable UUID taskId,
+            @RequestBody Map<String, Object> updates,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
         TeamTaskEntity task = taskRepository.findById(taskId).orElse(null);
         if (task == null) {
             return ResponseEntity.status(404).body(Map.of("success", false, "message", "Task not found"));
+        }
+        if (!canManageTeamTasks(principal, task.getProjectTeamId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "message", "Only this team's Project Leader can edit tasks"));
         }
 
         if (updates.containsKey("title")) {
             task.setTitle((String) updates.get("title"));
         }
         if (updates.containsKey("status")) {
-            task.setStatus((String) updates.get("status"));
+            String previousStatus = task.getStatus();
+            String newStatus = updates.get("status") == null ? null : String.valueOf(updates.get("status"));
+            if (isCompletedStatus(newStatus) && !canMarkTaskCompleted(principal)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("success", false, "message", "Only a Project Leader can mark a task as completed"));
+            }
+            task.setStatus(newStatus);
+            if (isCompletedStatus(newStatus) && (!isCompletedStatus(previousStatus) || task.getCompletedAt() == null)) {
+                task.setCompletedAt(Instant.now());
+            } else if (!isCompletedStatus(newStatus)) {
+                task.setCompletedAt(null);
+            }
         }
         if (updates.containsKey("dueDate")) {
             task.setDueDate((String) updates.get("dueDate"));
         }
         if (updates.containsKey("assigneeId")) {
-            Object raw = updates.get("assigneeId");
-            if (raw == null) {
-                task.setAssigneeId(null);
-            } else {
-                task.setAssigneeId(UUID.fromString(raw.toString()));
+            Object rawAssigneeId = updates.get("assigneeId");
+            UUID primaryAssigneeId = null;
+
+            if (rawAssigneeId != null
+                    && !String.valueOf(rawAssigneeId).isBlank()) {
+                try {
+                    primaryAssigneeId = UUID.fromString(
+                            String.valueOf(rawAssigneeId)
+                    );
+                } catch (IllegalArgumentException ex) {
+                    return ResponseEntity.badRequest()
+                            .body(Map.of(
+                                    "success", false,
+                                    "message", "Invalid assignee ID format"
+                            ));
+                }
             }
+
+            String assigneeError = validateTranslatorAssignee(
+                    task.getProjectTeamId(),
+                    primaryAssigneeId
+            );
+
+            if (assigneeError != null) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of(
+                                "success", false,
+                                "message", assigneeError
+                        ));
+            }
+
+            task.setAssigneeId(primaryAssigneeId);
+        }
+        if (isCompletedStatus(task.getStatus()) && task.getCompletedAt() == null) {
+            task.setCompletedAt(Instant.now());
         }
 
         TeamTaskEntity saved = taskRepository.save(task);
         return ResponseEntity.ok(saved);
     }
+    private boolean isCompletedStatus(String status) {
+        if (status == null) return false;
+        String normalized = status.trim().toLowerCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
+        return "completed".equals(normalized) || "complete".equals(normalized) || "done".equals(normalized);
+    }
+
+    private boolean canMarkTaskCompleted(UserPrincipal principal) {
+        return principal != null && "PROJECT_LEADER".equalsIgnoreCase(principal.getRole());
+    }
+
+    private boolean canSubmitTaskForReview(UserPrincipal principal, TeamTaskEntity task) {
+        if (principal == null || principal.getId() == null || task == null) return false;
+        if (canManageTeamTasks(principal, task.getProjectTeamId())) return true;
+        if (!"TRANSLATOR".equalsIgnoreCase(principal.getRole())) return false;
+        return principal.getId().equals(task.getAssigneeId());
+    }
+
+    private boolean canManageTeamTasks(UserPrincipal principal, UUID teamId) {
+        if (!canMarkTaskCompleted(principal) || teamId == null) return false;
+        return projectTeamRepository.findById(teamId)
+                .map(team -> {
+                    if (team.getLeaderId() != null) return principal.getId().equals(team.getLeaderId());
+                    String leaderName = team.getLeaderName() == null ? "" : team.getLeaderName().trim();
+                    return leaderName.equalsIgnoreCase(principal.getUsername())
+                            || (principal.getFullName() != null && leaderName.equalsIgnoreCase(principal.getFullName()));
+                })
+                .orElse(false);
+    }
+
+    private String validateTranslatorAssignee(
+            UUID teamId,
+            UUID assigneeId
+    ) {
+        if (assigneeId == null) {
+            return "A Translator assignee is required";
+        }
+
+        ProjectTeamEntity team = projectTeamRepository
+                .findById(teamId)
+                .orElse(null);
+
+        if (team == null) {
+            return "Project team not found";
+        }
+
+        List<ProjectTeamMemberEntity> teamMembers =
+                team.getMembers() == null
+                        ? List.of()
+                        : team.getMembers();
+
+        UserEntity member = teamMembers.stream()
+                .filter(Objects::nonNull)
+                .map(ProjectTeamMemberEntity::getUser)
+                .filter(Objects::nonNull)
+                .filter(user -> assigneeId.equals(user.getId()))
+                .findFirst()
+                .orElse(null);
+
+        if (member == null) {
+            return "The assignee must be an approved member of this project team";
+        }
+
+        String role = member.getRole() == null
+                ? ""
+                : member.getRole().getRoleName();
+
+        if (!"TRANSLATOR".equalsIgnoreCase(role)) {
+            return "Only users with the TRANSLATOR role can be assigned payout-eligible tasks";
+        }
+
+        return null;
+    }
+
 }

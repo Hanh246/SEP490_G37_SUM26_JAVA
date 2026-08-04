@@ -38,6 +38,20 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
             ChapterStatus moderationStatus
     );
 
+    @Query("""
+        SELECT c
+        FROM ChapterEntity c
+        JOIN FETCH c.comic comic
+        WHERE c.id = :chapterId
+          AND c.deleted = false
+          AND c.moderationStatus = :moderationStatus
+          AND comic.deleted = false
+        """)
+    Optional<ChapterEntity> findForOfflineDownload(
+            @Param("chapterId") UUID chapterId,
+            @Param("moderationStatus") ChapterStatus moderationStatus
+    );
+
     boolean existsByComic_IdAndChapterNumberAndDeletedFalse(
             UUID comicId,
             String chapterNumber
