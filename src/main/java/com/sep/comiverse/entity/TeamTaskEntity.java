@@ -45,6 +45,8 @@ public class TeamTaskEntity {
     @Column(name = "due_date")
     private String dueDate;
 
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
     /** Actual Project Leader completion time used for monthly Translator payout. */
     @Column(name = "completed_at")
     private Instant completedAt;
