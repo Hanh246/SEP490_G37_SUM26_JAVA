@@ -29,6 +29,8 @@ public interface ITeamTaskRepository extends JpaRepository<TeamTaskEntity, UUID>
 
     @Query("SELECT COUNT(t) FROM TeamTaskEntity t WHERE t.assigneeId = :assigneeId AND t.status IN ('TODO', 'IN_PROGRESS', 'PENDING_REVIEW')")
     long countActiveTasksByAssigneeId(@Param("assigneeId") UUID assigneeId);
+
+    List<TeamTaskEntity> findByChapter_Id(UUID chapterId);
     @Query("""
             SELECT t FROM TeamTaskEntity t
             LEFT JOIN FETCH t.chapter

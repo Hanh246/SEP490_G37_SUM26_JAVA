@@ -19,6 +19,8 @@ import com.sep.comiverse.repository.IProjectTeamRepository;
 import com.sep.comiverse.repository.IReviewCommentRepository;
 import com.sep.comiverse.repository.ITeamTaskRepository;
 import com.sep.comiverse.repository.IUserRepository;
+import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
+import com.sep.comiverse.service.NotificationService;
 import com.sep.comiverse.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -54,6 +56,7 @@ public class ReviewController {
     private final IChapterRepository chapterRepository;
     private final com.sep.comiverse.repository.IComicRepository comicRepository;
     private final IChapterTranslationRepository chapterTranslationRepository;
+    private final NotificationService notificationService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -298,6 +301,84 @@ public class ReviewController {
         chapterTranslationRepository.save(translation);
         log.info("[publishChapterFromTask] Saved ChapterTranslationEntity for chapterId={} languageCode={} teamId={}",
                 savedChapter.getId(), languageCode, teamId);
+    }
+
+    @PutMapping("/tasks/{taskId}/revoke")
+    @PreAuthorize("hasAnyAuthority('MODERATOR', 'ADMIN')")
+    @Transactional
+    public ResponseEntity<?> revokeTranslation(@PathVariable UUID taskId, @RequestBody Map<String, String> body) {
+        String reason = body.get("reason");
+        if (reason == null || reason.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Rejection reason is required."));
+        }
+
+        TeamTaskEntity task = taskRepository.findById(taskId).orElse(null);
+        if (task == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("success", false, "message", "Task not found"));
+        }
+
+        if (!"completed".equalsIgnoreCase(task.getStatus())) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Only completed (published) translations can be revoked."));
+        }
+
+        // 1. Revert task status to in_progress and save rejection reason
+        task.setStatus("in_progress");
+        task.setRejectionReason(reason);
+        taskRepository.save(task);
+        log.info("[revokeTranslation] Task {} reverted to in_progress. Reason: {}", taskId, reason);
+
+        // 2. Delete the ChapterTranslation for this chapter + language
+        ChapterEntity chapter = task.getChapter();
+        ProjectTeamEntity team = projectTeamRepository.findById(task.getProjectTeamId()).orElse(null);
+        if (chapter != null && team != null && team.getTargetLang() != null) {
+            chapterTranslationRepository
+                    .findByChapter_IdAndLanguageCode(chapter.getId(), team.getTargetLang())
+                    .ifPresent(translation -> {
+                        chapterTranslationRepository.delete(translation);
+                        log.info("[revokeTranslation] Deleted ChapterTranslation for chapterId={} lang={}",
+                                chapter.getId(), team.getTargetLang());
+                    });
+
+            // 3. Decrement team's chaptersCount
+            if (team.getChaptersCount() != null && team.getChaptersCount() > 0) {
+                team.setChaptersCount(team.getChaptersCount() - 1);
+                projectTeamRepository.save(team);
+            }
+        }
+
+        // 4. Notify the Team Leader
+        if (team != null && team.getLeaderId() != null) {
+            String chapterLabel = chapter != null
+                    ? "Chapter " + chapter.getChapterNumber() + (chapter.getTitle() != null ? " (" + chapter.getTitle() + ")" : "")
+                    : "a chapter";
+            String comicTitle = (chapter != null && chapter.getComic() != null)
+                    ? chapter.getComic().getTitle()
+                    : (team.getComicName() != null ? team.getComicName() : "Unknown Comic");
+            String langLabel = team.getTargetLang() != null ? team.getTargetLang() : "Unknown";
+
+            String notifTitle = "\uD83D\uDEA8 Translation Revoked";
+            String notifMessage = "The " + langLabel + " translation of " + chapterLabel
+                    + " in \"" + comicTitle + "\" has been revoked by a Moderator. Reason: " + reason
+                    + ". Please review and re-submit.";
+
+            try {
+                notificationService.notifyUser(
+                        team.getLeaderId(),
+                        notifTitle,
+                        notifMessage,
+                        "TRANSLATION_REVOKED",
+                        NotificationPreferenceKey.TEAM_UPDATES
+                );
+                log.info("[revokeTranslation] Notification sent to leaderId={}", team.getLeaderId());
+            } catch (Exception ex) {
+                log.warn("[revokeTranslation] Failed to send notification to leader: {}", ex.getMessage());
+            }
+        }
+
+        return ResponseEntity.ok(Map.of("success", true, "message", "Translation revoked successfully."));
     }
 
     private String buildPagesBubblesJson(List<PageTranslationEntity> pages) {

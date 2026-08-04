@@ -244,6 +244,24 @@ public class TeamWorkspaceController {
         return ResponseEntity.ok(taskRepository.findByProjectTeamId(teamId));
     }
 
+    @GetMapping("/tasks/by-chapter/{chapterId}")
+    public ResponseEntity<?> getTasksByChapter(@PathVariable UUID chapterId) {
+        List<TeamTaskEntity> tasks = taskRepository.findByChapter_Id(chapterId);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (TeamTaskEntity t : tasks) {
+            Map<String, Object> m = new HashMap<>();
+            m.put("id", t.getId());
+            m.put("title", t.getTitle());
+            m.put("status", t.getStatus());
+            m.put("assigneeId", t.getAssigneeId());
+            m.put("projectTeamId", t.getProjectTeamId());
+            m.put("rejectionReason", t.getRejectionReason());
+            m.put("dueDate", t.getDueDate());
+            result.add(m);
+        }
+        return ResponseEntity.ok(result);
+    }
+
     @PostMapping("/{teamId}/tasks")
     public ResponseEntity<?> createTask(
             @PathVariable UUID teamId,
