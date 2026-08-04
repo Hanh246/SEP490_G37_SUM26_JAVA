@@ -31,6 +31,9 @@ public class ProjectTeamMapperPlugin extends AbstractMapperPlugin<ProjectTeamEnt
         
         long count = teamTaskRepository.countIncompleteTasksByTeam(model.getId());
         dto.setInProgressTasksCount(count);
+
+        long completedCount = teamTaskRepository.countCompletedTasksByTeam(model.getId());
+        dto.setCompletedTasksCount(completedCount);
         
         return dto;
     }
