@@ -20,9 +20,7 @@ public class AuthorUploadTaskResponse {
     private Integer progress;
     private String message;
     private String error;
-    private AuthorComicPackageUploadResponse comicPackage;
     private ChapterPreviewResponse chapter;
-    private AuthorComicResponse comic;
     private Date createdAt;
     private Date updatedAt;
 }

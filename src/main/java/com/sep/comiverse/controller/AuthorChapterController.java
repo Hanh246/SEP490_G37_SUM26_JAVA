@@ -1,5 +1,8 @@
 package com.sep.comiverse.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sep.comiverse.dto.pagination.PaginationMetadata;
 import com.sep.comiverse.dto.pagination.PaginationResponse;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
@@ -8,23 +11,25 @@ import com.sep.comiverse.dto.response.AuthorUploadTaskResponse;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.dto.response.ChapterPreviewResponse;
 import com.sep.comiverse.dto.response.SubmitChapterReviewResponse;
+import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.AuthorChapterService;
 import com.sep.comiverse.service.AuthorUploadAsyncService;
 import com.sep.comiverse.service.AuthorUploadTaskService;
+import com.sep.comiverse.util.BytesMultipartFile;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import com.sep.comiverse.util.BytesMultipartFile;
 
 import java.util.List;
 import java.util.UUID;
@@ -33,40 +38,53 @@ import java.util.UUID;
 @RequestMapping("/author/comics/{comicId}/chapters")
 @RequiredArgsConstructor
 @PreAuthorize("hasAuthority('AUTHOR')")
-@Tag(name = "Author - Chapters", description = "APIs for author chapter ZIP upload, preview, and review submission")
+@Tag(name = "Author - Chapters", description = "APIs for author chapter folder upload, preview, and review submission")
 public class AuthorChapterController {
 
     private final AuthorChapterService authorChapterService;
     private final AuthorUploadTaskService authorUploadTaskService;
     private final AuthorUploadAsyncService authorUploadAsyncService;
+    private final ObjectMapper objectMapper;
 
-    @PostMapping(value = "/upload-zip", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "Upload chapter ZIP asynchronously", description = "Receives one chapter ZIP file, returns an upload task immediately after the file is accepted, then extracts images and uploads pages to Cloudinary in the background.")
-    public ResponseEntity<BaseResponse<AuthorUploadTaskResponse>> uploadChapterZip(
+    @PostMapping(value = "/upload-folder", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(
+            summary = "Upload chapter folder asynchronously",
+            description = "Receives page images directly as multipart files. No ZIP or CBZ archive is accepted."
+    )
+    public ResponseEntity<BaseResponse<AuthorUploadTaskResponse>> uploadChapterFolder(
             @PathVariable UUID comicId,
             @Valid @ModelAttribute ChapterUploadRequest request,
-            @RequestParam(value = "zipFile", required = false) MultipartFile zipFile,
-            @RequestParam(value = "file", required = false) MultipartFile fallbackFile,
+            @RequestParam("files") List<MultipartFile> files,
+            @RequestParam("relativePathsJson") String relativePathsJson,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         applyPrincipalAuthorId(request, principal);
-        MultipartFile resolvedZipFile = zipFile != null ? zipFile : fallbackFile;
-        BytesMultipartFile safeZipFile = BytesMultipartFile.from(resolvedZipFile, "zipFile");
+        List<String> relativePaths = parseRelativePaths(relativePathsJson);
+        List<MultipartFile> safeFiles = copyFilesForAsync(files);
+
         AuthorUploadTaskResponse task = authorUploadTaskService.createTask(
                 request.getAuthorId(),
-                "CHAPTER_ZIP",
-                "Chapter ZIP accepted. Backend is processing it in the background."
+                "CHAPTER_FOLDER",
+                "Chapter folder accepted. Backend is processing the page images in the background."
         );
-        authorUploadAsyncService.processChapterZip(task.getTaskId(), comicId, request, safeZipFile);
+
+        authorUploadAsyncService.processChapterFolder(
+                task.getTaskId(),
+                comicId,
+                request,
+                safeFiles,
+                relativePaths
+        );
+
         return ResponseEntity.accepted().body(BaseResponse.<AuthorUploadTaskResponse>builder()
                 .success(true)
-                .message("Chapter ZIP accepted. Track status with the returned taskId.")
+                .message("Chapter folder accepted. Track status with the returned taskId.")
                 .data(task)
                 .build());
     }
 
-    @GetMapping("/upload-zip/status/{taskId}")
-    @Operation(summary = "Get chapter ZIP upload status", description = "Returns current background processing status for a chapter ZIP upload task")
+    @GetMapping("/upload-folder/status/{taskId}")
+    @Operation(summary = "Get chapter folder upload status")
     public ResponseEntity<BaseResponse<AuthorUploadTaskResponse>> getChapterUploadStatus(
             @PathVariable UUID comicId,
             @PathVariable UUID taskId,
@@ -133,7 +151,6 @@ public class AuthorChapterController {
                 .build());
     }
 
-
     @PutMapping("/{chapterId}")
     @Operation(summary = "Update own chapter metadata", description = "Updates editable metadata for one chapter owned by the authenticated author")
     public ResponseEntity<BaseResponse<ChapterPreviewResponse>> updateChapter(
@@ -165,23 +182,59 @@ public class AuthorChapterController {
                 .message("Chapter permanently deleted")
                 .build());
     }
-    @PutMapping(value = "/{chapterId}/replace-zip", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "Replace chapter ZIP", description = "Replaces all image URLs of an owned chapter. The new ZIP filename must match the existing chapter number.")
-    public ResponseEntity<BaseResponse<ChapterPreviewResponse>> replaceChapterZip(
+
+    @PutMapping(value = "/{chapterId}/replace-folder", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(
+            summary = "Replace chapter folder",
+            description = "Replaces all chapter pages with directly uploaded folder images. No ZIP or CBZ archive is accepted."
+    )
+    public ResponseEntity<BaseResponse<ChapterPreviewResponse>> replaceChapterFolder(
             @PathVariable UUID comicId,
             @PathVariable UUID chapterId,
-            @RequestParam(value = "zipFile", required = false) MultipartFile zipFile,
-            @RequestParam(value = "file", required = false) MultipartFile fallbackFile,
+            @RequestParam("files") List<MultipartFile> files,
+            @RequestParam("relativePathsJson") String relativePathsJson,
             @RequestParam(value = "authorId", required = false) UUID authorId,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         UUID resolvedAuthorId = resolveAuthorId(authorId, principal);
-        MultipartFile resolvedZipFile = zipFile != null ? zipFile : fallbackFile;
+        List<String> relativePaths = parseRelativePaths(relativePathsJson);
+
         return ResponseEntity.ok(BaseResponse.<ChapterPreviewResponse>builder()
                 .success(true)
-                .message("Chapter ZIP replaced. Submit it for review when the preview is correct.")
-                .data(authorChapterService.replaceChapterZip(comicId, chapterId, resolvedAuthorId, resolvedZipFile))
+                .message("Chapter folder replaced. Submit it for review when the preview is correct.")
+                .data(authorChapterService.replaceChapterFolder(
+                        comicId,
+                        chapterId,
+                        resolvedAuthorId,
+                        files,
+                        relativePaths
+                ))
                 .build());
+    }
+
+    private List<String> parseRelativePaths(String relativePathsJson) {
+        if (relativePathsJson == null || relativePathsJson.isBlank()) {
+            throw new CustomException(400, "relativePathsJson is required", HttpStatus.BAD_REQUEST);
+        }
+        try {
+            List<String> paths = objectMapper.readValue(relativePathsJson, new TypeReference<List<String>>() {
+            });
+            if (paths == null || paths.isEmpty()) {
+                throw new CustomException(400, "relativePathsJson must contain at least one path", HttpStatus.BAD_REQUEST);
+            }
+            return paths;
+        } catch (JsonProcessingException error) {
+            throw new CustomException(400, "relativePathsJson must be a valid JSON string array", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private List<MultipartFile> copyFilesForAsync(List<MultipartFile> files) {
+        if (files == null || files.isEmpty()) {
+            throw new CustomException(400, "Chapter folder must contain at least one image", HttpStatus.BAD_REQUEST);
+        }
+        return files.stream()
+                .map(file -> (MultipartFile) BytesMultipartFile.from(file, "files"))
+                .toList();
     }
 
     private UUID resolveAuthorId(UUID requestAuthorId, UserPrincipal principal) {

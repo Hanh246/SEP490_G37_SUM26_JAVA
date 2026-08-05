@@ -1,11 +1,8 @@
 package com.sep.comiverse.unit.service;
 
-import com.sep.comiverse.dto.request.AuthorComicCreateRequest;
 import com.sep.comiverse.dto.request.ChapterUploadRequest;
-import com.sep.comiverse.dto.response.AuthorComicPackageUploadResponse;
 import com.sep.comiverse.dto.response.ChapterPreviewResponse;
 import com.sep.comiverse.service.AuthorChapterService;
-import com.sep.comiverse.service.AuthorComicPackageUploadService;
 import com.sep.comiverse.service.AuthorUploadAsyncService;
 import com.sep.comiverse.service.AuthorUploadTaskService;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +12,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.Mockito.verify;
@@ -26,67 +24,46 @@ class AuthorUploadAsyncServiceTest {
     @Mock
     private AuthorUploadTaskService uploadTaskService;
     @Mock
-    private AuthorComicPackageUploadService comicPackageUploadService;
-    @Mock
     private AuthorChapterService chapterService;
     @Mock
-    private MultipartFile zipFile;
+    private MultipartFile firstImage;
 
     private AuthorUploadAsyncService service;
 
     @BeforeEach
     void setUp() {
-        service = new AuthorUploadAsyncService(uploadTaskService, comicPackageUploadService, chapterService);
+        service = new AuthorUploadAsyncService(uploadTaskService, chapterService);
     }
 
     @Test
-    void processComicPackageCompletesTaskAfterSuccessfulImport() {
-        UUID taskId = UUID.randomUUID();
-        AuthorComicCreateRequest request = new AuthorComicCreateRequest();
-        AuthorComicPackageUploadResponse result = AuthorComicPackageUploadResponse.builder().build();
-        when(comicPackageUploadService.uploadComicPackage(request, zipFile)).thenReturn(result);
-
-        service.processComicPackage(taskId, request, zipFile);
-
-        verify(uploadTaskService).markProcessing(taskId, "Creating comic and processing package ZIP", 10);
-        verify(uploadTaskService).completeComicPackage(taskId, result);
-    }
-
-    @Test
-    void processComicPackageMarksTaskFailedWhenImportThrows() {
-        UUID taskId = UUID.randomUUID();
-        AuthorComicCreateRequest request = new AuthorComicCreateRequest();
-        RuntimeException failure = new RuntimeException("Invalid comic package");
-        when(comicPackageUploadService.uploadComicPackage(request, zipFile)).thenThrow(failure);
-
-        service.processComicPackage(taskId, request, zipFile);
-
-        verify(uploadTaskService).fail(taskId, failure);
-    }
-
-    @Test
-    void processChapterZipCompletesTaskAfterSuccessfulUpload() {
+    void processChapterFolderCompletesTaskAfterSuccessfulUpload() {
         UUID taskId = UUID.randomUUID();
         UUID comicId = UUID.randomUUID();
         ChapterUploadRequest request = new ChapterUploadRequest();
+        List<MultipartFile> files = List.of(firstImage);
+        List<String> paths = List.of("Chapter 1/01.jpg");
         ChapterPreviewResponse result = ChapterPreviewResponse.builder().build();
-        when(chapterService.uploadChapterZip(comicId, request, zipFile)).thenReturn(result);
 
-        service.processChapterZip(taskId, comicId, request, zipFile);
+        when(chapterService.uploadChapterFolder(comicId, request, files, paths)).thenReturn(result);
 
-        verify(uploadTaskService).markProcessing(taskId, "Processing chapter ZIP and uploading pages", 10);
+        service.processChapterFolder(taskId, comicId, request, files, paths);
+
+        verify(uploadTaskService).markProcessing(taskId, "Validating chapter folder and uploading pages", 10);
         verify(uploadTaskService).completeChapter(taskId, result);
     }
 
     @Test
-    void processChapterZipMarksTaskFailedWhenUploadThrows() {
+    void processChapterFolderMarksTaskFailedWhenUploadThrows() {
         UUID taskId = UUID.randomUUID();
         UUID comicId = UUID.randomUUID();
         ChapterUploadRequest request = new ChapterUploadRequest();
+        List<MultipartFile> files = List.of(firstImage);
+        List<String> paths = List.of("Chapter 1/01.jpg");
         RuntimeException failure = new RuntimeException("Cloud upload failed");
-        when(chapterService.uploadChapterZip(comicId, request, zipFile)).thenThrow(failure);
 
-        service.processChapterZip(taskId, comicId, request, zipFile);
+        when(chapterService.uploadChapterFolder(comicId, request, files, paths)).thenThrow(failure);
+
+        service.processChapterFolder(taskId, comicId, request, files, paths);
 
         verify(uploadTaskService).fail(taskId, failure);
     }
