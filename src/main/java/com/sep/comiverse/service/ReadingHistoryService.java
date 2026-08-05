@@ -51,12 +51,54 @@ public class ReadingHistoryService {
         return new java.util.ArrayList<>(allReadChapterIds);
     }
 
+    public List<UUID> getReadComicIds(UUID userId) {
+        if (userId == null) {
+            return Collections.emptyList();
+        }
+        List<UUID> dbComicIds = readingHistoryRepository.findReadComicIdsByUserId(userId);
+        java.util.Set<UUID> readComicIds = new java.util.LinkedHashSet<>();
+        try {
+            Set<Object> queuedEntries = redisTemplate.opsForSet().members(READING_HISTORY_SYNC_QUEUE);
+            if (queuedEntries != null && !queuedEntries.isEmpty()) {
+                for (Object obj : queuedEntries) {
+                    if (obj instanceof ReadingHistoryCacheDTO entry) {
+                        if (userId.equals(entry.getUserId()) && entry.getComicId() != null) {
+                            readComicIds.add(entry.getComicId());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Ignore Redis connection/read errors
+        }
+        readComicIds.addAll(dbComicIds);
+        return new java.util.ArrayList<>(readComicIds);
+    }
+
     public boolean isChapterRead(UUID chapterId) {
         UUID userId = jwtTokenUtil.getCurrentUserId();
         if (userId == null) {
             return false;
         }
-        return readingHistoryRepository.existsByChapterIdAndUserId(chapterId, userId);
+        boolean existsInDb = readingHistoryRepository.existsByChapterIdAndUserId(chapterId, userId);
+        if (existsInDb) {
+            return true;
+        }
+        try {
+            Set<Object> queuedEntries = redisTemplate.opsForSet().members(READING_HISTORY_SYNC_QUEUE);
+            if (queuedEntries != null && !queuedEntries.isEmpty()) {
+                for (Object obj : queuedEntries) {
+                    if (obj instanceof ReadingHistoryCacheDTO entry) {
+                        if (userId.equals(entry.getUserId()) && chapterId.equals(entry.getChapterId())) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Ignore Redis connection/read errors
+        }
+        return false;
     }
 
     @Transactional
