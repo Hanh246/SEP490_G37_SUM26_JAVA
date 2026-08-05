@@ -111,6 +111,57 @@ public class ReadingHistoryServiceTest {
     }
 
     @Test
+    void testIsChapterRead_TrueInCache() {
+        when(jwtTokenUtil.getCurrentUserId()).thenReturn(userId);
+        when(readingHistoryRepository.existsByChapterIdAndUserId(chapterId, userId)).thenReturn(false);
+
+        ReadingHistoryCacheDTO queueValue = ReadingHistoryCacheDTO.builder()
+                .comicId(comicId)
+                .chapterId(chapterId)
+                .userId(userId)
+                .build();
+
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(setOperations.members(syncQueueKey)).thenReturn(Set.of(queueValue));
+
+        boolean result = readingHistoryService.isChapterRead(chapterId);
+
+        assertTrue(result);
+    }
+
+    @Test
+    void testGetReadComicIds_NullUserId() {
+        List<UUID> result = readingHistoryService.getReadComicIds(null);
+        assertTrue(result.isEmpty());
+        verifyNoInteractions(readingHistoryRepository);
+    }
+
+    @Test
+    void testGetReadComicIds_CombinesDbAndRedisCache() {
+        UUID dbComicId = UUID.randomUUID();
+        UUID redisComicId = UUID.randomUUID();
+
+        when(readingHistoryRepository.findReadComicIdsByUserId(userId)).thenReturn(List.of(dbComicId));
+
+        ReadingHistoryCacheDTO queueValue = ReadingHistoryCacheDTO.builder()
+                .comicId(redisComicId)
+                .chapterId(chapterId)
+                .userId(userId)
+                .build();
+
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(setOperations.members(syncQueueKey)).thenReturn(Set.of(queueValue));
+
+        List<UUID> result = readingHistoryService.getReadComicIds(userId);
+
+        assertNotNull(result);
+        assertEquals(2, result.size());
+        // redisComicId should come first as recent reading activity from cache
+        assertEquals(redisComicId, result.get(0));
+        assertEquals(dbComicId, result.get(1));
+    }
+
+    @Test
     void testSyncReadingHistoryFromRedis_EmptyQueue() {
         when(redisTemplate.opsForSet()).thenReturn(setOperations);
         when(setOperations.members(syncQueueKey)).thenReturn(Collections.emptySet());

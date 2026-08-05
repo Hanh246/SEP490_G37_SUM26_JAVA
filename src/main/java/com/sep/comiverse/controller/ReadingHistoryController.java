@@ -3,7 +3,6 @@ package com.sep.comiverse.controller;
 import com.sep.comiverse.dto.ComicDTO;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.plugin.crud.ComicCrudPlugin;
-import com.sep.comiverse.repository.IReadingHistoryRepository;
 import com.sep.comiverse.security.JwtTokenUtil;
 import com.sep.comiverse.service.ReadingHistoryService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -24,7 +23,6 @@ import java.util.stream.Collectors;
 public class ReadingHistoryController {
 
     private final ReadingHistoryService readingHistoryService;
-    private final IReadingHistoryRepository readingHistoryRepository;
     private final ComicCrudPlugin comicCrudPlugin;
     private final JwtTokenUtil jwtTokenUtil;
 
@@ -53,7 +51,7 @@ public class ReadingHistoryController {
             );
         }
 
-        List<UUID> readComicIds = readingHistoryRepository.findReadComicIdsByUserId(userId);
+        List<UUID> readComicIds = readingHistoryService.getReadComicIds(userId);
         List<ComicDTO> comics = readComicIds.stream()
                 .map(comicCrudPlugin::getComicDetail)
                 .collect(Collectors.toList());
