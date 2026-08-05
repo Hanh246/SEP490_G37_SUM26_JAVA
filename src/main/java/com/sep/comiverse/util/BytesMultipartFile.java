@@ -19,7 +19,7 @@ public record BytesMultipartFile(
 
     public static BytesMultipartFile from(MultipartFile file, String fallbackName) {
         if (file == null || file.isEmpty()) {
-            throw new CustomException(400, "Archive file is required", HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Uploaded file is required", HttpStatus.BAD_REQUEST);
         }
         try {
             return new BytesMultipartFile(
@@ -29,7 +29,7 @@ public record BytesMultipartFile(
                     file.getBytes()
             );
         } catch (IOException e) {
-            throw new CustomException(400, "Could not read uploaded archive file", HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Could not read uploaded file", HttpStatus.BAD_REQUEST);
         }
     }
 

@@ -1,7 +1,5 @@
 package com.sep.comiverse.service;
 
-import com.sep.comiverse.dto.response.AuthorComicPackageUploadResponse;
-import com.sep.comiverse.dto.response.AuthorComicResponse;
 import com.sep.comiverse.dto.response.AuthorUploadTaskResponse;
 import com.sep.comiverse.dto.response.ChapterPreviewResponse;
 import com.sep.comiverse.exception.CustomException;
@@ -45,8 +43,7 @@ public class AuthorUploadTaskService {
     }
 
     public AuthorUploadTaskResponse getTask(UUID taskId, UUID authorId) {
-        UploadTaskState state = getTaskState(taskId, authorId);
-        return toResponse(state);
+        return toResponse(getTaskState(taskId, authorId));
     }
 
     public void markProcessing(UUID taskId, String message, int progress) {
@@ -58,24 +55,11 @@ public class AuthorUploadTaskService {
         });
     }
 
-    public void completeComicPackage(UUID taskId, AuthorComicPackageUploadResponse comicPackage) {
-        update(taskId, state -> {
-            state.status = STATUS_COMPLETED;
-            state.progress = 100;
-            state.message = comicPackage != null && StringUtils.hasText(comicPackage.getMessage())
-                    ? comicPackage.getMessage()
-                    : "Comic package processed successfully";
-            state.comicPackage = comicPackage;
-            state.comic = comicPackage == null ? null : comicPackage.getComic();
-            state.error = null;
-        });
-    }
-
     public void completeChapter(UUID taskId, ChapterPreviewResponse chapter) {
         update(taskId, state -> {
             state.status = STATUS_COMPLETED;
             state.progress = 100;
-            state.message = "Chapter ZIP processed successfully";
+            state.message = "Chapter folder processed successfully";
             state.chapter = chapter;
             state.error = null;
         });
@@ -123,9 +107,7 @@ public class AuthorUploadTaskService {
                 .progress(state.progress)
                 .message(state.message)
                 .error(state.error)
-                .comicPackage(state.comicPackage)
                 .chapter(state.chapter)
-                .comic(state.comic)
                 .createdAt(Date.from(state.createdAt))
                 .updatedAt(Date.from(state.updatedAt))
                 .build();
@@ -143,9 +125,7 @@ public class AuthorUploadTaskService {
         private Integer progress;
         private String message;
         private String error;
-        private AuthorComicPackageUploadResponse comicPackage;
         private ChapterPreviewResponse chapter;
-        private AuthorComicResponse comic;
         private Instant createdAt;
         private Instant updatedAt;
     }

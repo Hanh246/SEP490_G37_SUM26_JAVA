@@ -1,6 +1,5 @@
 package com.sep.comiverse.unit.service;
 
-import com.sep.comiverse.dto.response.AuthorComicPackageUploadResponse;
 import com.sep.comiverse.dto.response.AuthorUploadTaskResponse;
 import com.sep.comiverse.dto.response.ChapterPreviewResponse;
 import com.sep.comiverse.exception.CustomException;
@@ -13,11 +12,7 @@ import org.springframework.http.HttpStatus;
 
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 
 class AuthorUploadTaskServiceTest {
 
@@ -32,11 +27,11 @@ class AuthorUploadTaskServiceTest {
     void createTaskStartsInQueuedState() {
         UUID authorId = UUID.randomUUID();
 
-        AuthorUploadTaskResponse task = service.createTask(authorId, "COMIC_PACKAGE", "Queued for upload");
+        AuthorUploadTaskResponse task = service.createTask(authorId, "CHAPTER_FOLDER", "Queued for upload");
 
         assertNotNull(task.getTaskId());
         assertEquals(authorId, task.getAuthorId());
-        assertEquals("COMIC_PACKAGE", task.getType());
+        assertEquals("CHAPTER_FOLDER", task.getType());
         assertEquals(AuthorUploadTaskService.STATUS_QUEUED, task.getStatus());
         assertEquals(0, task.getProgress());
         assertEquals("Queued for upload", task.getMessage());
@@ -48,7 +43,7 @@ class AuthorUploadTaskServiceTest {
     void createTaskRejectsMissingAuthor() {
         CustomException error = assertThrows(
                 CustomException.class,
-                () -> service.createTask(null, "COMIC_PACKAGE", "Queued")
+                () -> service.createTask(null, "CHAPTER_FOLDER", "Queued")
         );
 
         assertEquals(HttpStatus.BAD_REQUEST, error.getHttpStatus());
@@ -59,7 +54,7 @@ class AuthorUploadTaskServiceTest {
     void getTaskPreventsAnotherAuthorFromReadingUploadState() {
         UUID ownerId = UUID.randomUUID();
         UUID otherAuthorId = UUID.randomUUID();
-        AuthorUploadTaskResponse task = service.createTask(ownerId, "CHAPTER_ZIP", "Queued");
+        AuthorUploadTaskResponse task = service.createTask(ownerId, "CHAPTER_FOLDER", "Queued");
 
         CustomException error = assertThrows(
                 CustomException.class,
@@ -74,7 +69,7 @@ class AuthorUploadTaskServiceTest {
     @CsvSource({"-5, 0", "35, 35", "140, 100"})
     void markProcessingClampsProgressToValidRange(int requested, int expected) {
         UUID authorId = UUID.randomUUID();
-        AuthorUploadTaskResponse task = service.createTask(authorId, "CHAPTER_ZIP", "Queued");
+        AuthorUploadTaskResponse task = service.createTask(authorId, "CHAPTER_FOLDER", "Queued");
 
         service.markProcessing(task.getTaskId(), "Uploading pages", requested);
         AuthorUploadTaskResponse updated = service.getTask(task.getTaskId(), authorId);
@@ -86,27 +81,9 @@ class AuthorUploadTaskServiceTest {
     }
 
     @Test
-    void completeComicPackageStoresResultAndUsesItsMessage() {
+    void completeChapterStoresPreviewAndFolderMessage() {
         UUID authorId = UUID.randomUUID();
-        AuthorUploadTaskResponse task = service.createTask(authorId, "COMIC_PACKAGE", "Queued");
-        AuthorComicPackageUploadResponse result = AuthorComicPackageUploadResponse.builder()
-                .message("Imported 3 chapters")
-                .build();
-
-        service.completeComicPackage(task.getTaskId(), result);
-        AuthorUploadTaskResponse updated = service.getTask(task.getTaskId(), authorId);
-
-        assertEquals(AuthorUploadTaskService.STATUS_COMPLETED, updated.getStatus());
-        assertEquals(100, updated.getProgress());
-        assertEquals("Imported 3 chapters", updated.getMessage());
-        assertSame(result, updated.getComicPackage());
-        assertNull(updated.getError());
-    }
-
-    @Test
-    void completeChapterStoresPreview() {
-        UUID authorId = UUID.randomUUID();
-        AuthorUploadTaskResponse task = service.createTask(authorId, "CHAPTER_ZIP", "Queued");
+        AuthorUploadTaskResponse task = service.createTask(authorId, "CHAPTER_FOLDER", "Queued");
         ChapterPreviewResponse preview = ChapterPreviewResponse.builder().build();
 
         service.completeChapter(task.getTaskId(), preview);
@@ -114,13 +91,15 @@ class AuthorUploadTaskServiceTest {
 
         assertEquals(AuthorUploadTaskService.STATUS_COMPLETED, updated.getStatus());
         assertEquals(100, updated.getProgress());
+        assertEquals("Chapter folder processed successfully", updated.getMessage());
         assertSame(preview, updated.getChapter());
+        assertNull(updated.getError());
     }
 
     @Test
     void failRecordsSafeFallbackForMissingErrorDetails() {
         UUID authorId = UUID.randomUUID();
-        AuthorUploadTaskResponse task = service.createTask(authorId, "CHAPTER_ZIP", "Queued");
+        AuthorUploadTaskResponse task = service.createTask(authorId, "CHAPTER_FOLDER", "Queued");
 
         service.fail(task.getTaskId(), null);
         AuthorUploadTaskResponse updated = service.getTask(task.getTaskId(), authorId);

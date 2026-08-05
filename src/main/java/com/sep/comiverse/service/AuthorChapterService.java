@@ -33,7 +33,6 @@ import org.springframework.web.multipart.MultipartFile;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.text.Collator;
@@ -41,8 +40,6 @@ import java.time.Instant;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 @Service
 @RequiredArgsConstructor
@@ -51,8 +48,6 @@ public class AuthorChapterService {
     private static final List<String> ALLOWED_EXTENSIONS = List.of("jpg", "jpeg", "png", "gif", "webp");
     private static final long MAX_IMAGE_SIZE_BYTES = 10L * 1024L * 1024L;
     private static final Pattern NATURAL_PART_PATTERN = Pattern.compile("\\d+|\\D+");
-    private static final Pattern CHAPTER_ZIP_NAME_PATTERN =
-            Pattern.compile("(?i)^chapter\\s+([1-9][0-9]*(?:[,.][0-9]+)?)\\.zip$");
     private static final Pattern CHAPTER_NUMBER_PATTERN =
             Pattern.compile("^[1-9][0-9]*(?:[,.][0-9]+)?$");
 
@@ -71,6 +66,9 @@ public class AuthorChapterService {
 
     @Value("${author.chapter.max-pages:200}")
     private int maxPages;
+
+    @Value("${author.chapter.max-total-upload-size-bytes:104857600}")
+    private long maxTotalUploadSizeBytes;
 
     private String computeContentHash(List<ImageCandidate> images) {
         if (images == null || images.isEmpty()) return null;
@@ -91,36 +89,37 @@ public class AuthorChapterService {
     }
 
     @Transactional
-    public ChapterPreviewResponse uploadChapterZip(UUID comicId, ChapterUploadRequest request, MultipartFile zipFile) {
+    public ChapterPreviewResponse uploadChapterFolder(
+            UUID comicId,
+            ChapterUploadRequest request,
+            List<MultipartFile> files,
+            List<String> relativePaths
+    ) {
         validateUploadRequest(request);
-        validateZipFile(zipFile);
+        String chapterNumber = normalizeChapterNumber(request.getChapterNumber());
+        if (!StringUtils.hasText(chapterNumber)) {
+            throw new CustomException(400, "Chapter number is required", HttpStatus.BAD_REQUEST);
+        }
 
         ComicEntity comic = authorComicService.getOwnedComic(comicId, request.getAuthorId());
-        String chapterNumber = resolveChapterNumber(request, zipFile);
         if (chapterRepository.existsByComic_IdAndChapterNumberAndDeletedFalse(comicId, chapterNumber)) {
             throw new CustomException(409, "Chapter number already exists for this comic", HttpStatus.CONFLICT);
         }
 
-        List<ImageCandidate> images = extractAndValidateImages(zipFile);
+        List<ImageCandidate> images = validateAndReadFolderImages(files, relativePaths);
         images.sort(imageNaturalComparator());
 
-        // Content Fingerprinting: Check if this exact content was previously rejected
         String contentHash = computeContentHash(images);
-        if (contentHash != null && chapterRepository.existsByContentHashAndModerationStatus(contentHash, ChapterStatus.REJECTED)) {
-            throw new CustomException(400, "This chapter content was previously rejected and cannot be re-uploaded. Please contact moderation.", HttpStatus.BAD_REQUEST);
+        if (contentHash != null
+                && chapterRepository.existsByContentHashAndModerationStatus(contentHash, ChapterStatus.REJECTED)) {
+            throw new CustomException(
+                    400,
+                    "This chapter content was previously rejected and cannot be re-uploaded. Please contact moderation.",
+                    HttpStatus.BAD_REQUEST
+            );
         }
 
-        List<String> imageUrls = new ArrayList<>();
-        String targetFolder = "comiverse/chapters/" + comicId + "/chapter-" + chapterNumber;
-        for (int index = 0; index < images.size(); index++) {
-            ImageCandidate image = images.get(index);
-            CloudinaryUploadResult upload = cloudinaryStorageService.uploadImage(
-                    image.bytes(),
-                    buildOrderedFileName(index + 1, image.originalFileName()),
-                    targetFolder
-            );
-            imageUrls.add(upload.getSecureUrl());
-        }
+        List<String> imageUrls = uploadImages(comicId, chapterNumber, images);
 
         ChapterEntity chapter = ChapterEntity.builder()
                 .comic(comic)
@@ -131,9 +130,9 @@ public class AuthorChapterService {
                 .images(imageUrls)
                 .contentHash(contentHash)
                 .build();
+
         ChapterEntity savedChapter = chapterRepository.save(chapter);
         refreshComicChapterMetadata(comic);
-
         return toPreviewResponse(savedChapter);
     }
 
@@ -296,41 +295,30 @@ public class AuthorChapterService {
     }
 
     @Transactional
-    public ChapterPreviewResponse replaceChapterZip(UUID comicId, UUID chapterId, UUID authorId, MultipartFile zipFile) {
+    public ChapterPreviewResponse replaceChapterFolder(
+            UUID comicId,
+            UUID chapterId,
+            UUID authorId,
+            List<MultipartFile> files,
+            List<String> relativePaths
+    ) {
         ComicEntity comic = authorComicService.getOwnedComic(comicId, authorId);
         ChapterEntity chapter = getOwnedChapter(comicId, chapterId, authorId);
-        validateZipFile(zipFile);
 
-        String fileName = getBaseName(normalizeEntryName(zipFile.getOriginalFilename()));
-        String numberFromFileName = parseChapterNumberFromFileName(fileName);
-        if (!chapter.getChapterNumber().equals(numberFromFileName)) {
-            throw new CustomException(400,
-                    "Replacement ZIP filename must match the existing chapter number. Expected Chapter "
-                            + chapter.getChapterNumber() + ".zip but got " + fileName,
-                    HttpStatus.BAD_REQUEST);
-        }
-
-        List<ImageCandidate> images = extractAndValidateImages(zipFile);
+        List<ImageCandidate> images = validateAndReadFolderImages(files, relativePaths);
         images.sort(imageNaturalComparator());
 
-        // Content Fingerprinting: Check if this exact content was previously rejected
         String contentHash = computeContentHash(images);
-        if (contentHash != null && chapterRepository.existsByContentHashAndModerationStatus(contentHash, ChapterStatus.REJECTED)) {
-            throw new CustomException(400, "This chapter content was previously rejected and cannot be re-uploaded. Please contact moderation.", HttpStatus.BAD_REQUEST);
-        }
-
-        List<String> imageUrls = new ArrayList<>();
-        String targetFolder = "comiverse/chapters/" + comicId + "/chapter-" + chapter.getChapterNumber();
-        for (int index = 0; index < images.size(); index++) {
-            ImageCandidate image = images.get(index);
-            CloudinaryUploadResult upload = cloudinaryStorageService.uploadImage(
-                    image.bytes(),
-                    buildOrderedFileName(index + 1, image.originalFileName()),
-                    targetFolder
+        if (contentHash != null
+                && chapterRepository.existsByContentHashAndModerationStatus(contentHash, ChapterStatus.REJECTED)) {
+            throw new CustomException(
+                    400,
+                    "This chapter content was previously rejected and cannot be re-uploaded. Please contact moderation.",
+                    HttpStatus.BAD_REQUEST
             );
-            imageUrls.add(upload.getSecureUrl());
         }
 
+        List<String> imageUrls = uploadImages(comicId, chapter.getChapterNumber(), images);
         chapter.setImages(imageUrls);
         chapter.setContentHash(contentHash);
         chapter.setModerationStatus(ChapterStatus.PREVIEW_READY);
@@ -435,94 +423,131 @@ public class AuthorChapterService {
         }
     }
 
-    private void validateZipFile(MultipartFile zipFile) {
-        if (zipFile == null || zipFile.isEmpty()) {
-            throw new CustomException(400, "Chapter archive file is required", HttpStatus.BAD_REQUEST);
+    private List<ImageCandidate> validateAndReadFolderImages(
+            List<MultipartFile> files,
+            List<String> relativePaths
+    ) {
+        if (files == null || files.isEmpty()) {
+            throw new CustomException(400, "Chapter folder must contain at least one image", HttpStatus.BAD_REQUEST);
         }
-
-        String originalFilename = zipFile.getOriginalFilename();
-        if (!StringUtils.hasText(originalFilename) || !isZipArchiveFileName(originalFilename)) {
-            throw new CustomException(400, "Only .zip chapter files are accepted", HttpStatus.BAD_REQUEST);
+        if (relativePaths == null || relativePaths.isEmpty()) {
+            throw new CustomException(400, "Chapter folder relative paths are required", HttpStatus.BAD_REQUEST);
         }
-
-        String fileName = getBaseName(normalizeEntryName(originalFilename));
-        if (!CHAPTER_ZIP_NAME_PATTERN.matcher(fileName).matches()) {
+        if (files.size() != relativePaths.size()) {
             throw new CustomException(
                     400,
-                    "Chapter archive name must be like 'Chapter 1.zip' or 'Chapter 1,5.zip'. Invalid file: " + fileName,
+                    "The number of uploaded files must match relativePathsJson",
                     HttpStatus.BAD_REQUEST
             );
         }
-    }
+        if (files.size() > maxPages) {
+            throw new CustomException(
+                    400,
+                    "Chapter folder exceeds maximum page count of " + maxPages,
+                    HttpStatus.BAD_REQUEST
+            );
+        }
 
-    private List<ImageCandidate> extractAndValidateImages(MultipartFile zipFile) {
         List<ImageCandidate> images = new ArrayList<>();
         Map<String, Integer> duplicateNameCounter = new HashMap<>();
-        int zipOrder = 0;
+        String selectedFolder = null;
+        long totalBytes = 0L;
 
-        try (ZipInputStream zipInputStream = new ZipInputStream(zipFile.getInputStream())) {
-            ZipEntry entry;
-            while ((entry = zipInputStream.getNextEntry()) != null) {
-                if (entry.isDirectory()) {
-                    continue;
-                }
+        for (int index = 0; index < files.size(); index++) {
+            MultipartFile file = files.get(index);
+            String relativePath = normalizeEntryName(relativePaths.get(index));
 
-                zipOrder++;
-                String entryName = normalizeEntryName(entry.getName());
-                if (!isCandidateFile(entryName)) {
-                    continue;
-                }
-
-                if (splitCleanPath(entryName).length != 1) {
-                    throw new CustomException(400, "Chapter ZIP must contain image files at root only. Invalid entry: " + entryName, HttpStatus.BAD_REQUEST);
-                }
-
-                String baseFileName = getBaseName(entryName);
-                if (isZipArchiveFileName(baseFileName)) {
-                    throw new CustomException(
-                            400,
-                            "Upload Chapter only accepts page images. Do not put another archive inside chapter ZIP: " + entryName,
-                            HttpStatus.BAD_REQUEST
-                    );
-                }
-                if (!isAllowedImage(baseFileName)) {
-                    throw new CustomException(400, "Unsupported image format in chapter archive: " + entryName, HttpStatus.BAD_REQUEST);
-                }
-
-                byte[] bytes = readCurrentEntry(zipInputStream);
-                if (bytes.length == 0) {
-                    throw new CustomException(400, "Empty image file in chapter ZIP: " + entryName, HttpStatus.BAD_REQUEST);
-                }
-                if (bytes.length > MAX_IMAGE_SIZE_BYTES) {
-                    throw new CustomException(400, "Image exceeds 10MB limit: " + entryName, HttpStatus.BAD_REQUEST);
-                }
-
-                String safeDisplayName = makeDuplicateSafeDisplayName(baseFileName, duplicateNameCounter);
-                ImageDimension dimension = readImageDimension(entryName, bytes);
-                images.add(new ImageCandidate(safeDisplayName, entryName, zipOrder, bytes, dimension));
-
-                if (images.size() > maxPages) {
-                    throw new CustomException(400, "Chapter archive exceeds maximum page count of " + maxPages, HttpStatus.BAD_REQUEST);
-                }
+            if (file == null || file.isEmpty()) {
+                throw new CustomException(400, "Empty image file at position " + (index + 1), HttpStatus.BAD_REQUEST);
             }
-        } catch (IOException e) {
-            throw new CustomException(400, "Invalid or unreadable chapter ZIP file", HttpStatus.BAD_REQUEST);
+            if (!StringUtils.hasText(relativePath)) {
+                throw new CustomException(400, "Empty relative path at position " + (index + 1), HttpStatus.BAD_REQUEST);
+            }
+            if (relativePath.startsWith("/") || relativePath.contains("../") || relativePath.contains("..\\")) {
+                throw new CustomException(400, "Unsafe folder path: " + relativePath, HttpStatus.BAD_REQUEST);
+            }
+            if (isHiddenPath(relativePath)) {
+                throw new CustomException(400, "Hidden files are not allowed in chapter folder: " + relativePath, HttpStatus.BAD_REQUEST);
+            }
+
+            String[] parts = splitCleanPath(relativePath);
+            if (parts.length != 2) {
+                throw new CustomException(
+                        400,
+                        "Images must be directly inside one chapter folder: " + relativePath,
+                        HttpStatus.BAD_REQUEST
+                );
+            }
+            if (!StringUtils.hasText(selectedFolder)) {
+                selectedFolder = parts[0];
+            } else if (!selectedFolder.equals(parts[0])) {
+                throw new CustomException(
+                        400,
+                        "Do not combine files from multiple chapter folders",
+                        HttpStatus.BAD_REQUEST
+                );
+            }
+
+            String baseFileName = getBaseName(relativePath);
+            String uploadedName = getBaseName(normalizeEntryName(file.getOriginalFilename()));
+            if (StringUtils.hasText(uploadedName) && !baseFileName.equals(uploadedName)) {
+                throw new CustomException(
+                        400,
+                        "Uploaded filename does not match relative path: " + relativePath,
+                        HttpStatus.BAD_REQUEST
+                );
+            }
+            if (!isAllowedImage(baseFileName)) {
+                throw new CustomException(
+                        400,
+                        "Unsupported image format in chapter folder: " + relativePath,
+                        HttpStatus.BAD_REQUEST
+                );
+            }
+            if (file.getSize() > MAX_IMAGE_SIZE_BYTES) {
+                throw new CustomException(400, "Image exceeds 10MB limit: " + relativePath, HttpStatus.BAD_REQUEST);
+            }
+
+            totalBytes += file.getSize();
+            if (totalBytes > maxTotalUploadSizeBytes) {
+                throw new CustomException(
+                        400,
+                        "Chapter folder exceeds the " + (maxTotalUploadSizeBytes / (1024L * 1024L)) + "MB total upload limit",
+                        HttpStatus.BAD_REQUEST
+                );
+            }
+
+            byte[] bytes;
+            try {
+                bytes = file.getBytes();
+            } catch (IOException error) {
+                throw new CustomException(400, "Could not read image file: " + relativePath, HttpStatus.BAD_REQUEST);
+            }
+            if (bytes.length == 0) {
+                throw new CustomException(400, "Empty image file: " + relativePath, HttpStatus.BAD_REQUEST);
+            }
+
+            String safeDisplayName = makeDuplicateSafeDisplayName(baseFileName, duplicateNameCounter);
+            ImageDimension dimension = readImageDimension(relativePath, bytes);
+            images.add(new ImageCandidate(safeDisplayName, relativePath, index, bytes, dimension));
         }
 
-        if (images.isEmpty()) {
-            throw new CustomException(400, "Chapter ZIP file does not contain any supported images", HttpStatus.BAD_REQUEST);
-        }
         return images;
     }
 
-    private byte[] readCurrentEntry(ZipInputStream zipInputStream) throws IOException {
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        byte[] buffer = new byte[8192];
-        int read;
-        while ((read = zipInputStream.read(buffer)) != -1) {
-            outputStream.write(buffer, 0, read);
+    private List<String> uploadImages(UUID comicId, String chapterNumber, List<ImageCandidate> images) {
+        List<String> imageUrls = new ArrayList<>();
+        String targetFolder = "comiverse/chapters/" + comicId + "/chapter-" + chapterNumber;
+        for (int index = 0; index < images.size(); index++) {
+            ImageCandidate image = images.get(index);
+            CloudinaryUploadResult upload = cloudinaryStorageService.uploadImage(
+                    image.bytes(),
+                    buildOrderedFileName(index + 1, image.originalFileName()),
+                    targetFolder
+            );
+            imageUrls.add(upload.getSecureUrl());
         }
-        return outputStream.toByteArray();
+        return imageUrls;
     }
 
     private ImageDimension readImageDimension(String fileName, byte[] bytes) {
@@ -532,11 +557,11 @@ public class AuthorChapterService {
                 if (fileName.toLowerCase(Locale.ROOT).endsWith(".webp")) {
                     return new ImageDimension(null, null);
                 }
-                throw new CustomException(400, "Invalid image file in chapter ZIP: " + fileName, HttpStatus.BAD_REQUEST);
+                throw new CustomException(400, "Invalid image file in chapter folder: " + fileName, HttpStatus.BAD_REQUEST);
             }
             return new ImageDimension(image.getWidth(), image.getHeight());
         } catch (IOException e) {
-            throw new CustomException(400, "Invalid image file in chapter ZIP: " + fileName, HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "Invalid image file in chapter folder: " + fileName, HttpStatus.BAD_REQUEST);
         }
     }
 
@@ -554,18 +579,17 @@ public class AuthorChapterService {
         return baseFileName.substring(0, dotIndex) + "-duplicate-" + occurrence + baseFileName.substring(dotIndex);
     }
 
-    private boolean isCandidateFile(String entryName) {
-        if (!StringUtils.hasText(entryName)) {
-            return false;
+    private boolean isHiddenPath(String path) {
+        String normalized = normalizeEntryName(path);
+        if (normalized.startsWith("__MACOSX/")) {
+            return true;
         }
-        String normalized = entryName.replace('\\', '/');
-        if (normalized.startsWith("__MACOSX/") || normalized.contains("/.__") || normalized.contains("/.")) {
-            return false;
+        for (String part : normalized.split("/")) {
+            if (part.startsWith(".")) {
+                return true;
+            }
         }
-        if (normalized.startsWith("/") || normalized.contains("../") || normalized.contains("..\\")) {
-            throw new CustomException(400, "Unsafe archive entry path: " + entryName, HttpStatus.BAD_REQUEST);
-        }
-        return true;
+        return false;
     }
 
     private String normalizeEntryName(String entryName) {
@@ -577,14 +601,6 @@ public class AuthorChapterService {
         return ALLOWED_EXTENSIONS.stream().anyMatch(extension -> lower.endsWith("." + extension));
     }
 
-    private boolean isZipArchiveFileName(String fileName) {
-        if (!StringUtils.hasText(fileName)) {
-            return false;
-        }
-        String lower = fileName.toLowerCase(Locale.ROOT);
-        return lower.endsWith(".zip");
-    }
-
     private Comparator<ImageCandidate> imageNaturalComparator() {
         Collator collator = Collator.getInstance(Locale.ENGLISH);
         collator.setStrength(Collator.PRIMARY);
@@ -593,7 +609,7 @@ public class AuthorChapterService {
             if (comparison != 0) {
                 return comparison;
             }
-            return Integer.compare(left.zipOrder(), right.zipOrder());
+            return Integer.compare(left.sourceOrder(), right.sourceOrder());
         };
     }
 
@@ -658,37 +674,6 @@ public class AuthorChapterService {
                     .build());
         }
         return responses;
-    }
-
-    private String resolveChapterNumber(ChapterUploadRequest request, MultipartFile zipFile) {
-        String fileName = getBaseName(normalizeEntryName(zipFile.getOriginalFilename()));
-        String numberFromFileName = parseChapterNumberFromFileName(fileName);
-        String numberFromRequest = normalizeChapterNumber(request.getChapterNumber());
-
-        if (!StringUtils.hasText(numberFromRequest)) {
-            return numberFromFileName;
-        }
-
-        if (!numberFromRequest.equals(numberFromFileName)) {
-            throw new CustomException(
-                    400,
-                    "Chapter number does not match archive filename. Form value: "
-                            + request.getChapterNumber()
-                            + ", archive filename: "
-                            + fileName,
-                    HttpStatus.BAD_REQUEST
-            );
-        }
-
-        return numberFromFileName;
-    }
-
-    private String parseChapterNumberFromFileName(String fileName) {
-        Matcher matcher = CHAPTER_ZIP_NAME_PATTERN.matcher(fileName);
-        if (!matcher.matches()) {
-            return null;
-        }
-        return matcher.group(1).replace(',', '.');
     }
 
     private String normalizeChapterNumber(String value) {
@@ -792,7 +777,7 @@ public class AuthorChapterService {
         return StringUtils.hasText(first) ? first : second;
     }
 
-    private record ImageCandidate(String originalFileName, String originalEntryName, int zipOrder, byte[] bytes, ImageDimension dimension) {
+    private record ImageCandidate(String originalFileName, String originalEntryName, int sourceOrder, byte[] bytes, ImageDimension dimension) {
     }
 
     private record ImageDimension(Integer width, Integer height) {
