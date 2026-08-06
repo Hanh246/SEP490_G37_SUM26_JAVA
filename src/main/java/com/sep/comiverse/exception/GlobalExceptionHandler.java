@@ -99,6 +99,15 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<BaseResponse<Object>> handleIllegalArgumentException(IllegalArgumentException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(BaseResponse.builder()
+                        .success(false)
+                        .message(ex.getMessage() != null ? ex.getMessage() : "Invalid argument provided")
+                        .build());
+    }
+
     @ExceptionHandler({EntityNotFoundException.class, NoSuchElementException.class})
     public ResponseEntity<BaseResponse<Object>> handleNotFoundException(Exception ex) {
         String message = ex.getMessage() == null || ex.getMessage().isBlank()
@@ -117,7 +126,7 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(BaseResponse.builder()
                         .success(false)
-                        .message("Internal server error")
+                        .message("Internal server error: " + ex.toString() + (ex.getCause() != null ? " | Cause: " + ex.getCause().toString() : ""))
                         .build());
     }
 

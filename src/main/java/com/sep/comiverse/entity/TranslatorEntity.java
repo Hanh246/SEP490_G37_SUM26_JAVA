@@ -35,6 +35,12 @@ public class TranslatorEntity extends BaseEntity{
     @Column(name = "facebook")
     private String facebookUrl;
 
+    @Column(name = "cv_url", length = 512)
+    private String cvUrl;
+
+    @Column(name = "bio", columnDefinition = "TEXT")
+    private String bio;
+
     @Column(name = "joinedProjectCount", nullable = false)
     private Integer joinedProjectCount = 0;
 

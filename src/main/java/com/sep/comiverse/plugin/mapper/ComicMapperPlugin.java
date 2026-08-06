@@ -59,12 +59,13 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
 
         // Keep the old inactivity rule: PAUSED was removed together with ComicStatus; 
         // HIATUS is the matching value in ComicPublicationStatus.
+        // Auto-HIATUS: Comics with no new chapter in 180 days (6 months) are marked HIATUS.
         // DO NOT modify the `model` directly in a readOnly transaction, modify the DTO instead!
         if (dto.getPublicationStatus() == com.sep.comiverse.entity.enums.ComicPublicationStatus.ONGOING
                 && model.getLastChapterUpdatedAt() != null) {
-            java.time.Instant thirtyDaysAgo = java.time.Instant.now()
-                    .minus(30, java.time.temporal.ChronoUnit.DAYS);
-            if (model.getLastChapterUpdatedAt().isBefore(thirtyDaysAgo)) {
+            java.time.Instant sixMonthsAgo = java.time.Instant.now()
+                    .minus(180, java.time.temporal.ChronoUnit.DAYS);
+            if (model.getLastChapterUpdatedAt().isBefore(sixMonthsAgo)) {
                 dto.setPublicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.HIATUS);
             }
         }
@@ -114,6 +115,9 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
             dto.setRejectedChapterCount(0);
             dto.setPendingChapterCount(0);
         }
+        dto.setIsAppealed(model.getIsAppealed() != null && model.getIsAppealed());
+        dto.setAppealReason(model.getAppealReason());
+        dto.setRejectionReason(model.getRejectionReason());
 
         return dto;
     }
@@ -122,16 +126,9 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
     protected void performCustomUpdate(ComicEntity model, ComicDTO dto) {
         if (dto.getGenreIds() != null && !dto.getGenreIds().isEmpty()) {
             List<GenreEntity> genreEntities = genreRepository.findAllById(dto.getGenreIds());
-
             model.setGenres(new HashSet<>(genreEntities));
-
-            List<UUID> validGenreIds = genreEntities.stream()
-                    .map(GenreEntity::getId)
-                    .toList();
-            model.setGenreIds(validGenreIds);
         } else {
             model.setGenres(new HashSet<>());
-            model.setGenreIds(new ArrayList<>());
         }
     }
 

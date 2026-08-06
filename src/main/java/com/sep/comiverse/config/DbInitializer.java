@@ -526,7 +526,6 @@ public class DbInitializer implements CommandLineRunner {
                     .publicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.ONGOING)
                     .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
                     .genres(genres1)
-                    .genreIds(toGenreIds(genres1))
                     .cover("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg")
                     .viewCount(125000L)
                     .saveCount(4300)
@@ -544,7 +543,6 @@ public class DbInitializer implements CommandLineRunner {
                     .publicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.ONGOING)
                     .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
                     .genres(genres2)
-                    .genreIds(toGenreIds(genres2))
                     .cover("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg")
                     .viewCount(89000L)
                     .saveCount(2100)
@@ -562,7 +560,6 @@ public class DbInitializer implements CommandLineRunner {
                     .publicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.HIATUS)
                     .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
                     .genres(genres3)
-                    .genreIds(toGenreIds(genres3))
                     .cover("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg")
                     .viewCount(54000L)
                     .saveCount(1200)
@@ -580,7 +577,6 @@ public class DbInitializer implements CommandLineRunner {
                     .publicationStatus(com.sep.comiverse.entity.enums.ComicPublicationStatus.COMPLETED)
                     .moderationStatus(com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED)
                     .genres(genres4)
-                    .genreIds(toGenreIds(genres4))
                     .cover("https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg")
                     .viewCount(210000L)
                     .saveCount(7600)
@@ -603,9 +599,6 @@ public class DbInitializer implements CommandLineRunner {
                 .collect(java.util.stream.Collectors.toSet());
     }
 
-    private List<java.util.UUID> toGenreIds(Set<GenreEntity> genres) {
-        return genres.stream().map(GenreEntity::getId).toList();
-    }
 
     private void createProjectTeams() {
         // Disabled mock seeding

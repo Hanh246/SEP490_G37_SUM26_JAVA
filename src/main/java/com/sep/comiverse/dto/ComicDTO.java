@@ -27,6 +27,13 @@ public class ComicDTO {
     private String authorName;
     private ComicPublicationStatus publicationStatus;
     private ComicModerationStatus moderationStatus;
+    private Boolean isAppealed;
+    private Boolean isModEdited;
+    
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String previousStateSnapshot;
+    
+    private String appealReason;
 
     private String rejectionReason;
     private String cover;

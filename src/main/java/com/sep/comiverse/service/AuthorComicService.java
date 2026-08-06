@@ -48,6 +48,71 @@ public class AuthorComicService {
     private final ISubmissionRepository submissionRepository;
     private final IComicMetricSnapshotRepository metricSnapshotRepository;
     private final NotificationService notificationService;
+    private final com.sep.comiverse.repository.IUserRepository userRepository;
+    private final AuditLogService auditLogService;
+    private final com.sep.comiverse.plugin.crud.ComicCrudPlugin comicCrudPlugin;
+
+    @Transactional
+    public void confirmModEdit(UUID comicId, UUID authorId) {
+        ComicEntity comic = getOwnedComic(comicId, authorId);
+        comic.setIsModEdited(false);
+        comic.setPreviousStateSnapshot(null);
+        comicRepository.save(comic);
+        
+        try {
+            if (comicCrudPlugin != null) comicCrudPlugin.evictComicCache(comicId);
+        } catch (Exception e) {}
+        
+        auditLogService.log("COMIC_AUTHOR", "Author confirmed moderator edit for comic " + comicId);
+    }
+
+    @Transactional
+    public void submitAppeal(UUID comicId, UUID authorId, com.sep.comiverse.dto.request.AuthorComicAppealRequest request) {
+        try {
+            if (request == null || !StringUtils.hasText(request.getReason())) {
+                throw new CustomException(400, "Appeal statement cannot be blank", HttpStatus.BAD_REQUEST);
+            }
+            ComicEntity comic = getOwnedComic(comicId, authorId);
+            String category = StringUtils.hasText(request.getCategory()) ? request.getCategory().trim() : "GENERAL";
+            String reason = request.getReason().trim();
+
+            comic.setModerationStatus(ComicModerationStatus.UNPUBLISHED);
+            comic.setIsAppealed(true);
+            comic.setAppealReason(reason);
+            comicRepository.save(comic);
+            
+            try {
+                if (comicCrudPlugin != null) comicCrudPlugin.evictComicCache(comicId);
+            } catch (Exception e) {}
+
+            String authorName = userRepository.findById(authorId)
+                    .map(u -> StringUtils.hasText(u.getFullName()) ? u.getFullName() : u.getUsername())
+                    .orElse("Author");
+
+            auditLogService.log("COMIC_APPEAL",
+                    "Author " + authorName + " submitted appeal for comic \"" + comic.getTitle() + "\" (Category: " + category + "): " + reason);
+
+            String formattedCategory = category != null ? java.util.Arrays.stream(category.replace("_", " ").toLowerCase().split(" "))
+                    .map(word -> word.isEmpty() ? "" : Character.toUpperCase(word.charAt(0)) + word.substring(1))
+                    .collect(java.util.stream.Collectors.joining(" ")) : "Other";
+            
+            String notifTitle = "Author Appeal: " + comic.getTitle();
+            String notifMessage = "Author " + authorName + " submitted a moderation appeal for \"" + comic.getTitle() + "\" [" + formattedCategory + "]: " + reason;
+
+            notificationService.notifyRoles(
+                    List.of("MODERATOR", "ADMIN"),
+                    notifTitle,
+                    notifMessage,
+                    "APPEAL",
+                    NotificationPreferenceKey.REVIEW_QUEUE,
+                    "/moderator/comic/" + comic.getId()
+            );
+        } catch (CustomException ex) {
+            throw ex;
+        } catch (Throwable t) {
+            throw new CustomException(500, "submitAppeal Error: " + t.getClass().getSimpleName() + " - " + t.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
 
     @Transactional
     public AuthorComicResponse createComic(AuthorComicCreateRequest request) {
@@ -68,7 +133,6 @@ public class AuthorComicService {
                 .publicationStatus(publicationStatus)
                 .moderationStatus(ComicModerationStatus.DRAFT)
                 .genres(genres)
-                .genreIds(genres.stream().map(GenreEntity::getId).toList())
                 .viewCount(0L)
                 .saveCount(0)
                 .likeCount(0)
@@ -113,12 +177,10 @@ public class AuthorComicService {
                 ? comicRepository.searchAuthorComics(authorId, search, safePagination.toPageRequest())
                 : comicRepository.findByAuthorIdAndDeletedFalse(authorId, safePagination.toPageRequest());
 
-        Map<UUID, String> genreNamesById = loadGenreNamesById(comicPage.getContent());
         Map<UUID, Integer> chapterCountsByComicId = loadChapterCountsByComicId(comicPage.getContent());
 
         return comicPage.map(comic -> toComicSummaryResponse(
                 comic,
-                genreNamesById,
                 chapterCountsByComicId.getOrDefault(comic.getId(), 0)
         ));
     }
@@ -158,15 +220,14 @@ public class AuthorComicService {
         }
         if (request.getGenres() != null) {
             Set<GenreEntity> genres = resolveGenres(request.getGenres());
-            Set<UUID> currentGenreIds = comic.getGenreIds() == null
+            Set<UUID> currentGenreIds = comic.getGenres() == null
                     ? Set.of()
-                    : new HashSet<>(comic.getGenreIds());
+                    : comic.getGenres().stream().map(GenreEntity::getId).collect(Collectors.toSet());
             Set<UUID> requestedGenreIds = genres.stream()
                     .map(GenreEntity::getId)
                     .collect(Collectors.toSet());
             requiresModerationReview |= !currentGenreIds.equals(requestedGenreIds);
             comic.setGenres(genres);
-            comic.setGenreIds(requestedGenreIds.stream().toList());
         }
         if (request.getPublicationStatus() != null) {
             comic.setPublicationStatus(request.getPublicationStatus());
@@ -332,7 +393,6 @@ public class AuthorComicService {
      */
     private AuthorComicResponse toComicSummaryResponse(
             ComicEntity comic,
-            Map<UUID, String> genreNamesById,
             int chapterCount
     ) {
         ComicModerationStatus moderationStatus = comic.getModerationStatus() == null
@@ -342,7 +402,7 @@ public class AuthorComicService {
         return buildComicResponse(
                 comic,
                 moderationStatus,
-                toGenreNames(comic.getGenreIds(), genreNamesById),
+                toGenreNames(comic.getGenres()),
                 chapterCount
         );
     }
@@ -376,6 +436,9 @@ public class AuthorComicService {
                 .genres(genreNames)
                 .publicationStatus(comic.getPublicationStatus())
                 .moderationStatus(moderationStatus)
+                .isAppealed(comic.getIsAppealed() != null && comic.getIsAppealed())
+                .appealReason(comic.getAppealReason())
+                .rejectionReason(comic.getRejectionReason())
                 .viewCount(defaultLong(comic.getViewCount()))
                 .saveCount(defaultInteger(comic.getSaveCount()))
                 .likeCount(defaultInteger(comic.getLikeCount()))
@@ -488,48 +551,7 @@ public class AuthorComicService {
                 ));
     }
 
-    private Map<UUID, String> loadGenreNamesById(List<ComicEntity> comics) {
-        if (comics == null || comics.isEmpty()) {
-            return Map.of();
-        }
 
-        Set<UUID> genreIds = comics.stream()
-                .filter(java.util.Objects::nonNull)
-                .flatMap(comic -> comic.getGenreIds() == null
-                        ? java.util.stream.Stream.<UUID>empty()
-                        : comic.getGenreIds().stream())
-                .filter(java.util.Objects::nonNull)
-                .collect(Collectors.toSet());
-
-        if (genreIds.isEmpty()) {
-            return Map.of();
-        }
-
-        return genreRepository.findAllById(genreIds).stream()
-                .filter(genre -> genre.getId() != null && StringUtils.hasText(genre.getName()))
-                .collect(Collectors.toMap(
-                        GenreEntity::getId,
-                        GenreEntity::getName,
-                        (first, ignored) -> first
-                ));
-    }
-
-    private List<String> toGenreNames(
-            List<UUID> genreIds,
-            Map<UUID, String> genreNamesById
-    ) {
-        if (genreIds == null || genreIds.isEmpty()
-                || genreNamesById == null || genreNamesById.isEmpty()) {
-            return List.of();
-        }
-
-        return genreIds.stream()
-                .map(genreNamesById::get)
-                .filter(StringUtils::hasText)
-                .distinct()
-                .sorted(String.CASE_INSENSITIVE_ORDER)
-                .toList();
-    }
 
     private List<String> toGenreNames(Set<GenreEntity> genres) {
         if (genres == null || genres.isEmpty()) {

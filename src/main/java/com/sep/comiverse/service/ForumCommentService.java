@@ -2,6 +2,7 @@ package com.sep.comiverse.service;
 
 import com.sep.comiverse.dto.ForumCommentDTO;
 import com.sep.comiverse.dto.request.CreateForumCommentRequest;
+import com.sep.comiverse.dto.request.UpdateForumCommentRequest;
 import com.sep.comiverse.entity.ForumCommentEntity;
 import com.sep.comiverse.entity.ForumThreadEntity;
 import com.sep.comiverse.entity.UserEntity;
@@ -10,6 +11,7 @@ import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IForumCommentRepository;
 import com.sep.comiverse.repository.IForumThreadRepository;
 import com.sep.comiverse.repository.IUserRepository;
+import com.sep.comiverse.util.ProfanityFilterUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -40,6 +42,10 @@ public class ForumCommentService {
     public ForumCommentDTO createComment(UUID threadId, CreateForumCommentRequest request, UUID actorId) {
         if (actorId == null) {
             throw new CustomException(401, "UNAUTHORIZED", HttpStatus.UNAUTHORIZED);
+        }
+
+        if (ProfanityFilterUtil.containsProfanity(request.getContent())) {
+            throw new CustomException(400, "Your comment contains inappropriate language.", HttpStatus.BAD_REQUEST);
         }
 
         ForumThreadEntity thread = requireThread(threadId);
@@ -88,6 +94,57 @@ public class ForumCommentService {
         }
 
         return toDto(saved, actor);
+    }
+
+    @Transactional
+    public ForumCommentDTO updateComment(UUID commentId, UpdateForumCommentRequest request, UUID actorId) {
+        if (actorId == null) {
+            throw new CustomException(401, "UNAUTHORIZED", HttpStatus.UNAUTHORIZED);
+        }
+
+        if (ProfanityFilterUtil.containsProfanity(request.getContent())) {
+            throw new CustomException(400, "Your comment contains inappropriate language.", HttpStatus.BAD_REQUEST);
+        }
+
+        ForumCommentEntity comment = forumCommentRepository.findById(commentId)
+                .orElseThrow(() -> new CustomException(404, "Comment not found", HttpStatus.NOT_FOUND));
+
+        if (Boolean.TRUE.equals(comment.getDeleted())) {
+            throw new CustomException(404, "Comment not found", HttpStatus.NOT_FOUND);
+        }
+
+        if (!comment.getUserId().equals(actorId)) {
+            throw new CustomException(403, "You do not have permission to edit this comment", HttpStatus.FORBIDDEN);
+        }
+
+        comment.setContent(request.getContent().trim());
+        ForumCommentEntity saved = forumCommentRepository.save(comment);
+
+        return toDto(saved);
+    }
+
+    @Transactional
+    public void deleteComment(UUID commentId, UUID actorId, String role) {
+        if (actorId == null) {
+            throw new CustomException(401, "UNAUTHORIZED", HttpStatus.UNAUTHORIZED);
+        }
+
+        ForumCommentEntity comment = forumCommentRepository.findById(commentId)
+                .orElseThrow(() -> new CustomException(404, "Comment not found", HttpStatus.NOT_FOUND));
+
+        if (Boolean.TRUE.equals(comment.getDeleted())) {
+            throw new CustomException(404, "Comment not found", HttpStatus.NOT_FOUND);
+        }
+
+        boolean isOwner = comment.getUserId().equals(actorId);
+        boolean isAdminOrModerator = "ADMIN".equalsIgnoreCase(role) || "MODERATOR".equalsIgnoreCase(role);
+
+        if (!isOwner && !isAdminOrModerator) {
+            throw new CustomException(403, "You do not have permission to delete this comment", HttpStatus.FORBIDDEN);
+        }
+
+        comment.setDeleted(true);
+        forumCommentRepository.save(comment);
     }
 
     private ForumThreadEntity requireThread(UUID threadId) {

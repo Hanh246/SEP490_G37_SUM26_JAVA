@@ -13,6 +13,7 @@ import com.sep.comiverse.repository.IChapterCommentRepository;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IComicCommentRepository;
 import com.sep.comiverse.repository.IComicRepository;
+import com.sep.comiverse.util.ProfanityFilterUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -42,6 +43,10 @@ public class CommentService {
         // 1. Verify user is authenticated
         if (userId == null) {
             throw new CustomException(401, "UNAUTHORIZED", HttpStatus.UNAUTHORIZED);
+        }
+
+        if (ProfanityFilterUtil.containsProfanity(request.getContent())) {
+            throw new CustomException(400, "Your comment contains inappropriate language.", HttpStatus.BAD_REQUEST);
         }
 
         // 2. Verify Comic exists
@@ -99,6 +104,10 @@ public class CommentService {
         // 1. Verify user is authenticated
         if (userId == null) {
             throw new CustomException(401, "UNAUTHORIZED", HttpStatus.UNAUTHORIZED);
+        }
+
+        if (ProfanityFilterUtil.containsProfanity(request.getContent())) {
+            throw new CustomException(400, "Your comment contains inappropriate language.", HttpStatus.BAD_REQUEST);
         }
 
         // 2. Verify Chapter exists and retain its comic for the mobile deep link.
@@ -257,9 +266,9 @@ public class CommentService {
         }
 
         boolean isOwner = comment.getUserId().equals(userId);
-        boolean isAdminOrStaff = "ADMIN".equalsIgnoreCase(userRole) || "STAFF".equalsIgnoreCase(userRole);
+        boolean isAdminOrModerator = "ADMIN".equalsIgnoreCase(userRole) || "MODERATOR".equalsIgnoreCase(userRole);
 
-        if (!isOwner && !isAdminOrStaff) {
+        if (!isOwner && !isAdminOrModerator) {
             throw new CustomException(403, "You do not have permission to delete this comment", HttpStatus.FORBIDDEN);
         }
 
@@ -285,9 +294,9 @@ public class CommentService {
         }
 
         boolean isOwner = comment.getUserId().equals(userId);
-        boolean isAdminOrStaff = "ADMIN".equalsIgnoreCase(userRole) || "STAFF".equalsIgnoreCase(userRole);
+        boolean isAdminOrModerator = "ADMIN".equalsIgnoreCase(userRole) || "MODERATOR".equalsIgnoreCase(userRole);
 
-        if (!isOwner && !isAdminOrStaff) {
+        if (!isOwner && !isAdminOrModerator) {
             throw new CustomException(403, "You do not have permission to delete this comment", HttpStatus.FORBIDDEN);
         }
 

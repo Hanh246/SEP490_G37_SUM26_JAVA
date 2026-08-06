@@ -73,6 +73,18 @@ public class NotificationService {
             String type,
             NotificationPreferenceKey preferenceKey
     ) {
+        return notifyRoles(roles, title, message, type, preferenceKey, null);
+    }
+
+    @Transactional
+    public int notifyRoles(
+            Collection<String> roles,
+            String title,
+            String message,
+            String type,
+            NotificationPreferenceKey preferenceKey,
+            String actionUrl
+    ) {
         if (roles == null || roles.isEmpty() || preferenceKey == null) {
             return 0;
         }
@@ -97,7 +109,7 @@ public class NotificationService {
         String targetRoles = String.join(", ", normalizedRoles);
 
         List<NotificationEntity> savedList = notificationRepository.saveAll(recipients.stream()
-                .map(user -> buildWorkflowNotification(user, title, message, type, targetRoles, null))
+                .map(user -> buildWorkflowNotification(user, title, message, type, targetRoles, actionUrl))
                 .toList());
 
         for (NotificationEntity saved : savedList) {

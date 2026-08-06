@@ -52,6 +52,20 @@ public class ComicEntity extends BaseEntity {
     @Column(name = "moderation_status", nullable = false, length = 32)
     private ComicModerationStatus moderationStatus = ComicModerationStatus.DRAFT;
 
+    @Builder.Default
+    @Column(name = "is_appealed", nullable = false)
+    private Boolean isAppealed = false;
+
+    @Builder.Default
+    @Column(name = "is_mod_edited", nullable = false, columnDefinition = "boolean default false")
+    private Boolean isModEdited = false;
+
+    @Column(name = "previous_state_snapshot", columnDefinition = "TEXT")
+    private String previousStateSnapshot;
+
+    @Column(name = "appeal_reason", columnDefinition = "TEXT")
+    private String appealReason;
+
     @Column(name = "rejection_reason", columnDefinition = "TEXT")
     private String rejectionReason;
 
@@ -97,9 +111,6 @@ public class ComicEntity extends BaseEntity {
     @Column(name = "chapter_count", nullable = false, columnDefinition = "integer default 0")
     private Integer chapterCount = 0;
 
-    @JdbcTypeCode(SqlTypes.ARRAY)
-    @Column(name = "genre_ids", columnDefinition = "uuid[]")
-    private List<UUID> genreIds;
 
     @Convert(converter = com.sep.comiverse.entity.converter.VectorConverter.class)
     @Column(name = "summary_vector", columnDefinition = "vector(768)")

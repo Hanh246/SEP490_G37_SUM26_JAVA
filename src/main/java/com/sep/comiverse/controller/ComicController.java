@@ -35,6 +35,7 @@ public class ComicController {
     private final JwtTokenUtil jwtTokenUtil;
     private final com.sep.comiverse.service.AuditLogService auditLogService;
     private final com.sep.comiverse.service.NotificationService notificationService;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     @GetMapping
     @Operation(summary = "Retrieve a paginated public collection of published comics")
@@ -206,6 +207,16 @@ public class ComicController {
             dto.setTitle(null);
             dto.setSummary(null);
             dto.setCover(null);
+            
+            // Set fields for the Author to review later
+            if (before != null) {
+                try {
+                    dto.setIsModEdited(true);
+                    dto.setPreviousStateSnapshot(objectMapper.writeValueAsString(before));
+                } catch (Exception e) {
+                    // Ignore mapping error
+                }
+            }
         }
 
         ComicDTO updated = comicCrudPlugin.update(id, dto);
@@ -243,14 +254,19 @@ public class ComicController {
 
         // Notify the Author about the edit (only when a Moderator edits someone else's comic)
         if (isModerator && before != null && before.getAuthorId() != null && changes.length() > 0) {
+            String reason = dto.getRejectionReason();
             String notifTitle = "Comic metadata updated by Moderator";
             String notifMessage = "Moderator " + modName + " updated your comic \"" + updated.getTitle() + "\": " + changeDesc + ".";
+            if (reason != null && !reason.isBlank()) {
+                notifMessage += " Reason: " + reason.trim();
+            }
             try {
                 notificationService.notifyUser(
                         before.getAuthorId(),
                         notifTitle,
                         notifMessage,
                         "UPDATE",
+                        "/author/comics/" + updated.getId() + "?appeal=true",
                         com.sep.comiverse.entity.enums.NotificationPreferenceKey.SUBMISSION_STATUS
                 );
             } catch (Exception e) {

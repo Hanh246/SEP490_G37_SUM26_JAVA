@@ -66,6 +66,37 @@ public class AuthorComicController {
                 .build());
     }
 
+    @PutMapping("/{comicId}/confirm-edit")
+    @Operation(summary = "Confirm moderator edits", description = "Allows the author to confirm and accept moderator edits, clearing the notice.")
+    public ResponseEntity<BaseResponse<Void>> confirmModEdit(
+            @PathVariable UUID comicId,
+            @RequestParam(value = "authorId", required = false) UUID authorId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        UUID resolvedAuthorId = resolveAuthorId(authorId, principal);
+        authorComicService.confirmModEdit(comicId, resolvedAuthorId);
+        return ResponseEntity.ok(BaseResponse.<Void>builder()
+                .success(true)
+                .message("Edits confirmed")
+                .build());
+    }
+
+    @PostMapping("/{comicId}/appeal")
+    @Operation(summary = "Submit an appeal / dispute for a comic", description = "Allows the author to submit an appeal regarding moderation changes or rejection.")
+    public ResponseEntity<BaseResponse<Void>> submitAppeal(
+            @PathVariable UUID comicId,
+            @Valid @RequestBody com.sep.comiverse.dto.request.AuthorComicAppealRequest request,
+            @RequestParam(value = "authorId", required = false) UUID authorId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        UUID resolvedAuthorId = resolveAuthorId(authorId, principal);
+        authorComicService.submitAppeal(comicId, resolvedAuthorId, request);
+        return ResponseEntity.ok(BaseResponse.<Void>builder()
+                .success(true)
+                .message("Appeal submitted successfully! Moderators have been notified.")
+                .build());
+    }
+
     @GetMapping
     @Operation(summary = "List own comics", description = "Returns comics owned by the authenticated author")
     public ResponseEntity<PaginationResponse<List<AuthorComicResponse>>> listOwnComics(

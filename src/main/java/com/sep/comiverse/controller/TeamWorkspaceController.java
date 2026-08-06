@@ -36,6 +36,7 @@ public class TeamWorkspaceController {
     private final IChapterRepository chapterRepository;
     private final IUserRepository userRepository;
     private final IPageTranslationRepository iPageTranslationRepository;
+    private final ITranslatorRepository translatorRepository;
     private final NotificationService notificationService;
     private final UserPresenceService userPresenceService;
     private final SimpMessagingTemplate messagingTemplate;
@@ -108,6 +109,9 @@ public class TeamWorkspaceController {
 
     @PostMapping("/announcements/{announcementId}/comments")
     public ResponseEntity<TeamPostCommentEntity> createComment(@PathVariable UUID announcementId, @RequestBody TeamPostCommentEntity comment) {
+        if (com.sep.comiverse.util.ProfanityFilterUtil.containsProfanity(comment.getContent())) {
+            throw new com.sep.comiverse.exception.CustomException(400, "Your comment contains inappropriate language.", org.springframework.http.HttpStatus.BAD_REQUEST);
+        }
         comment.setAnnouncementId(announcementId);
         if (comment.getLikes() == null) {
             comment.setLikes(0);
@@ -428,6 +432,18 @@ public class TeamWorkspaceController {
         request.setProjectTeamId(teamId);
         if (principal != null) {
             request.setRequesterId(principal.getId());
+            
+            // Fetch Translator Profile to inject CV and Bio
+            translatorRepository.findByUser_Id(principal.getId()).ifPresent(translator -> {
+                request.setCvUrl(translator.getCvUrl());
+                // If user didn't write a custom message, use their Bio
+                if (request.getText() == null || request.getText().trim().isEmpty()) {
+                    request.setText(translator.getBio());
+                } else {
+                    // Prepend bio to custom message if both exist
+                    request.setText(translator.getBio() + "\n\n---\nMessage: " + request.getText());
+                }
+            });
         }
         TeamJoinRequestEntity saved = joinRequestRepository.save(request);
         projectTeamRepository.findById(teamId).ifPresent(team ->

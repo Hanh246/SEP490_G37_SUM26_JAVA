@@ -26,6 +26,9 @@ public class AuthorComicResponse {
     private List<String> genres;
     private ComicPublicationStatus publicationStatus;
     private ComicModerationStatus moderationStatus;
+    private Boolean isAppealed;
+    private String appealReason;
+    private String rejectionReason;
     private Long viewCount;
     private Integer saveCount;
     private Integer likeCount;

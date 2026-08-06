@@ -23,8 +23,7 @@ public class ChapterLiteDTO {
     
     @Builder.Default
     private java.util.List<String> translatedLanguages = new java.util.ArrayList<>();
-
-    /** Constructor used by JPQL "SELECT new" projections (10 args, no translatedLanguages). */
+    
     public ChapterLiteDTO(UUID id, UUID comicId, String chapterNumber, String title,
                           Long viewCount, Boolean isPremium, Instant createdAt,
                           ChapterStatus moderationStatus, UUID approvedById, Instant approvedAt) {

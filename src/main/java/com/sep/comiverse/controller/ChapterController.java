@@ -270,6 +270,53 @@ public class ChapterController {
         }
     }
 
+    @PostMapping("/{id}/takedown")
+    @PreAuthorize("hasAnyAuthority('MODERATOR', 'ADMIN')")
+    @org.springframework.transaction.annotation.Transactional
+    public ResponseEntity<BaseResponse<ChapterDTO>> takedownChapter(
+            @PathVariable UUID id,
+            @RequestBody java.util.Map<String, String> body,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        try {
+            String reason = body.getOrDefault("reason", "No reason provided");
+            ChapterEntity chapter = chapterRepository.findById(id)
+                    .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Chapter with id " + id + " not found"));
+            
+            // Set status to REJECTED so the author has to resubmit
+            chapter.setModerationStatus(ChapterStatus.REJECTED);
+            chapter.setRejectionReason(reason);
+            if (principal != null) {
+                chapter.setRejectedById(principal.getId());
+            }
+            ChapterEntity savedChapter = chapterRepository.save(chapter);
+
+            // Notify the author
+            if (chapter.getComic() != null && chapter.getComic().getAuthorId() != null) {
+                notificationService.notifyUser(
+                        chapter.getComic().getAuthorId(),
+                        "Chapter Taken Down",
+                        "Your chapter '" + chapter.getTitle() + "' in comic '" + chapter.getComic().getTitle() + "' was taken down. Reason: " + reason,
+                        "MODERATION",
+                        com.sep.comiverse.entity.enums.NotificationPreferenceKey.SUBMISSION_STATUS
+                );
+            }
+            
+            chapterCrudPlugin.evictChaptersCache(chapter.getComic() != null ? chapter.getComic().getId() : null);
+
+            ChapterDTO responseDto = chapterCrudPlugin.getPlugin().toDto(savedChapter);
+            return ResponseEntity.ok(BaseResponse.<ChapterDTO>builder()
+                    .success(true)
+                    .data(responseDto)
+                    .build());
+        } catch (Exception ex) {
+            return ResponseEntity.status(500).body(BaseResponse.<ChapterDTO>builder()
+                    .success(false)
+                    .message("Error: " + ex.getMessage())
+                    .build());
+        }
+    }
+
     /**
      * Reader/Frontend lấy danh sách chapter của comic.
      * Quan trọng: trong getChaptersByComicId phải chỉ trả chapter PUBLISHED.
