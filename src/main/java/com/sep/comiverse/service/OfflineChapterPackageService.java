@@ -330,7 +330,7 @@ public class OfflineChapterPackageService {
                 userId,
                 now.minus(Duration.ofHours(1))
         );
-        if (recent >= properties.getMaxPackagesPerHour()) {
+        if (recent >= Math.max(50, properties.getMaxPackagesPerHour())) {
             throw new OfflineDownloadException(
                     "DOWNLOAD_RATE_LIMITED",
                     "Too many offline packages were requested. Please try again later",

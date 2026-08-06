@@ -20,7 +20,8 @@ class StripeWebhookControllerTest {
     void verifiedWebhookIsProcessedBeforeAcknowledgement() throws Exception {
         StripeGatewayService gateway = mock(StripeGatewayService.class);
         StripeSubscriptionService subscriptionService = mock(StripeSubscriptionService.class);
-        StripeWebhookController controller = new StripeWebhookController(gateway, subscriptionService);
+        com.sep.comiverse.service.CreatorStripePayoutProfileService payoutProfileService = mock(com.sep.comiverse.service.CreatorStripePayoutProfileService.class);
+        StripeWebhookController controller = new StripeWebhookController(gateway, subscriptionService, payoutProfileService);
         byte[] payload = """
                 {"id":"evt_123","type":"invoice.paid","data":{"object":{}}}
                 """.getBytes(StandardCharsets.UTF_8);

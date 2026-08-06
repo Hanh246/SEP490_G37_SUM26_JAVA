@@ -26,9 +26,9 @@ public class OfflineDownloadProperties {
     private Duration connectTimeout = Duration.ofSeconds(8);
     private Duration sourceRequestTimeout = Duration.ofSeconds(20);
     private int maxDevicesPerUser = 3;
-    private int maxChallengesPerHour = 10;
-    private int maxPackagesPerHour = 5;
-    private int maxLicensesPerHour = 20;
+    private int maxChallengesPerHour = 50;
+    private int maxPackagesPerHour = 50;
+    private int maxLicensesPerHour = 100;
     private int maxPages = 200;
     private long maxPageBytes = 12L * 1024L * 1024L;
     private long maxPackageBytes = 150L * 1024L * 1024L;
