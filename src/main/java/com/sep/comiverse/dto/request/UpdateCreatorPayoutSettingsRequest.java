@@ -23,9 +23,9 @@ public class UpdateCreatorPayoutSettingsRequest {
     private BigDecimal minimumPayoutUsd;
 
     @NotNull
-    @DecimalMin(value = "0.01", message = "Translator task rate must be at least 0.01 USD")
-    @DecimalMax(value = MAX_USD, message = "Translator task rate cannot exceed 1,000,000 USD")
-    @Digits(integer = 7, fraction = 2, message = "Translator task rate must have at most 2 decimal places")
+    @DecimalMin(value = "0.01", message = "Translator page rate must be at least 0.01 USD")
+    @DecimalMax(value = MAX_USD, message = "Translator page rate cannot exceed 1,000,000 USD")
+    @Digits(integer = 7, fraction = 2, message = "Translator page rate must have at most 2 decimal places")
     private BigDecimal translatorTaskRateUsd;
 
     @NotNull

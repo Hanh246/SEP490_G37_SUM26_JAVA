@@ -12,16 +12,31 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.math.BigDecimal;
 import java.util.UUID;
 
 @Repository
 public interface ICreatorPayoutRequestRepository extends AbstractCrudRepository<CreatorPayoutRequestEntity, UUID> {
 
-    Optional<CreatorPayoutRequestEntity> findByUserIdAndPayoutMonthAndDeletedFalse(UUID userId, String payoutMonth);
+    List<CreatorPayoutRequestEntity> findAllByUserIdAndPayoutMonthAndDeletedFalseOrderByCreatedAtDesc(UUID userId, String payoutMonth);
 
     List<CreatorPayoutRequestEntity> findAllByUserIdAndDeletedFalseOrderByCreatedAtDesc(UUID userId);
 
     Page<CreatorPayoutRequestEntity> findAllByStatusAndDeletedFalse(CreatorPayoutStatus status, Pageable pageable);
+
+    @Query("""
+            SELECT COALESCE(SUM(COALESCE(p.baseAmountUsd, p.amount)), 0)
+            FROM CreatorPayoutRequestEntity p
+            WHERE p.userId = :userId
+              AND p.payoutMonth <= :throughMonth
+              AND p.deleted = false
+              AND p.status IN :statuses
+            """)
+    BigDecimal sumReservedThroughMonth(
+            @Param("userId") UUID userId,
+            @Param("throughMonth") String throughMonth,
+            @Param("statuses") List<CreatorPayoutStatus> statuses
+    );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM CreatorPayoutRequestEntity p WHERE p.id = :id AND p.deleted = false")

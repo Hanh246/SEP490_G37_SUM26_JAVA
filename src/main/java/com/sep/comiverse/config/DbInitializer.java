@@ -57,6 +57,7 @@ public class DbInitializer implements CommandLineRunner {
         migrateRevenueAnalyticsSchema();
         migrateCreatorPayoutAmountsToUsd();
         migrateCompletedTeamTasks();
+        migrateTranslatorPagePaymentSchema();
 
         createRoles();
         createAdmin();
@@ -350,6 +351,70 @@ public class DbInitializer implements CommandLineRunner {
                               AND assignee_ids IS NOT NULL
                               AND cardinality(assignee_ids) > 0
                         $sql$;
+                    END IF;
+                END $$;
+                """);
+    }
+
+    private void migrateTranslatorPagePaymentSchema() {
+        jdbcTemplate.execute("""
+                DO $$
+                BEGIN
+                    IF to_regclass('public.creator_payout_requests') IS NOT NULL THEN
+                        ALTER TABLE creator_payout_requests
+                            DROP CONSTRAINT IF EXISTS uk_creator_payout_user_month;
+                    END IF;
+
+                    IF to_regclass('public.page_translation') IS NOT NULL THEN
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'page_translation'
+                              AND column_name = 'responsibility_factor'
+                        ) THEN
+                            UPDATE page_translation
+                            SET responsibility_factor = 1.00
+                            WHERE responsibility_factor IS NULL;
+                        END IF;
+
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'page_translation'
+                              AND column_name = 'assigned_translator_id'
+                        ) THEN
+                            UPDATE page_translation p
+                            SET assigned_translator_id = t.assignee_id
+                            FROM team_tasks t
+                            WHERE p.task_id = t.id
+                              AND p.assigned_translator_id IS NULL;
+                        END IF;
+                    END IF;
+
+                    IF to_regclass('public.team_tasks') IS NOT NULL
+                       AND EXISTS (
+                           SELECT 1 FROM information_schema.columns
+                           WHERE table_schema = 'public'
+                             AND table_name = 'team_tasks'
+                             AND column_name = 'chapter_reward_usd'
+                       ) THEN
+                        UPDATE team_tasks t
+                        SET chapter_reward_usd = ROUND(
+                            COALESCE(s.translator_task_rate_vnd, 1.20)
+                            * COALESCE(p.page_count, 0),
+                            2
+                        )
+                        FROM (
+                            SELECT task_id, COUNT(*)::numeric AS page_count
+                            FROM page_translation
+                            GROUP BY task_id
+                        ) p
+                        LEFT JOIN creator_payout_settings s
+                          ON s.config_key = 'DEFAULT'
+                         AND COALESCE(s.deleted, false) = false
+                        WHERE t.id = p.task_id
+                          AND t.chapter_reward_usd IS NULL
+                          AND p.page_count > 0;
                     END IF;
                 END $$;
                 """);
