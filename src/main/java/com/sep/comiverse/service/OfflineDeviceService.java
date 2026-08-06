@@ -254,11 +254,10 @@ public class OfflineDeviceService {
             );
         }
         if (!existing.getPublicKeySha256().equalsIgnoreCase(fingerprint)) {
-            throw new OfflineDownloadException(
-                    "OFFLINE_DEVICE_KEY_MISMATCH",
-                    "This device identifier is already bound to a different key",
-                    HttpStatus.CONFLICT
-            );
+            // User reinstalled app or cleared key store on the same physical device;
+            // update existing binding to the new public key.
+            existing.setPublicKeySha256(fingerprint);
+            deviceRepository.save(existing);
         }
     }
 
