@@ -18,7 +18,7 @@ import java.util.UUID;
         @UniqueConstraint(columnNames = {"comic_id", "log_date"})
 })
 @EqualsAndHashCode(callSuper = true)
-public class ComicDailyVewsEntity extends BaseEntity {
+public class ComicDailyViewsEntity extends BaseEntity {
 
     @Column(name = "comic_id", nullable = false)
     private UUID comicId;

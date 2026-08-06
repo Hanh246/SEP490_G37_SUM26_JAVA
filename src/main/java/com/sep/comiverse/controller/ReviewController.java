@@ -109,6 +109,12 @@ public class ReviewController {
         String bubbleId = body.get("bubbleId");
         boolean isPageLevel = bubbleId == null || bubbleId.isBlank();
 
+        String content = body.get("content");
+        if (com.sep.comiverse.util.ProfanityFilterUtil.containsProfanity(content)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("success", false, "message", "Your comment contains inappropriate language."));
+        }
+
         boolean alreadyExists = isPageLevel
                 ? reviewCommentRepository.findByPage_IdAndBubbleIdIsNullAndAuthor_Id(pageId, authorId).isPresent()
                 : reviewCommentRepository.findByPage_IdAndBubbleIdAndAuthor_Id(pageId, bubbleId, authorId).isPresent();

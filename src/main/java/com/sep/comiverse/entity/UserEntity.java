@@ -10,7 +10,11 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Table(name = "users")
+@Table(name = "users", indexes = {
+        @Index(name = "idx_users_email", columnList = "email"),
+        @Index(name = "idx_users_full_name", columnList = "full_name"),
+        @Index(name = "idx_users_username", columnList = "username")
+})
 @EqualsAndHashCode(callSuper = true)
 public class UserEntity extends BaseEntity {
 

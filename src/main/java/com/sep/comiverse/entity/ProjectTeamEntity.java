@@ -11,7 +11,10 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Table(name = "project_teams")
+@Table(name = "project_teams", indexes = {
+        @Index(name = "idx_project_teams_title", columnList = "title"),
+        @Index(name = "idx_project_teams_comic_name", columnList = "comic_name")
+})
 @EqualsAndHashCode(callSuper = true)
 @ToString(exclude = "chaptersList")
 public class ProjectTeamEntity extends BaseEntity {

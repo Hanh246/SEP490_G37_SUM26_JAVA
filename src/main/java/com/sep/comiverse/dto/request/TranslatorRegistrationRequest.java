@@ -14,4 +14,6 @@ public class TranslatorRegistrationRequest {
     private Integer experiencedYears;
     private String phone;
     private String facebookUrl;
+    private String cvUrl;
+    private String bio;
 }

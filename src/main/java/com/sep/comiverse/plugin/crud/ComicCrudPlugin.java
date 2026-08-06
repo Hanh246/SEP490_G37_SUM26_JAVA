@@ -121,15 +121,21 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         if (dto.getLastChapterUpdatedAt() != null) {
             existing.setLastChapterUpdatedAt(dto.getLastChapterUpdatedAt());
         }
+        
+        if (dto.getIsModEdited() != null) {
+            existing.setIsModEdited(dto.getIsModEdited());
+        }
+        
+        // previousStateSnapshot will be passed in from ComicController directly using dto if needed
+        if (dto.getPreviousStateSnapshot() != null) {
+            existing.setPreviousStateSnapshot(dto.getPreviousStateSnapshot());
+        }
+        // Note: we can also clear the snapshot by passing empty string
 
         // Update genres relation and genre_ids list property
         if (dto.getGenreIds() != null) {
             List<GenreEntity> genreEntities = genreRepository.findAllById(dto.getGenreIds());
             existing.setGenres(new java.util.HashSet<>(genreEntities));
-            List<UUID> validGenreIds = genreEntities.stream()
-                    .map(GenreEntity::getId)
-                    .toList();
-            existing.setGenreIds(validGenreIds);
         }
 
         ComicEntity saved = comicRepository.save(existing);

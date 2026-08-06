@@ -15,6 +15,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequiredArgsConstructor
@@ -62,6 +63,8 @@ public class TranslatorRegistrationController {
                 .experienceYears(request.getExperiencedYears())
                 .phoneNumber(request.getPhone())
                 .facebookUrl(request.getFacebookUrl())
+                .cvUrl(request.getCvUrl())
+                .bio(request.getBio())
                 .joinedProjectCount(0)
                 .build();
 
@@ -92,5 +95,13 @@ public class TranslatorRegistrationController {
                 .<ResponseEntity<?>>map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
                         .body(Map.of("success", false, "message", "No translator profile found.")));
+    }
+
+    @GetMapping("/{userId}/profile")
+    public ResponseEntity<?> getProfileByUserId(@PathVariable UUID userId) {
+        return translatorRepository.findByUser_Id(userId)
+                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("success", false, "message", "No translator profile found for this user.")));
     }
 }

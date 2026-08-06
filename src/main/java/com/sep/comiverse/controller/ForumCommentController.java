@@ -2,6 +2,7 @@ package com.sep.comiverse.controller;
 
 import com.sep.comiverse.dto.ForumCommentDTO;
 import com.sep.comiverse.dto.request.CreateForumCommentRequest;
+import com.sep.comiverse.dto.request.UpdateForumCommentRequest;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.ForumCommentService;
@@ -16,6 +17,8 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -55,5 +58,35 @@ public class ForumCommentController {
                         .data(created)
                         .message("Forum reply created successfully")
                         .build());
+    }
+
+    @PutMapping("/{commentId}")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Update a forum comment")
+    public ResponseEntity<BaseResponse<ForumCommentDTO>> updateComment(
+            @PathVariable UUID commentId,
+            @Valid @RequestBody UpdateForumCommentRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        ForumCommentDTO updated = forumCommentService.updateComment(commentId, request, principal.getId());
+        return ResponseEntity.ok(BaseResponse.<ForumCommentDTO>builder()
+                .success(true)
+                .data(updated)
+                .message("Forum comment updated successfully")
+                .build());
+    }
+
+    @DeleteMapping("/{commentId}")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Delete a forum comment")
+    public ResponseEntity<BaseResponse<Void>> deleteComment(
+            @PathVariable UUID commentId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        forumCommentService.deleteComment(commentId, principal.getId(), principal.getRole());
+        return ResponseEntity.ok(BaseResponse.<Void>builder()
+                .success(true)
+                .message("Forum comment deleted successfully")
+                .build());
     }
 }
