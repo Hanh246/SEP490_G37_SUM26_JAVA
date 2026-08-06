@@ -49,4 +49,13 @@ public interface ITeamTaskRepository extends JpaRepository<TeamTaskEntity, UUID>
             @Param("to") Instant to
     );
 
+    @Query("""
+            SELECT DISTINCT t FROM TeamTaskEntity t
+            LEFT JOIN FETCH t.chapter
+            LEFT JOIN FETCH t.pages
+            WHERE t.completedAt IS NOT NULL
+              AND LOWER(COALESCE(t.status, '')) IN ('completed', 'complete', 'done', 'published')
+            """)
+    List<TeamTaskEntity> findAllCompletedForSettlementBackfill();
+
 }
