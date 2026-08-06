@@ -31,4 +31,16 @@ public class ForumCommentEntity extends BaseEntity {
 
     @Column(name = "parent_id")
     private UUID parentId;
+
+    @Column(name = "likes_count")
+    @Builder.Default
+    private Integer likesCount = 0;
+
+    public int getLikesCount() {
+        return likesCount == null ? 0 : likesCount;
+    }
+
+    public void setLikesCount(Integer likesCount) {
+        this.likesCount = likesCount == null ? 0 : likesCount;
+    }
 }

@@ -1,5 +1,6 @@
 package com.sep.comiverse.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -21,4 +22,16 @@ public class ForumCommentDTO {
     private String content;
     private UUID parentId;
     private Instant createdAt;
+
+    @Builder.Default
+    @JsonProperty("likesCount")
+    private Integer likesCount = 0;
+
+    @JsonProperty("isLikedByCurrentUser")
+    private Boolean isLikedByCurrentUser;
+
+    @JsonProperty("likedByCurrentUser")
+    public Boolean getLikedByCurrentUser() {
+        return isLikedByCurrentUser != null && isLikedByCurrentUser;
+    }
 }

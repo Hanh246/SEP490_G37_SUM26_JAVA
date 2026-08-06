@@ -5,6 +5,8 @@ import com.sep.comiverse.dto.ComicCommentDTO;
 import com.sep.comiverse.dto.UserSnapshot;
 import com.sep.comiverse.dto.request.CreateChapterCommentRequest;
 import com.sep.comiverse.dto.request.CreateComicCommentRequest;
+import com.sep.comiverse.dto.request.UpdateChapterCommentRequest;
+import com.sep.comiverse.dto.request.UpdateComicCommentRequest;
 import com.sep.comiverse.entity.ChapterCommentEntity;
 import com.sep.comiverse.entity.ComicCommentEntity;
 import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
@@ -250,6 +252,58 @@ public class CommentService {
         result.add(mapToChapterCommentDTO(rootComment));
         result.add(mapToChapterCommentDTO(comment));
         return result;
+    }
+
+    @Transactional
+    public ComicCommentDTO updateComicComment(UUID commentId, UpdateComicCommentRequest request, UUID userId) {
+        if (userId == null) {
+            throw new CustomException(401, "UNAUTHORIZED", HttpStatus.UNAUTHORIZED);
+        }
+
+        if (ProfanityFilterUtil.containsProfanity(request.getContent())) {
+            throw new CustomException(400, "Your comment contains inappropriate language.", HttpStatus.BAD_REQUEST);
+        }
+
+        ComicCommentEntity comment = comicCommentRepository.findById(commentId)
+                .orElseThrow(() -> new CustomException(404, "Comic comment not found", HttpStatus.NOT_FOUND));
+
+        if (Boolean.TRUE.equals(comment.getDeleted())) {
+            throw new CustomException(404, "Comic comment not found", HttpStatus.NOT_FOUND);
+        }
+
+        if (!comment.getUserId().equals(userId)) {
+            throw new CustomException(403, "You do not have permission to edit this comment", HttpStatus.FORBIDDEN);
+        }
+
+        comment.setContent(request.getContent());
+        ComicCommentEntity saved = comicCommentRepository.save(comment);
+        return mapToComicCommentDTO(saved);
+    }
+
+    @Transactional
+    public ChapterCommentDTO updateChapterComment(UUID commentId, UpdateChapterCommentRequest request, UUID userId) {
+        if (userId == null) {
+            throw new CustomException(401, "UNAUTHORIZED", HttpStatus.UNAUTHORIZED);
+        }
+
+        if (ProfanityFilterUtil.containsProfanity(request.getContent())) {
+            throw new CustomException(400, "Your comment contains inappropriate language.", HttpStatus.BAD_REQUEST);
+        }
+
+        ChapterCommentEntity comment = chapterCommentRepository.findById(commentId)
+                .orElseThrow(() -> new CustomException(404, "Chapter comment not found", HttpStatus.NOT_FOUND));
+
+        if (Boolean.TRUE.equals(comment.getDeleted())) {
+            throw new CustomException(404, "Chapter comment not found", HttpStatus.NOT_FOUND);
+        }
+
+        if (!comment.getUserId().equals(userId)) {
+            throw new CustomException(403, "You do not have permission to edit this comment", HttpStatus.FORBIDDEN);
+        }
+
+        comment.setContent(request.getContent());
+        ChapterCommentEntity saved = chapterCommentRepository.save(comment);
+        return mapToChapterCommentDTO(saved);
     }
 
     @Transactional

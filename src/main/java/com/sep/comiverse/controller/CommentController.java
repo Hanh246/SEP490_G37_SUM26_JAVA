@@ -4,6 +4,8 @@ import com.sep.comiverse.dto.ChapterCommentDTO;
 import com.sep.comiverse.dto.ComicCommentDTO;
 import com.sep.comiverse.dto.request.CreateChapterCommentRequest;
 import com.sep.comiverse.dto.request.CreateComicCommentRequest;
+import com.sep.comiverse.dto.request.UpdateChapterCommentRequest;
+import com.sep.comiverse.dto.request.UpdateComicCommentRequest;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.security.JwtTokenUtil;
 import com.sep.comiverse.service.CommentService;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -148,6 +151,40 @@ public class CommentController {
                 .success(true)
                 .data(responseData)
                 .message("Chapter comment thread retrieved successfully")
+                .build());
+    }
+
+    @PutMapping("/comics/{id}")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Update a Comic comment")
+    public ResponseEntity<BaseResponse<ComicCommentDTO>> updateComicComment(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateComicCommentRequest request
+    ) {
+        UUID userId = jwtTokenUtil.getCurrentUserId();
+        ComicCommentDTO responseData = commentService.updateComicComment(id, request, userId);
+
+        return ResponseEntity.ok(BaseResponse.<ComicCommentDTO>builder()
+                .success(true)
+                .data(responseData)
+                .message("Comic comment updated successfully")
+                .build());
+    }
+
+    @PutMapping("/chapters/{id}")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Update a Chapter comment")
+    public ResponseEntity<BaseResponse<ChapterCommentDTO>> updateChapterComment(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateChapterCommentRequest request
+    ) {
+        UUID userId = jwtTokenUtil.getCurrentUserId();
+        ChapterCommentDTO responseData = commentService.updateChapterComment(id, request, userId);
+
+        return ResponseEntity.ok(BaseResponse.<ChapterCommentDTO>builder()
+                .success(true)
+                .data(responseData)
+                .message("Chapter comment updated successfully")
                 .build());
     }
 

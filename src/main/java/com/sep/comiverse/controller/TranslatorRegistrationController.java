@@ -97,6 +97,50 @@ public class TranslatorRegistrationController {
                         .body(Map.of("success", false, "message", "No translator profile found.")));
     }
 
+    @PutMapping("/profile")
+    public ResponseEntity<?> updateMyProfile(@RequestBody TranslatorRegistrationRequest request) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("success", false, "message", "You must be logged in."));
+        }
+
+        String principalName = authentication.getName();
+
+        UserEntity user = userRepository.findByEmail(principalName)
+                .orElseGet(() -> userRepository.findByUsername(principalName).orElse(null));
+
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("success", false, "message", "User not found."));
+        }
+
+        TranslatorEntity translator = translatorRepository.findByUser_Id(user.getId())
+                .orElseGet(() -> TranslatorEntity.builder().user(user).joinedProjectCount(0).build());
+
+        if (request.getSpecializations() != null) {
+            translator.setSpecializations(request.getSpecializations());
+        }
+        if (request.getExperiencedYears() != null) {
+            translator.setExperienceYears(request.getExperiencedYears());
+        }
+        if (request.getPhone() != null) {
+            translator.setPhoneNumber(request.getPhone());
+        }
+        if (request.getFacebookUrl() != null) {
+            translator.setFacebookUrl(request.getFacebookUrl());
+        }
+        if (request.getCvUrl() != null) {
+            translator.setCvUrl(request.getCvUrl());
+        }
+        if (request.getBio() != null) {
+            translator.setBio(request.getBio());
+        }
+
+        TranslatorEntity saved = translatorRepository.save(translator);
+        return ResponseEntity.ok(saved);
+    }
+
     @GetMapping("/{userId}/profile")
     public ResponseEntity<?> getProfileByUserId(@PathVariable UUID userId) {
         return translatorRepository.findByUser_Id(userId)

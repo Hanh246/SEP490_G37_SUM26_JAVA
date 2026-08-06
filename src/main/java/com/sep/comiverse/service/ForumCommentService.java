@@ -4,11 +4,13 @@ import com.sep.comiverse.dto.ForumCommentDTO;
 import com.sep.comiverse.dto.request.CreateForumCommentRequest;
 import com.sep.comiverse.dto.request.UpdateForumCommentRequest;
 import com.sep.comiverse.entity.ForumCommentEntity;
+import com.sep.comiverse.entity.ForumCommentLikeEntity;
 import com.sep.comiverse.entity.ForumThreadEntity;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IForumCommentRepository;
+import com.sep.comiverse.repository.IForumCommentLikeRepository;
 import com.sep.comiverse.repository.IForumThreadRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.util.ProfanityFilterUtil;
@@ -18,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -29,13 +32,59 @@ public class ForumCommentService {
     private final IUserRepository userRepository;
     private final NotificationService notificationService;
 
+    private final IForumCommentLikeRepository forumCommentLikeRepository;
+
     @Transactional(readOnly = true)
-    public List<ForumCommentDTO> getComments(UUID threadId) {
+    public List<ForumCommentDTO> getComments(UUID threadId, UUID currentUserId) {
         requireThread(threadId);
-        return forumCommentRepository.findByThreadIdAndDeletedFalseOrderByCreatedAtAsc(threadId)
-                .stream()
-                .map(this::toDto)
+        List<ForumCommentEntity> comments = forumCommentRepository.findByThreadIdAndDeletedFalseOrderByCreatedAtAsc(threadId);
+        
+        List<UUID> userLikedCommentIds = (currentUserId != null)
+                ? forumCommentLikeRepository.findLikedCommentIdsByUserId(currentUserId)
+                : List.of();
+
+        return comments.stream()
+                .map(entity -> {
+                    ForumCommentDTO dto = toDto(entity);
+                    dto.setLikesCount(entity.getLikesCount());
+                    dto.setIsLikedByCurrentUser(userLikedCommentIds.contains(entity.getId()));
+                    return dto;
+                })
                 .toList();
+    }
+
+    @Transactional
+    public boolean toggleCommentLike(UUID commentId, UUID actorId) {
+        if (actorId == null) {
+            throw new CustomException(401, "UNAUTHORIZED", HttpStatus.UNAUTHORIZED);
+        }
+
+        ForumCommentEntity comment = forumCommentRepository.findById(commentId)
+                .orElseThrow(() -> new CustomException(404, "Comment not found", HttpStatus.NOT_FOUND));
+
+        if (Boolean.TRUE.equals(comment.getDeleted())) {
+            throw new CustomException(404, "Comment not found", HttpStatus.NOT_FOUND);
+        }
+
+        Optional<ForumCommentLikeEntity> existingLike = forumCommentLikeRepository.findByUserIdAndCommentId(actorId, commentId);
+        boolean isLiked;
+
+        if (existingLike.isPresent()) {
+            forumCommentLikeRepository.delete(existingLike.get());
+            comment.setLikesCount(Math.max(0, comment.getLikesCount() - 1));
+            isLiked = false;
+        } else {
+            ForumCommentLikeEntity newLike = ForumCommentLikeEntity.builder()
+                    .userId(actorId)
+                    .commentId(commentId)
+                    .build();
+            forumCommentLikeRepository.save(newLike);
+            comment.setLikesCount(comment.getLikesCount() + 1);
+            isLiked = true;
+        }
+
+        forumCommentRepository.save(comment);
+        return isLiked;
     }
 
     @Transactional
@@ -153,7 +202,12 @@ public class ForumCommentService {
     }
 
     private ForumCommentDTO toDto(ForumCommentEntity comment) {
-        UserEntity author = userRepository.findByIdWithRole(comment.getUserId()).orElse(null);
+        UserEntity author = null;
+        if (comment.getUserId() != null) {
+            author = userRepository.findByIdWithRole(comment.getUserId())
+                    .or(() -> userRepository.findById(comment.getUserId()))
+                    .orElse(null);
+        }
         return toDto(comment, author);
     }
 
@@ -167,6 +221,7 @@ public class ForumCommentService {
                 .content(comment.getContent())
                 .parentId(comment.getParentId())
                 .createdAt(comment.getCreatedAt())
+                .likesCount(comment.getLikesCount())
                 .build();
     }
 
