@@ -33,13 +33,39 @@ import java.util.UUID;
 public class ForumCommentController {
 
     private final ForumCommentService forumCommentService;
+    private final com.sep.comiverse.security.JwtTokenUtil jwtTokenUtil;
 
     @GetMapping
     @Operation(summary = "Get comments for a forum thread")
-    public ResponseEntity<BaseResponse<List<ForumCommentDTO>>> getComments(@PathVariable UUID threadId) {
+    public ResponseEntity<BaseResponse<List<ForumCommentDTO>>> getComments(
+            @PathVariable UUID threadId
+    ) {
+        UUID currentUserId = null;
+        try {
+            currentUserId = jwtTokenUtil.getCurrentUserId();
+        } catch (Exception ignored) {
+            // Anonymous user — no liked status needed
+        }
         return ResponseEntity.ok(BaseResponse.<List<ForumCommentDTO>>builder()
                 .success(true)
-                .data(forumCommentService.getComments(threadId))
+                .data(forumCommentService.getComments(threadId, currentUserId))
+                .build());
+    }
+
+    @PostMapping("/{commentId}/like")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Toggle like for a forum comment")
+    public ResponseEntity<BaseResponse<Boolean>> toggleCommentLike(
+            @PathVariable UUID threadId,
+            @PathVariable UUID commentId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        UUID userId = principal != null ? principal.getId() : jwtTokenUtil.getCurrentUserId();
+        boolean isLiked = forumCommentService.toggleCommentLike(commentId, userId);
+        return ResponseEntity.ok(BaseResponse.<Boolean>builder()
+                .success(true)
+                .data(isLiked)
+                .message(isLiked ? "Comment liked" : "Comment unliked")
                 .build());
     }
 
@@ -51,7 +77,8 @@ public class ForumCommentController {
             @Valid @RequestBody CreateForumCommentRequest request,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
-        ForumCommentDTO created = forumCommentService.createComment(threadId, request, principal.getId());
+        UUID userId = principal != null ? principal.getId() : jwtTokenUtil.getCurrentUserId();
+        ForumCommentDTO created = forumCommentService.createComment(threadId, request, userId);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(BaseResponse.<ForumCommentDTO>builder()
                         .success(true)
@@ -68,7 +95,8 @@ public class ForumCommentController {
             @Valid @RequestBody UpdateForumCommentRequest request,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
-        ForumCommentDTO updated = forumCommentService.updateComment(commentId, request, principal.getId());
+        UUID userId = principal != null ? principal.getId() : jwtTokenUtil.getCurrentUserId();
+        ForumCommentDTO updated = forumCommentService.updateComment(commentId, request, userId);
         return ResponseEntity.ok(BaseResponse.<ForumCommentDTO>builder()
                 .success(true)
                 .data(updated)
@@ -83,7 +111,9 @@ public class ForumCommentController {
             @PathVariable UUID commentId,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
-        forumCommentService.deleteComment(commentId, principal.getId(), principal.getRole());
+        UUID userId = principal != null ? principal.getId() : jwtTokenUtil.getCurrentUserId();
+        String role = principal != null ? principal.getRole() : null;
+        forumCommentService.deleteComment(commentId, userId, role);
         return ResponseEntity.ok(BaseResponse.<Void>builder()
                 .success(true)
                 .message("Forum comment deleted successfully")

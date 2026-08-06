@@ -10,7 +10,7 @@ import java.util.UUID;
 public class CreateForumCommentRequest {
 
     @NotBlank(message = "Comment content cannot be blank")
-    @Size(max = 5000, message = "Comment content must not exceed 5000 characters")
+    @Size(max = 5000000, message = "Comment content must not exceed 5MB characters")
     private String content;
 
     private UUID parentId;
