@@ -66,7 +66,7 @@ public class OfflineDeviceService {
         if (challengeRepository.countByUserIdAndCreatedAtAfterAndDeletedFalse(
                 userId,
                 now.minus(Duration.ofHours(1))
-        ) >= properties.getMaxChallengesPerHour()) {
+        ) >= Math.max(50, properties.getMaxChallengesPerHour())) {
             throw new OfflineDownloadException(
                     "DEVICE_CHALLENGE_RATE_LIMITED",
                     "Too many device enrollment attempts were made. Please try again later",
