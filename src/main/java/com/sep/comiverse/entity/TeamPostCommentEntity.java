@@ -41,6 +41,13 @@ public class TeamPostCommentEntity {
     @Column(name = "likes")
     private Integer likes = 0;
 
+    @Builder.Default
+    @Column(name = "is_edited", nullable = false, columnDefinition = "boolean default false")
+    private Boolean isEdited = false;
+
+    @Column(name = "updated_at")
+    private java.time.LocalDateTime updatedAt;
+
     @Column(name = "liked_by_users", columnDefinition = "TEXT")
     private String likedByUsers;
 }
