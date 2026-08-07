@@ -6,6 +6,7 @@ import com.sep.comiverse.exception.CustomException;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.mail.MailException;
@@ -25,6 +26,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.sep.comiverse.client.SendGridClient;
+
 @Component
 @Slf4j
 public class EmailUtil {
@@ -38,10 +41,13 @@ public class EmailUtil {
     private final String smtpFromName;
     private final String apiKey;
     private final String mailFrom;
+    private final String sendGridFrom;
     private final JavaMailSender mailSender;
     private final ObjectMapper objectMapper;
+    private final SendGridClient sendGridClient;
     private final HttpClient httpClient;
 
+    @Autowired
     public EmailUtil(
             @Value("${app.mail.provider:smtp}") String mailProvider,
             @Value("${spring.mail.username:}") String smtpUsername,
@@ -50,8 +56,10 @@ public class EmailUtil {
             @Value("${app.mail.smtp-from-name:ComiVerse}") String smtpFromName,
             @Value("${resend.api-key:}") String apiKey,
             @Value("${mail.from:ComiVerse <onboarding@resend.dev>}") String mailFrom,
+            @Value("${app.mail.from:Comiverse <comiverse.team@gmail.com>}") String sendGridFrom,
             JavaMailSender mailSender,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            SendGridClient sendGridClient
     ) {
         this.mailProvider = mailProvider == null ? "smtp" : mailProvider.trim();
         this.smtpUsername = smtpUsername == null ? "" : smtpUsername.trim();
@@ -60,11 +68,27 @@ public class EmailUtil {
         this.smtpFromName = smtpFromName == null || smtpFromName.isBlank() ? FROM_NAME : smtpFromName.trim();
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.mailFrom = mailFrom;
+        this.sendGridFrom = sendGridFrom;
         this.mailSender = mailSender;
         this.objectMapper = objectMapper;
+        this.sendGridClient = sendGridClient;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
+    }
+
+    public EmailUtil(
+            String mailProvider,
+            String smtpUsername,
+            String smtpPassword,
+            String smtpFrom,
+            String smtpFromName,
+            String apiKey,
+            String mailFrom,
+            JavaMailSender mailSender,
+            ObjectMapper objectMapper
+    ) {
+        this(mailProvider, smtpUsername, smtpPassword, smtpFrom, smtpFromName, apiKey, mailFrom, "Comiverse <comiverse.team@gmail.com>", mailSender, objectMapper, null);
     }
 
     public void sendOTP(String toEmail, String otp, String name) {
@@ -137,11 +161,29 @@ public class EmailUtil {
             sendViaResend(toEmail, subject, htmlContent, textContent);
             return;
         }
+        if ("sendgrid".equalsIgnoreCase(mailProvider)) {
+            sendViaSendGrid(toEmail, subject, htmlContent, textContent);
+            return;
+        }
         throw new CustomException(
                 500,
                 "Unsupported mail provider configuration.",
                 HttpStatus.INTERNAL_SERVER_ERROR
         );
+    }
+
+    private void sendViaSendGrid(String toEmail, String subject, String htmlContent, String textContent) {
+        if (sendGridClient == null) {
+            throw new CustomException(500, "SendGrid client is not configured.", HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+        try {
+            boolean isHtml = htmlContent != null && !htmlContent.isBlank();
+            String content = isHtml ? htmlContent : textContent;
+            sendGridClient.send(sendGridFrom, toEmail, subject, content, isHtml);
+        } catch (Exception e) {
+            log.error("SendGrid email delivery failed for recipient domain {}", emailDomain(toEmail), e);
+            throw new CustomException(500, "Could not send email via SendGrid: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
     }
 
     private void sendViaSmtp(String toEmail, String subject, String htmlContent, String textContent) {

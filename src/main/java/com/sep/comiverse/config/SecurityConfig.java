@@ -47,6 +47,7 @@ public class SecurityConfig {
             "/saves/**",
             "/sync/**",
             "/ws/**",
+            "/test/**",
             "/error",
             "/v3/api-docs/**",
             "/swagger-ui/**",
