@@ -36,4 +36,7 @@ build/
 key.env
 *.env
 
+### Local Test Overrides ###
+src/test/resources/integration/h2-init.sql
+
 

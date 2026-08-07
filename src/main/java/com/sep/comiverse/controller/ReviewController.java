@@ -236,6 +236,7 @@ public class ReviewController {
             translatorPaymentService.validateReadyForReview(taskId);
             task.setStatus("completed");
             task.setCompletedAt(Instant.now());
+            task.setRejectionReason(null);
 
             List<PageTranslationEntity> pages = pageTranslationRepository.findByTaskId_IdOrderByPageNumberAsc(taskId);
             log.info("[submitDecision] found {} PageTranslationEntity rows for taskId={}", pages.size(), taskId);

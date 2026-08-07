@@ -41,6 +41,13 @@ public class TeamAnnouncementEntity {
     @Column(name = "is_pinned", nullable = false, columnDefinition = "boolean default false")
     private Boolean isPinned = false;
 
+    @Builder.Default
+    @Column(name = "is_edited", nullable = false, columnDefinition = "boolean default false")
+    private Boolean isEdited = false;
+
+    @Column(name = "updated_at")
+    private java.time.LocalDateTime updatedAt;
+
     @Column(name = "image_url", length = 512)
     private String imageUrl;
 

@@ -3,6 +3,7 @@ package com.sep.comiverse.controller;
 import com.sep.comiverse.dto.request.CreateTaskRequest;
 import com.sep.comiverse.dto.request.HandoverTaskRequest;
 import com.sep.comiverse.dto.response.TaskHandoverResponse;
+import com.sep.comiverse.dto.response.NotificationResponse;
 import com.sep.comiverse.dto.TeamMemberDto;
 import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.entity.*;
@@ -40,6 +41,7 @@ public class TeamWorkspaceController {
     private final IComicRepository comicRepository;
     private final IChapterRepository chapterRepository;
     private final IUserRepository userRepository;
+    private final INotificationRepository notificationRepository;
     private final IPageTranslationRepository iPageTranslationRepository;
     private final ITranslatorRepository translatorRepository;
     private final NotificationService notificationService;
@@ -99,6 +101,30 @@ public class TeamWorkspaceController {
         }).orElse(ResponseEntity.notFound().build());
     }
 
+    @PutMapping("/announcements/{id}")
+    public ResponseEntity<TeamAnnouncementEntity> updateAnnouncement(
+            @PathVariable UUID id,
+            @RequestBody Map<String, Object> payload,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return announcementRepository.findById(id).map(ann -> {
+            if (payload.containsKey("content")) {
+                String newContent = (String) payload.get("content");
+                if (newContent != null && !newContent.trim().isEmpty()) {
+                    if (com.sep.comiverse.util.ProfanityFilterUtil.containsProfanity(newContent)) {
+                        throw new com.sep.comiverse.exception.CustomException(400, "Your post contains inappropriate language.", org.springframework.http.HttpStatus.BAD_REQUEST);
+                    }
+                    ann.setContent(newContent.trim());
+                    ann.setIsEdited(true);
+                    ann.setUpdatedAt(java.time.LocalDateTime.now());
+                }
+            }
+            if (payload.containsKey("imageUrl")) {
+                ann.setImageUrl((String) payload.get("imageUrl"));
+            }
+            return ResponseEntity.ok(announcementRepository.save(ann));
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
     @DeleteMapping("/announcements/{id}")
     public ResponseEntity<?> deleteAnnouncement(@PathVariable UUID id) {
         if (announcementRepository.existsById(id)) {
@@ -152,6 +178,37 @@ public class TeamWorkspaceController {
             comm.setLikedByUsers(String.join(",", list));
             return ResponseEntity.ok(postCommentRepository.save(comm));
         }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @PutMapping("/comments/{id}")
+    public ResponseEntity<TeamPostCommentEntity> updateComment(
+            @PathVariable UUID id,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return postCommentRepository.findById(id).map(comment -> {
+            String newContent = body.get("content");
+            if (newContent == null || newContent.trim().isEmpty()) {
+                throw new com.sep.comiverse.exception.CustomException(400, "Comment content cannot be empty.", org.springframework.http.HttpStatus.BAD_REQUEST);
+            }
+            if (com.sep.comiverse.util.ProfanityFilterUtil.containsProfanity(newContent)) {
+                throw new com.sep.comiverse.exception.CustomException(400, "Your comment contains inappropriate language.", org.springframework.http.HttpStatus.BAD_REQUEST);
+            }
+            comment.setContent(newContent.trim());
+            comment.setIsEdited(true);
+            comment.setUpdatedAt(java.time.LocalDateTime.now());
+            return ResponseEntity.ok(postCommentRepository.save(comment));
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/comments/{id}")
+    public ResponseEntity<Void> deleteComment(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        if (postCommentRepository.existsById(id)) {
+            postCommentRepository.deleteById(id);
+            return ResponseEntity.ok().build();
+        }
+        return ResponseEntity.notFound().build();
     }
 
     // ── CHAPTER BACKLOG ──────────────────────────────
@@ -234,17 +291,78 @@ public class TeamWorkspaceController {
     }
 
     @PostMapping("/{teamId}/messages/warn")
-    public ResponseEntity<TeamMessageEntity> warnMember(@PathVariable UUID teamId, @RequestBody Map<String, String> payload) {
+    public ResponseEntity<TeamMessageEntity> warnMember(
+            @PathVariable UUID teamId,
+            @RequestBody Map<String, String> payload,
+            @AuthenticationPrincipal UserPrincipal principal) {
         String memberName = payload.get("memberName");
+        String memberIdStr = payload.get("memberId");
+        String reason = payload.getOrDefault("reason", "Violation of group chat guidelines or translation quality standards");
+        if (reason == null || reason.trim().isEmpty()) {
+            reason = "Violation of group chat guidelines or translation quality standards";
+        }
+
+        // 1. Get Project Team info for context
+        ProjectTeamEntity projectTeam = projectTeamRepository.findById(teamId).orElse(null);
+        String projectTitle = projectTeam != null ? (projectTeam.getTitle() != null ? projectTeam.getTitle() : projectTeam.getComicName()) : "Project Team";
+        String leaderName = (principal != null && principal.getUsername() != null) ? principal.getUsername() : (projectTeam != null ? projectTeam.getLeaderName() : "Project Leader");
+
+        // 2. Find target UserEntity
+        UserEntity targetUser = null;
+        if (memberIdStr != null && !memberIdStr.trim().isEmpty()) {
+            try {
+                UUID memberId = UUID.fromString(memberIdStr);
+                targetUser = userRepository.findById(memberId).orElse(null);
+            } catch (Exception ignored) {}
+        }
+        if (targetUser == null && memberName != null && !memberName.trim().isEmpty()) {
+            targetUser = userRepository.findByUsername(memberName).orElse(null);
+            if (targetUser == null) {
+                // Try finding by full name or email if possible
+                List<UserEntity> allUsers = userRepository.findAll();
+                targetUser = allUsers.stream()
+                        .filter(u -> memberName.equalsIgnoreCase(u.getFullName()) || memberName.equalsIgnoreCase(u.getUsername()) || memberName.equalsIgnoreCase(u.getEmail()))
+                        .findFirst()
+                        .orElse(null);
+            }
+        }
+
+        // 3. Persist Notification in DB for target user
+        if (targetUser != null) {
+            NotificationEntity notification = NotificationEntity.builder()
+                    .user(targetUser)
+                    .title("⚠️ Cảnh báo từ Nhóm dịch [" + projectTitle + "]")
+                    .message("Trưởng nhóm (" + leaderName + ") đã gửi cảnh báo cho bạn: \"" + reason + "\". Vui lòng kiểm tra và tuân thủ nội quy nhóm.")
+                    .type("WARNING")
+                    .actionUrl("/translator/projects")
+                    .isRead(false)
+                    .build();
+            NotificationEntity savedNotif = notificationRepository.save(notification);
+
+            // Broadcast real-time notification to user's personal channel
+            NotificationResponse notifResponse = NotificationResponse.builder()
+                    .id(savedNotif.getId())
+                    .title(savedNotif.getTitle())
+                    .message(savedNotif.getMessage())
+                    .type(savedNotif.getType())
+                    .actionUrl(savedNotif.getActionUrl())
+                    .isRead(savedNotif.getIsRead())
+                    .createdAt(savedNotif.getCreatedAt())
+                    .build();
+            messagingTemplate.convertAndSend("/topic/notifications/" + targetUser.getId(), notifResponse);
+        }
+
+        // 4. Save and broadcast system message to group chat
         TeamMessageEntity warningMsg = TeamMessageEntity.builder()
                 .projectTeamId(teamId)
                 .sender("SYSTEM")
                 .avatar("⚠️")
-                .text("Member " + memberName + " has been warned by the Project Leader.")
+                .text("⚠️ [CẢNH BÁO / WARNING] @" + (memberName != null ? memberName : "Thành viên") + " đã bị nhắc nhở bởi Trưởng nhóm. Lý do: " + reason)
                 .time(java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")))
                 .build();
         TeamMessageEntity saved = messageRepository.save(warningMsg);
         messagingTemplate.convertAndSend("/topic/team-workspace/" + teamId, saved);
+
         return ResponseEntity.ok(saved);
     }
 
