@@ -48,6 +48,9 @@ class ForumCommentServiceTest {
     @Mock
     private NotificationService notificationService;
 
+    @Mock
+    private com.sep.comiverse.repository.IForumCommentLikeRepository forumCommentLikeRepository;
+
     private ForumCommentService forumCommentService;
 
     private final UUID threadId = UUID.randomUUID();
@@ -60,7 +63,8 @@ class ForumCommentServiceTest {
                 forumCommentRepository,
                 forumThreadRepository,
                 userRepository,
-                notificationService
+                notificationService,
+                forumCommentLikeRepository
         );
     }
 
