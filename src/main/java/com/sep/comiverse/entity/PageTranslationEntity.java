@@ -6,6 +6,8 @@ import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 
 @Getter
@@ -16,11 +18,6 @@ import java.util.UUID;
 @Builder
 @Table(name = "page_translation")
 public class PageTranslationEntity extends BaseEntity{
-    @Id
-    @Column(name = "id")
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
-
     @Column(name = "page_number", nullable = false)
     private int pageNumber;
 
@@ -30,6 +27,18 @@ public class PageTranslationEntity extends BaseEntity{
 
     @Column(name = "image_url", nullable = false, columnDefinition = "text")
     private String imageUrl;
+
+    /** Translator responsible for this page. This survives task-level handovers. */
+    @Column(name = "assigned_translator_id")
+    private UUID assignedTranslatorId;
+
+    /** Responsibility coefficient K used when this page is settled. */
+    @Builder.Default
+    @Column(name = "responsibility_factor", nullable = false, precision = 4, scale = 2, columnDefinition = "numeric(4,2) default 1.00")
+    private BigDecimal responsibilityFactor = BigDecimal.ONE.setScale(2);
+
+    @Column(name = "completed_at")
+    private Instant completedAt;
 
     @Builder.Default
     @Enumerated(EnumType.STRING)
@@ -45,12 +54,17 @@ public class PageTranslationEntity extends BaseEntity{
     @Column(name = "review_baseline_bubbles", columnDefinition = "jsonb")
     private String reviewBaselineBubbles;
 
+    @PrePersist
+    @PreUpdate
     protected void ensureDefaults() {
         if (status == null) {
             status = PageStatus.TODO;
         }
         if( bubbles == null) {
             bubbles = "[]";
+        }
+        if (responsibilityFactor == null) {
+            responsibilityFactor = BigDecimal.ONE.setScale(2);
         }
     }
 }

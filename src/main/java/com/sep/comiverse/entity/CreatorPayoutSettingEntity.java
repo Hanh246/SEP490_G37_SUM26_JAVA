@@ -34,11 +34,12 @@ public class CreatorPayoutSettingEntity extends BaseEntity {
      */
     @Builder.Default
     @Column(name = "minimum_payout_vnd", nullable = false, precision = 19, scale = 2)
-    private BigDecimal minimumPayoutUsd = new BigDecimal("2.00");
+    private BigDecimal minimumPayoutUsd = new BigDecimal("10.00");
 
     @Builder.Default
     @Column(name = "translator_task_rate_vnd", nullable = false, precision = 19, scale = 2)
-    private BigDecimal translatorTaskRateUsd = new BigDecimal("2.00");
+    /** Legacy field name; value is the default USD remuneration per translated page. */
+    private BigDecimal translatorTaskRateUsd = new BigDecimal("1.20");
 
     @Builder.Default
     @Column(name = "translator_monthly_limit_vnd", nullable = false, precision = 19, scale = 2)

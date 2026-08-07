@@ -21,6 +21,7 @@ import com.sep.comiverse.repository.ITeamTaskRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.service.NotificationService;
+import com.sep.comiverse.service.TranslatorPaymentService;
 import com.sep.comiverse.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -57,6 +58,7 @@ public class ReviewController {
     private final com.sep.comiverse.repository.IComicRepository comicRepository;
     private final IChapterTranslationRepository chapterTranslationRepository;
     private final NotificationService notificationService;
+    private final TranslatorPaymentService translatorPaymentService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -73,6 +75,9 @@ public class ReviewController {
                         .status(p.getStatus())
                         .bubbles(p.getBubbles())
                         .reviewBaselineBubbles(p.getReviewBaselineBubbles())
+                        .assignedTranslatorId(p.getAssignedTranslatorId())
+                        .responsibilityFactor(p.getResponsibilityFactor())
+                        .completedAt(p.getCompletedAt())
                         .build())
                 .collect(Collectors.toList());
 
@@ -228,10 +233,9 @@ public class ReviewController {
         }
 
         if ("approved".equals(decision)) {
+            translatorPaymentService.validateReadyForReview(taskId);
             task.setStatus("completed");
-            if (task.getCompletedAt() == null) {
-                task.setCompletedAt(Instant.now());
-            }
+            task.setCompletedAt(Instant.now());
 
             List<PageTranslationEntity> pages = pageTranslationRepository.findByTaskId_IdOrderByPageNumberAsc(taskId);
             log.info("[submitDecision] found {} PageTranslationEntity rows for taskId={}", pages.size(), taskId);
@@ -240,14 +244,10 @@ public class ReviewController {
             }
             pageTranslationRepository.saveAll(pages);
 
-            try {
-                UUID modId = principal != null
-                        ? principal.getId()
-                        : null;
-                publishChapterFromTask(task, pages, modId);
-            } catch (Exception ex) {
-                log.error("[submitDecision] Failed to publish chapter for taskId={}", taskId, ex);
-            }
+            UUID modId = principal != null ? principal.getId() : null;
+            publishChapterFromTask(task, pages, modId);
+            taskRepository.save(task);
+            translatorPaymentService.settleApprovedTask(task);
         } else if ("changes_requested".equals(decision)) {
             task.setStatus("in_progress");
             task.setCompletedAt(null);
@@ -332,7 +332,9 @@ public class ReviewController {
 
         // 1. Revert task status to in_progress and save rejection reason
         task.setStatus("in_progress");
+        task.setCompletedAt(null);
         task.setRejectionReason(reason);
+        translatorPaymentService.reverseLatestSettlement(taskId, reason);
         taskRepository.save(task);
         log.info("[revokeTranslation] Task {} reverted to in_progress. Reason: {}", taskId, reason);
 

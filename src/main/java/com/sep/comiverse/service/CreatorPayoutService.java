@@ -11,6 +11,9 @@ import com.sep.comiverse.entity.CreatorPayoutRequestEntity;
 import com.sep.comiverse.entity.CreatorPayoutSettingEntity;
 import com.sep.comiverse.entity.CreatorStripePayoutProfileEntity;
 import com.sep.comiverse.entity.TeamTaskEntity;
+import com.sep.comiverse.entity.TranslatorChapterSettlementEntity;
+import com.sep.comiverse.entity.TranslatorEarningAdjustmentEntity;
+import com.sep.comiverse.entity.TranslatorPageEarningEntity;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.entity.enums.CreatorPayoutCurrency;
 import com.sep.comiverse.entity.enums.CreatorPayoutRole;
@@ -18,6 +21,9 @@ import com.sep.comiverse.entity.enums.CreatorPayoutStatus;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.ICreatorPayoutRequestRepository;
 import com.sep.comiverse.repository.ITeamTaskRepository;
+import com.sep.comiverse.repository.ITranslatorChapterSettlementRepository;
+import com.sep.comiverse.repository.ITranslatorEarningAdjustmentRepository;
+import com.sep.comiverse.repository.ITranslatorPageEarningRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
@@ -42,11 +48,15 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
+import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -57,9 +67,15 @@ public class CreatorPayoutService {
     @Value("${payout.allow-current-month:false}")
     private boolean allowCurrentMonth;
 
+    @Value("${payout.time-zone:Asia/Ho_Chi_Minh}")
+    private String payoutTimeZone;
+
     private final CreatorStripePayoutProfileService payoutProfileService;
     private final ICreatorPayoutRequestRepository payoutRequestRepository;
     private final ITeamTaskRepository teamTaskRepository;
+    private final ITranslatorChapterSettlementRepository translatorSettlementRepository;
+    private final ITranslatorPageEarningRepository translatorPageEarningRepository;
+    private final ITranslatorEarningAdjustmentRepository translatorAdjustmentRepository;
     private final IUserRepository userRepository;
     private final StripeGatewayService stripeGatewayService;
     private final CreatorPayoutSettingsService payoutSettingsService;
@@ -91,6 +107,11 @@ public class CreatorPayoutService {
                 .filter(item -> selectedMonth.toString().equals(item.getPayoutMonth()))
                 .findFirst()
                 .orElse(null);
+        CreatorPayoutRequestEntity activeRequest = entities.stream()
+                .filter(item -> selectedMonth.toString().equals(item.getPayoutMonth()))
+                .filter(item -> isActiveReservation(item.getStatus()))
+                .findFirst()
+                .orElse(null);
 
         BigDecimal lifetimePaidUsd = sumBaseUsdByStatuses(
                 entities,
@@ -108,12 +129,14 @@ public class CreatorPayoutService {
                 normalizeUsd(settings.getMinimumPayoutUsd());
         Requestability requestability = evaluateRequestability(
                 account,
-                existing,
+                activeRequest,
                 selectedMonth,
                 calculation.withdrawableUsd(),
                 minimumUsd
         );
-        BigDecimal overLimitUsd = normalizeUsd(
+        BigDecimal overLimitUsd = role == CreatorPayoutRole.TRANSLATOR
+                ? BigDecimal.ZERO.setScale(2)
+                : normalizeUsd(
                 calculation.grossUsd()
                         .subtract(calculation.withdrawableUsd())
                         .max(BigDecimal.ZERO)
@@ -132,6 +155,9 @@ public class CreatorPayoutService {
                 .minimumPayoutAmountUsd(minimumUsd)
                 .lifetimePaidAmountUsd(lifetimePaidUsd)
                 .pendingAmountUsd(pendingUsd)
+                .availableBalanceAmountUsd(calculation.availableBalanceUsd())
+                .cumulativeEarnedAmountUsd(calculation.cumulativeEarnedUsd())
+                .pendingCurrentMonthAmountUsd(calculation.pendingCurrentMonthUsd())
                 .monthlyGrossAmount(convert(calculation.grossUsd(), currency))
                 .monthlyWithdrawableAmount(convert(calculation.withdrawableUsd(), currency))
                 .monthlyOverLimitAmount(convert(overLimitUsd, currency))
@@ -139,6 +165,9 @@ public class CreatorPayoutService {
                 .minimumPayoutAmount(convert(minimumUsd, currency))
                 .lifetimePaidAmount(convert(lifetimePaidUsd, currency))
                 .pendingAmount(convert(pendingUsd, currency))
+                .availableBalanceAmount(convert(calculation.availableBalanceUsd(), currency))
+                .cumulativeEarnedAmount(convert(calculation.cumulativeEarnedUsd(), currency))
+                .pendingCurrentMonthAmount(convert(calculation.pendingCurrentMonthUsd(), currency))
                 .payoutCurrency(currency.code())
                 .payoutCurrencySymbol(currency.symbol())
                 .payoutUnitsPerUsd(currency.unitsPerUsd())
@@ -155,6 +184,9 @@ public class CreatorPayoutService {
                                 : convert(calculation.unitRateUsd(), currency)
                 )
                 .translatorTaskRateUsd(
+                        normalizeUsd(settings.getTranslatorTaskRateUsd())
+                )
+                .translatorPageRateUsd(
                         normalizeUsd(settings.getTranslatorTaskRateUsd())
                 )
                 .authorViewsPerUnit(settings.getAuthorViewsPerUnit())
@@ -241,20 +273,22 @@ public class CreatorPayoutService {
             );
         }
 
-        CreatorPayoutRequestEntity payout = payoutRequestRepository
-                .findByUserIdAndPayoutMonthAndDeletedFalse(
+        boolean activeRequestExists = payoutRequestRepository
+                .findAllByUserIdAndPayoutMonthAndDeletedFalseOrderByCreatedAtDesc(
                         user.getId(),
                         payoutMonth.toString()
                 )
-                .orElseGet(CreatorPayoutRequestEntity::new);
-
-        if (payout.getId() != null && !isRetryable(payout.getStatus())) {
+                .stream()
+                .anyMatch(item -> isActiveReservation(item.getStatus()));
+        if (activeRequestExists) {
             throw new CustomException(
                     409,
-                    "A payout request already exists for " + payoutMonth,
+                    "Another payout request is still pending for " + payoutMonth,
                     HttpStatus.CONFLICT
             );
         }
+
+        CreatorPayoutRequestEntity payout = new CreatorPayoutRequestEntity();
 
         payout.setUserId(user.getId());
         payout.setUserName(displayName(user));
@@ -482,28 +516,69 @@ public class CreatorPayoutService {
             YearMonth month,
             CreatorPayoutSettingEntity settings
     ) {
-        Instant from = month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
-        Instant to = month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
-
         if (role == CreatorPayoutRole.TRANSLATOR) {
-            BigDecimal rate = normalizeUsd(settings.getTranslatorTaskRateUsd());
-            List<TranslatorTaskRevenueResponse> rows = teamTaskRepository
-                    .findCompletedForAssigneeInPeriod(userId, from, to)
-                    .stream()
-                    .map(task -> toTranslatorRevenue(task, rate))
-                    .toList();
-            BigDecimal gross = normalizeUsd(rate.multiply(BigDecimal.valueOf(rows.size())));
-            BigDecimal limit = normalizeUsd(settings.getTranslatorMonthlyLimitUsd());
-            BigDecimal withdrawable = gross.min(limit);
+            BigDecimal defaultPageRate = normalizeUsd(settings.getTranslatorTaskRateUsd());
+            List<TranslatorTaskRevenueResponse> rows = loadTranslatorRevenue(userId, month);
+            BigDecimal monthlyGross = normalizeUsd(rows.stream()
+                    .map(TranslatorTaskRevenueResponse::getRevenueUsd)
+                    .filter(Objects::nonNull)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add));
+
+            BigDecimal cumulativeEarned = normalizeUsd(
+                    translatorPageEarningRepository.sumNetAmountThroughMonth(userId, month.toString())
+                            .add(translatorAdjustmentRepository.sumAmountThroughMonth(userId, month.toString()))
+            );
+            BigDecimal reserved = normalizeUsd(payoutRequestRepository.sumReservedThroughMonth(
+                    userId,
+                    month.toString(),
+                    List.of(
+                            CreatorPayoutStatus.PENDING,
+                            CreatorPayoutStatus.APPROVED,
+                            CreatorPayoutStatus.PROCESSING,
+                            CreatorPayoutStatus.PAID
+                    )
+            ));
+            BigDecimal availableBalance = normalizeUsd(
+                    cumulativeEarned.subtract(reserved).max(BigDecimal.ZERO)
+            );
+
+            YearMonth currentMonth = YearMonth.now(payoutZone());
+            BigDecimal pendingCurrentMonth = normalizeUsd(
+                    translatorPageEarningRepository
+                            .findAllByTranslatorIdAndSettlementMonthOrderByCreatedAtAsc(userId, currentMonth.toString())
+                            .stream()
+                            .map(TranslatorPageEarningEntity::getNetAmountUsd)
+                            .filter(Objects::nonNull)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add)
+                            .add(
+                                    translatorAdjustmentRepository
+                                            .findAllByTranslatorIdAndAdjustmentMonthOrderByCreatedAtAsc(userId, currentMonth.toString())
+                                            .stream()
+                                            .map(TranslatorEarningAdjustmentEntity::getAmountUsd)
+                                            .filter(Objects::nonNull)
+                                            .reduce(BigDecimal.ZERO, BigDecimal::add)
+                            )
+            );
+
+            long totalPages = rows.stream()
+                    .filter(item -> "SETTLEMENT".equals(item.getRowType()))
+                    .map(TranslatorTaskRevenueResponse::getCompletedPageCount)
+                    .filter(Objects::nonNull)
+                    .mapToLong(Integer::longValue)
+                    .sum();
+
             return new MonthlyCalculation(
-                    gross,
-                    withdrawable,
-                    limit,
-                    (long) rows.size(),
-                    "completed assigned tasks",
-                    rate,
-                    rows.size() + " completed team_tasks by assignee_id x $" + rate.toPlainString(),
-                    "Only team_tasks assigned to the Translator and completed in the selected month are eligible. Rewards are accounted for in USD and settled in the selected payout currency.",
+                    monthlyGross,
+                    availableBalance,
+                    BigDecimal.ZERO.setScale(2),
+                    cumulativeEarned,
+                    availableBalance,
+                    pendingCurrentMonth,
+                    totalPages,
+                    "approved pages in fully completed chapters",
+                    defaultPageRate,
+                    totalPages + " approved page(s); chapter reward is divided by total chapter pages and multiplied by coefficient K",
+                    "Page work is credited only after the whole chapter is approved. Closed-month earnings accumulate as wallet balance; unused balance carries forward and monthly caps are not applied.",
                     rows,
                     List.of()
             );
@@ -535,6 +610,9 @@ public class CreatorPayoutService {
                 gross,
                 withdrawable,
                 limit,
+                gross,
+                withdrawable,
+                BigDecimal.ZERO.setScale(2),
                 totalUnits,
                 "view/follow reward units",
                 null,
@@ -546,16 +624,85 @@ public class CreatorPayoutService {
         );
     }
 
-    private TranslatorTaskRevenueResponse toTranslatorRevenue(TeamTaskEntity task, BigDecimal rate) {
-        return TranslatorTaskRevenueResponse.builder()
-                .taskId(task.getId())
-                .chapterId(task.getChapter() == null ? null : task.getChapter().getId())
-                .taskTitle(task.getTitle())
-                .chapterNumber(task.getChapter() == null ? null : task.getChapter().getChapterNumber())
-                .chapterTitle(task.getChapter() == null ? null : task.getChapter().getTitle())
-                .completedAt(task.getCompletedAt())
-                .revenueUsd(rate)
-                .build();
+    private List<TranslatorTaskRevenueResponse> loadTranslatorRevenue(UUID translatorId, YearMonth month) {
+        List<TranslatorPageEarningEntity> earnings = translatorPageEarningRepository
+                .findAllByTranslatorIdAndSettlementMonthOrderByCreatedAtAsc(translatorId, month.toString());
+        Map<UUID, List<TranslatorPageEarningEntity>> bySettlement = earnings.stream()
+                .collect(Collectors.groupingBy(
+                        TranslatorPageEarningEntity::getSettlementId,
+                        LinkedHashMap::new,
+                        Collectors.toList()
+                ));
+
+        List<TranslatorTaskRevenueResponse> rows = new ArrayList<>();
+        for (Map.Entry<UUID, List<TranslatorPageEarningEntity>> entry : bySettlement.entrySet()) {
+            TranslatorChapterSettlementEntity settlement = translatorSettlementRepository
+                    .findById(entry.getKey()).orElse(null);
+            List<TranslatorPageEarningEntity> pageRows = entry.getValue();
+            if (pageRows.isEmpty()) continue;
+            TeamTaskEntity task = teamTaskRepository.findByIdWithChapter(pageRows.get(0).getTaskId()).orElse(null);
+            BigDecimal gross = normalizeUsd(pageRows.stream()
+                    .map(TranslatorPageEarningEntity::getGrossAmountUsd)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add));
+            BigDecimal net = normalizeUsd(pageRows.stream()
+                    .map(TranslatorPageEarningEntity::getNetAmountUsd)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add));
+            BigDecimal averageFactor = gross.signum() == 0
+                    ? BigDecimal.ONE.setScale(2)
+                    : net.divide(gross, 2, RoundingMode.HALF_UP);
+
+            rows.add(TranslatorTaskRevenueResponse.builder()
+                    .settlementId(entry.getKey())
+                    .settlementVersion(settlement == null ? null : settlement.getVersionNo())
+                    .taskId(pageRows.get(0).getTaskId())
+                    .chapterId(pageRows.get(0).getChapterId())
+                    .taskTitle(task == null ? "Translation task" : task.getTitle())
+                    .chapterNumber(task == null || task.getChapter() == null ? null : task.getChapter().getChapterNumber())
+                    .chapterTitle(task == null || task.getChapter() == null ? null : task.getChapter().getTitle())
+                    .completedAt(task == null ? null : task.getCompletedAt())
+                    .settledAt(settlement == null ? null : settlement.getSettledAt())
+                    .completedPageCount(pageRows.size())
+                    .totalPageCount(settlement == null ? null : settlement.getTotalPages())
+                    .pageRateUsd(settlement == null ? null : settlement.getPageRateUsd())
+                    .grossBeforeFactorUsd(gross)
+                    .averageResponsibilityFactor(averageFactor)
+                    .adjustmentUsd(BigDecimal.ZERO.setScale(2))
+                    .revenueUsd(net)
+                    .rowType("SETTLEMENT")
+                    .note(settlement != null && settlement.getStatus() != null
+                            ? "Settlement " + settlement.getStatus().name().toLowerCase()
+                            : "Chapter settlement")
+                    .build());
+        }
+
+        for (TranslatorEarningAdjustmentEntity adjustment : translatorAdjustmentRepository
+                .findAllByTranslatorIdAndAdjustmentMonthOrderByCreatedAtAsc(translatorId, month.toString())) {
+            TeamTaskEntity task = teamTaskRepository.findByIdWithChapter(adjustment.getTaskId()).orElse(null);
+            rows.add(TranslatorTaskRevenueResponse.builder()
+                    .settlementId(adjustment.getSettlementId())
+                    .taskId(adjustment.getTaskId())
+                    .chapterId(task == null || task.getChapter() == null ? null : task.getChapter().getId())
+                    .taskTitle(task == null ? "Translation adjustment" : task.getTitle())
+                    .chapterNumber(task == null || task.getChapter() == null ? null : task.getChapter().getChapterNumber())
+                    .chapterTitle(task == null || task.getChapter() == null ? null : task.getChapter().getTitle())
+                    .settledAt(adjustment.getCreatedAt())
+                    .completedPageCount(0)
+                    .grossBeforeFactorUsd(BigDecimal.ZERO.setScale(2))
+                    .adjustmentUsd(normalizeUsd(adjustment.getAmountUsd()))
+                    .revenueUsd(normalizeUsd(adjustment.getAmountUsd()))
+                    .rowType("ADJUSTMENT")
+                    .note(adjustment.getReason())
+                    .build());
+        }
+        rows.sort((left, right) -> {
+            Instant a = left.getSettledAt();
+            Instant b = right.getSettledAt();
+            if (a == null && b == null) return 0;
+            if (a == null) return -1;
+            if (b == null) return 1;
+            return a.compareTo(b);
+        });
+        return rows;
     }
 
     private List<AuthorComicRevenueResponse> loadAuthorComicRevenue(
@@ -673,10 +820,10 @@ public class CreatorPayoutService {
             return new Requestability(false, "Complete Stripe onboarding and add a payout method first");
         }
         if (existing != null && !isRetryable(existing.getStatus())) {
-            return new Requestability(false, "A payout request already exists for this month");
+            return new Requestability(false, "Another payout request is still pending for this month");
         }
         if (withdrawableUsd.compareTo(minimumUsd) < 0) {
-            return new Requestability(false, "Monthly earnings are below the minimum payout amount");
+            return new Requestability(false, "Available accumulated balance is below the minimum payout amount");
         }
         return new Requestability(true, null);
     }
@@ -740,11 +887,17 @@ public class CreatorPayoutService {
     }
 
     private YearMonth latestRequestableMonth() {
-        return allowCurrentMonth ? YearMonth.now(ZoneOffset.UTC) : lastClosedMonth();
+        return allowCurrentMonth ? YearMonth.now(payoutZone()) : lastClosedMonth();
     }
 
     private YearMonth lastClosedMonth() {
-        return YearMonth.now(ZoneOffset.UTC).minusMonths(1);
+        return YearMonth.now(payoutZone()).minusMonths(1);
+    }
+
+    private boolean isActiveReservation(CreatorPayoutStatus status) {
+        return status == CreatorPayoutStatus.PENDING
+                || status == CreatorPayoutStatus.APPROVED
+                || status == CreatorPayoutStatus.PROCESSING;
     }
 
     private boolean isRetryable(CreatorPayoutStatus status) {
@@ -779,6 +932,14 @@ public class CreatorPayoutService {
 
     private BigDecimal normalizeUsd(BigDecimal value) {
         return (value == null ? BigDecimal.ZERO : value).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private ZoneId payoutZone() {
+        try {
+            return ZoneId.of(payoutTimeZone);
+        } catch (RuntimeException ignored) {
+            return ZoneId.of("Asia/Ho_Chi_Minh");
+        }
     }
 
     private String normalizeCountryOrDefault(String countryCode) {
@@ -819,9 +980,9 @@ public class CreatorPayoutService {
         BigDecimal unitsPerUsd = payout.getPayoutUnitsPerUsd() == null
                 ? BigDecimal.ONE.setScale(6)
                 : payout.getPayoutUnitsPerUsd().setScale(
-                        6,
-                        RoundingMode.HALF_UP
-                );
+                6,
+                RoundingMode.HALF_UP
+        );
         BigDecimal amount = payout.getAmount() == null
                 ? normalizeUsd(amountUsd.multiply(unitsPerUsd))
                 : normalizeUsd(payout.getAmount());
@@ -864,6 +1025,9 @@ public class CreatorPayoutService {
             BigDecimal grossUsd,
             BigDecimal withdrawableUsd,
             BigDecimal monthlyLimitUsd,
+            BigDecimal cumulativeEarnedUsd,
+            BigDecimal availableBalanceUsd,
+            BigDecimal pendingCurrentMonthUsd,
             Long unitCount,
             String unitLabel,
             BigDecimal unitRateUsd,

@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -45,11 +46,19 @@ public class TeamTaskEntity {
     @Column(name = "due_date")
     private String dueDate;
 
+    /** Snapshot of the full chapter remuneration. It is divided by page count at settlement time. */
+    @Column(name = "chapter_reward_usd", precision = 19, scale = 2)
+    private BigDecimal chapterRewardUsd;
+
     @Column(name = "rejection_reason", columnDefinition = "TEXT")
     private String rejectionReason;
     /** Actual Project Leader completion time used for monthly Translator payout. */
     @Column(name = "completed_at")
     private Instant completedAt;
+
+    /** Latest chapter settlement time. A re-approved chapter may create a newer settlement version. */
+    @Column(name = "settled_at")
+    private Instant settledAt;
 
     @ToString.Exclude
     @EqualsAndHashCode.Exclude

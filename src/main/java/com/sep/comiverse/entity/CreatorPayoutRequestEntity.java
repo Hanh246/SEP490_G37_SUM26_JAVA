@@ -30,10 +30,6 @@ import java.util.UUID;
         name = "creator_payout_requests",
         uniqueConstraints = {
                 @UniqueConstraint(
-                        name = "uk_creator_payout_user_month",
-                        columnNames = {"user_id", "payout_month"}
-                ),
-                @UniqueConstraint(
                         name = "uk_creator_payout_stripe_transfer",
                         columnNames = "stripe_transfer_id"
                 )

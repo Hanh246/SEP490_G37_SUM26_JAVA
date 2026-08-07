@@ -27,6 +27,9 @@ public class CreatorPayoutOverviewResponse {
     private BigDecimal minimumPayoutAmountUsd;
     private BigDecimal lifetimePaidAmountUsd;
     private BigDecimal pendingAmountUsd;
+    private BigDecimal availableBalanceAmountUsd;
+    private BigDecimal cumulativeEarnedAmountUsd;
+    private BigDecimal pendingCurrentMonthAmountUsd;
 
     private BigDecimal monthlyGrossAmount;
     private BigDecimal monthlyWithdrawableAmount;
@@ -35,6 +38,9 @@ public class CreatorPayoutOverviewResponse {
     private BigDecimal minimumPayoutAmount;
     private BigDecimal lifetimePaidAmount;
     private BigDecimal pendingAmount;
+    private BigDecimal availableBalanceAmount;
+    private BigDecimal cumulativeEarnedAmount;
+    private BigDecimal pendingCurrentMonthAmount;
 
     private String payoutCurrency;
     private String payoutCurrencySymbol;
@@ -49,7 +55,9 @@ public class CreatorPayoutOverviewResponse {
     private BigDecimal calculationUnitRateUsd;
     private BigDecimal calculationUnitRate;
 
+    /** Legacy alias retained for frontend compatibility; now represents the default rate per page. */
     private BigDecimal translatorTaskRateUsd;
+    private BigDecimal translatorPageRateUsd;
     private Long authorViewsPerUnit;
     private BigDecimal authorViewUnitRateUsd;
     private Long authorFollowsPerUnit;

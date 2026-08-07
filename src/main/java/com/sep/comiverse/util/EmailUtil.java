@@ -6,6 +6,7 @@ import com.sep.comiverse.exception.CustomException;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.mail.MailException;
@@ -25,6 +26,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.sep.comiverse.client.SendGridClient;
+
 @Component
 @Slf4j
 public class EmailUtil {
@@ -38,10 +41,13 @@ public class EmailUtil {
     private final String smtpFromName;
     private final String apiKey;
     private final String mailFrom;
+    private final String sendGridFrom;
     private final JavaMailSender mailSender;
     private final ObjectMapper objectMapper;
+    private final SendGridClient sendGridClient;
     private final HttpClient httpClient;
 
+    @Autowired
     public EmailUtil(
             @Value("${app.mail.provider:smtp}") String mailProvider,
             @Value("${spring.mail.username:}") String smtpUsername,
@@ -50,8 +56,10 @@ public class EmailUtil {
             @Value("${app.mail.smtp-from-name:ComiVerse}") String smtpFromName,
             @Value("${resend.api-key:}") String apiKey,
             @Value("${mail.from:ComiVerse <onboarding@resend.dev>}") String mailFrom,
+            @Value("${app.mail.from:Comiverse <comiverse.team@gmail.com>}") String sendGridFrom,
             JavaMailSender mailSender,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            SendGridClient sendGridClient
     ) {
         this.mailProvider = mailProvider == null ? "smtp" : mailProvider.trim();
         this.smtpUsername = smtpUsername == null ? "" : smtpUsername.trim();
@@ -60,11 +68,27 @@ public class EmailUtil {
         this.smtpFromName = smtpFromName == null || smtpFromName.isBlank() ? FROM_NAME : smtpFromName.trim();
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.mailFrom = mailFrom;
+        this.sendGridFrom = sendGridFrom;
         this.mailSender = mailSender;
         this.objectMapper = objectMapper;
+        this.sendGridClient = sendGridClient;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
+    }
+
+    public EmailUtil(
+            String mailProvider,
+            String smtpUsername,
+            String smtpPassword,
+            String smtpFrom,
+            String smtpFromName,
+            String apiKey,
+            String mailFrom,
+            JavaMailSender mailSender,
+            ObjectMapper objectMapper
+    ) {
+        this(mailProvider, smtpUsername, smtpPassword, smtpFrom, smtpFromName, apiKey, mailFrom, "Comiverse <comiverse.team@gmail.com>", mailSender, objectMapper, null);
     }
 
     public void sendOTP(String toEmail, String otp, String name) {
@@ -98,19 +122,19 @@ public class EmailUtil {
                 "Reset your ComiVerse password",
                 """
                 <!DOCTYPE html>
-                <html><head><meta charset="UTF-8"></head><body style="margin:0;padding:28px;background:#07040d;font-family:Arial,Helvetica,sans-serif;color:#e2e8f0;">
-                <div style="max-width:560px;margin:auto;background:#0f0b1c;border:1px solid rgba(168,85,247,.22);border-radius:18px;overflow:hidden;">
-                  <div style="padding:28px 30px;background:linear-gradient(135deg,rgba(168,85,247,.22),rgba(236,72,153,.14));">
-                    <div style="font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#c084fc;">%s</div>
-                    <h2 style="margin:14px 0 0;font-size:26px;line-height:1.25;color:#fff;">Reset your password</h2>
+                <html><head><meta charset="UTF-8"></head><body style="margin:0;padding:28px;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#334155;">
+                <div style="max-width:560px;margin:auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,.05);">
+                  <div style="padding:28px 30px;background:linear-gradient(135deg,rgba(168,85,247,.1),rgba(236,72,153,.05));">
+                    <div style="font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#a855f7;">%s</div>
+                    <h2 style="margin:14px 0 0;font-size:26px;line-height:1.25;color:#0f172a;">Reset your password</h2>
                   </div>
                   <div style="padding:28px 30px;">
-                    <p style="color:#b6c2d2;line-height:1.6;margin:0 0 14px;">Hello <b style="color:#fff;">%s</b>,</p>
-                    <p style="color:#b6c2d2;line-height:1.6;margin:0 0 22px;">Click the button below to reset your ComiVerse password.</p>
+                    <p style="color:#475569;line-height:1.6;margin:0 0 14px;">Hello <b style="color:#0f172a;">%s</b>,</p>
+                    <p style="color:#475569;line-height:1.6;margin:0 0 22px;">Click the button below to reset your ComiVerse password.</p>
                     <p><a href="%s" style="display:inline-block;background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;text-decoration:none;padding:13px 20px;border-radius:10px;font-weight:700;">Reset password</a></p>
-                    <p style="color:#94a3b8;line-height:1.6;margin:22px 0 0;font-size:13px;">If you did not request this, you can safely ignore this email.</p>
+                    <p style="color:#64748b;line-height:1.6;margin:22px 0 0;font-size:13px;">If you did not request this, you can safely ignore this email.</p>
                   </div>
-                  <div style="border-top:1px solid rgba(255,255,255,.08);padding:18px 30px;color:#64748b;font-size:12px;line-height:1.55;">This link can only be used once.</div>
+                  <div style="border-top:1px solid #e2e8f0;padding:18px 30px;color:#94a3b8;font-size:12px;line-height:1.55;">This link can only be used once.</div>
                 </div></body></html>
                 """.formatted(FROM_NAME, safeName, safeUrl),
                 """
@@ -137,11 +161,29 @@ public class EmailUtil {
             sendViaResend(toEmail, subject, htmlContent, textContent);
             return;
         }
+        if ("sendgrid".equalsIgnoreCase(mailProvider)) {
+            sendViaSendGrid(toEmail, subject, htmlContent, textContent);
+            return;
+        }
         throw new CustomException(
                 500,
                 "Unsupported mail provider configuration.",
                 HttpStatus.INTERNAL_SERVER_ERROR
         );
+    }
+
+    private void sendViaSendGrid(String toEmail, String subject, String htmlContent, String textContent) {
+        if (sendGridClient == null) {
+            throw new CustomException(500, "SendGrid client is not configured.", HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+        try {
+            boolean isHtml = htmlContent != null && !htmlContent.isBlank();
+            String content = isHtml ? htmlContent : textContent;
+            sendGridClient.send(sendGridFrom, toEmail, subject, content, isHtml);
+        } catch (Exception e) {
+            log.error("SendGrid email delivery failed for recipient domain {}", emailDomain(toEmail), e);
+            throw new CustomException(500, "Could not send email via SendGrid: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
     }
 
     private void sendViaSmtp(String toEmail, String subject, String htmlContent, String textContent) {
@@ -227,18 +269,18 @@ public class EmailUtil {
             <!DOCTYPE html>
             <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
             <style>
-            body{margin:0;padding:28px;background:#07040d;font-family:Arial,Helvetica,sans-serif;color:#e2e8f0;}
-            .box{max-width:560px;margin:auto;background:#0f0b1c;border:1px solid rgba(168,85,247,.22);border-radius:18px;overflow:hidden;}
-            .hero{padding:28px 30px;background:linear-gradient(135deg,rgba(168,85,247,.22),rgba(236,72,153,.14));}
-            .brand{font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#c084fc;}
-            h2{margin:14px 0 0;font-size:26px;line-height:1.25;color:#fff;}
+            body{margin:0;padding:28px;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#334155;}
+            .box{max-width:560px;margin:auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,.05);}
+            .hero{padding:28px 30px;background:linear-gradient(135deg,rgba(168,85,247,.1),rgba(236,72,153,.05));}
+            .brand{font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#a855f7;}
+            h2{margin:14px 0 0;font-size:26px;line-height:1.25;color:#0f172a;}
             .content{padding:28px 30px;}
-            p{color:#b6c2d2;line-height:1.6;margin:0 0 14px;}
-            b{color:#fff;}
-            .otp-container{text-align:center;padding:18px;background:#080511;border:1px solid rgba(255,255,255,.08);border-radius:14px;margin:24px 0;}
-            .otp{font-size:40px;font-weight:800;color:#fff;letter-spacing:8px;}
-            .ttl{font-size:13px;color:#94a3b8;text-align:center;margin-top:10px;}
-            .footer{border-top:1px solid rgba(255,255,255,.08);padding:18px 30px;color:#64748b;font-size:12px;line-height:1.55;}
+            p{color:#475569;line-height:1.6;margin:0 0 14px;}
+            b{color:#0f172a;}
+            .otp-container{text-align:center;padding:18px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:14px;margin:24px 0;}
+            .otp{font-size:40px;font-weight:800;color:#0f172a;letter-spacing:8px;}
+            .ttl{font-size:13px;color:#64748b;text-align:center;margin-top:10px;}
+            .footer{border-top:1px solid #e2e8f0;padding:18px 30px;color:#94a3b8;font-size:12px;line-height:1.55;}
             </style></head><body>
             <div class="box">
             <div class="hero"><div class="brand">%s</div><h2>Password recovery OTP</h2></div>
@@ -269,22 +311,22 @@ public class EmailUtil {
         String safeName = escapeHtml(displayName(name));
         return """
             <!DOCTYPE html>
-            <html><head><meta charset="UTF-8"></head><body style="margin:0;padding:28px;background:#07040d;font-family:Arial,Helvetica,sans-serif;color:#e2e8f0;">
-            <div style="max-width:560px;margin:auto;background:#0f0b1c;border:1px solid rgba(168,85,247,.22);border-radius:18px;overflow:hidden;">
-              <div style="padding:28px 30px;background:linear-gradient(135deg,rgba(168,85,247,.22),rgba(236,72,153,.14));">
-                <div style="font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#c084fc;">%s</div>
-                <h2 style="margin:14px 0 0;font-size:26px;line-height:1.25;color:#fff;">Verify your account</h2>
+            <html><head><meta charset="UTF-8"></head><body style="margin:0;padding:28px;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#334155;">
+            <div style="max-width:560px;margin:auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,.05);">
+              <div style="padding:28px 30px;background:linear-gradient(135deg,rgba(168,85,247,.1),rgba(236,72,153,.05));">
+                <div style="font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#a855f7;">%s</div>
+                <h2 style="margin:14px 0 0;font-size:26px;line-height:1.25;color:#0f172a;">Verify your account</h2>
               </div>
               <div style="padding:28px 30px;">
-                <p style="color:#b6c2d2;line-height:1.6;margin:0 0 14px;">Hello <b style="color:#fff;">%s</b>,</p>
-                <p style="color:#b6c2d2;line-height:1.6;margin:0 0 14px;">Use this code to verify your ComiVerse account:</p>
-                <div style="text-align:center;padding:18px;background:#080511;border:1px solid rgba(255,255,255,.08);border-radius:14px;margin:24px 0;">
-                  <div style="font-size:40px;font-weight:800;color:#fff;letter-spacing:8px;">%s</div>
-                  <div style="font-size:13px;color:#94a3b8;text-align:center;margin-top:10px;">This code expires in 5 minutes.</div>
+                <p style="color:#475569;line-height:1.6;margin:0 0 14px;">Hello <b style="color:#0f172a;">%s</b>,</p>
+                <p style="color:#475569;line-height:1.6;margin:0 0 14px;">Use this code to verify your ComiVerse account:</p>
+                <div style="text-align:center;padding:18px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:14px;margin:24px 0;">
+                  <div style="font-size:40px;font-weight:800;color:#0f172a;letter-spacing:8px;">%s</div>
+                  <div style="font-size:13px;color:#64748b;text-align:center;margin-top:10px;">This code expires in 5 minutes.</div>
                 </div>
-                <p style="color:#94a3b8;line-height:1.6;margin:0;">If you did not create this account, you can ignore this email.</p>
+                <p style="color:#64748b;line-height:1.6;margin:0;">If you did not create this account, you can ignore this email.</p>
               </div>
-              <div style="border-top:1px solid rgba(255,255,255,.08);padding:18px 30px;color:#64748b;font-size:12px;line-height:1.55;">Do not share this code with anyone.</div>
+              <div style="border-top:1px solid #e2e8f0;padding:18px 30px;color:#94a3b8;font-size:12px;line-height:1.55;">Do not share this code with anyone.</div>
             </div></body></html>
             """.formatted(FROM_NAME, safeName, otp);
     }
