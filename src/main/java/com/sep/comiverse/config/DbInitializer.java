@@ -56,6 +56,7 @@ public class DbInitializer implements CommandLineRunner {
         jdbcTemplate.execute("UPDATE chapters SET images = ARRAY[]::text[] WHERE images IS NULL");
         migrateRevenueAnalyticsSchema();
         migrateCreatorPayoutAmountsToUsd();
+        migrateMergedPayoutSchema();
         migrateCompletedTeamTasks();
         migrateTranslatorPagePaymentSchema();
 
@@ -261,11 +262,125 @@ public class DbInitializer implements CommandLineRunner {
                 WHERE UPPER(COALESCE(NULLIF(BTRIM(currency), ''), 'VND')) = 'VND'
                 """, rate, rate, rate, rate, rate, rate, rate.toPlainString());
 
-        jdbcTemplate.update("""
-                UPDATE creator_stripe_payout_profiles
-                SET currency = 'USD',
-                    update_at = CURRENT_TIMESTAMP
-                WHERE UPPER(COALESCE(NULLIF(BTRIM(currency), ''), 'VND')) = 'VND'
+        // Support both old and already-merged databases.
+        jdbcTemplate.execute("""
+                DO $$
+                BEGIN
+                    IF to_regclass('public.creator_stripe_payout_profiles') IS NOT NULL THEN
+                        UPDATE creator_stripe_payout_profiles
+                        SET currency = 'USD',
+                            update_at = CURRENT_TIMESTAMP
+                        WHERE UPPER(COALESCE(NULLIF(BTRIM(currency), ''), 'VND')) = 'VND';
+                    END IF;
+
+                    IF to_regclass('public.creator_payout_accounts') IS NOT NULL THEN
+                        UPDATE creator_payout_accounts
+                        SET currency = 'USD',
+                            update_at = CURRENT_TIMESTAMP
+                        WHERE UPPER(COALESCE(NULLIF(BTRIM(currency), ''), 'VND')) = 'VND';
+                    END IF;
+                END $$;
+                """);
+    }
+
+    /**
+     * Consolidates the creator payout schema to six core tables.
+     *
+     * Legacy tables are copied into their merged replacements:
+     * - creator_stripe_payout_profiles -> creator_payout_accounts
+     * - creator_payout_supported_currencies -> creator_payout_currencies
+     * - translator_page_earnings + translator_earning_adjustments
+     *   -> translator_earning_entries
+     *
+     * Hibernate creates the destination tables before CommandLineRunner executes.
+     * ON CONFLICT makes the copy idempotent for partially migrated databases.
+     */
+    private void migrateMergedPayoutSchema() {
+        jdbcTemplate.execute("""
+                DO $$
+                BEGIN
+                    -- Supported currency + current exchange rate become one table.
+                    IF to_regclass('public.creator_payout_supported_currencies') IS NOT NULL
+                       AND to_regclass('public.creator_payout_currencies') IS NOT NULL THEN
+                        INSERT INTO creator_payout_currencies (
+                            id, currency_code, display_name, symbol, units_per_usd,
+                            active, deleted, create_at, update_at
+                        )
+                        SELECT id, currency_code, display_name, symbol, units_per_usd,
+                               active, deleted, create_at, update_at
+                        FROM creator_payout_supported_currencies
+                        ON CONFLICT DO NOTHING;
+                    END IF;
+
+                    -- Stripe is the only payout provider, so its profile lives in payout_accounts.
+                    IF to_regclass('public.creator_stripe_payout_profiles') IS NOT NULL
+                       AND to_regclass('public.creator_payout_accounts') IS NOT NULL THEN
+                        INSERT INTO creator_payout_accounts (
+                            id, user_id, role, stripe_connected_account_id,
+                            account_country, currency, details_submitted,
+                            charges_enabled, payouts_enabled, transfers_capability,
+                            requirements_currently_due, requirements_disabled_reason,
+                            external_account_type, external_account_last4,
+                            external_account_display_name, onboarding_status, active,
+                            last_synced_at, onboarding_completed_at,
+                            deleted, create_at, update_at
+                        )
+                        SELECT id, user_id, role, stripe_connected_account_id,
+                               account_country, currency, details_submitted,
+                               charges_enabled, payouts_enabled, transfers_capability,
+                               requirements_currently_due, requirements_disabled_reason,
+                               external_account_type, external_account_last4,
+                               external_account_display_name, onboarding_status, active,
+                               last_synced_at, onboarding_completed_at,
+                               deleted, create_at, update_at
+                        FROM creator_stripe_payout_profiles
+                        ON CONFLICT DO NOTHING;
+                    END IF;
+
+                    -- Page earnings become positive PAGE_EARNING ledger entries.
+                    IF to_regclass('public.translator_page_earnings') IS NOT NULL
+                       AND to_regclass('public.translator_earning_entries') IS NOT NULL THEN
+                        INSERT INTO translator_earning_entries (
+                            id, entry_type, translator_id, task_id, settlement_id,
+                            chapter_id, page_id, page_number, entry_month,
+                            responsibility_factor, gross_amount_usd, amount_usd, reason,
+                            deleted, create_at, update_at
+                        )
+                        SELECT id, 'PAGE_EARNING', translator_id, task_id, settlement_id,
+                               chapter_id, page_id, page_number, settlement_month,
+                               responsibility_factor, gross_amount_usd, net_amount_usd, NULL,
+                               deleted, create_at, update_at
+                        FROM translator_page_earnings
+                        ON CONFLICT DO NOTHING;
+                    END IF;
+
+                    -- Old adjustments become signed ledger entries.
+                    IF to_regclass('public.translator_earning_adjustments') IS NOT NULL
+                       AND to_regclass('public.translator_earning_entries') IS NOT NULL THEN
+                        INSERT INTO translator_earning_entries (
+                            id, entry_type, translator_id, task_id, settlement_id,
+                            chapter_id, page_id, page_number, entry_month,
+                            responsibility_factor, gross_amount_usd, amount_usd, reason,
+                            deleted, create_at, update_at
+                        )
+                        SELECT a.id,
+                               CASE WHEN a.amount_usd < 0 THEN 'REVERSAL_ADJUSTMENT' ELSE 'MANUAL_ADJUSTMENT' END,
+                               a.translator_id, a.task_id, a.settlement_id,
+                               s.chapter_id, NULL, NULL, a.adjustment_month,
+                               NULL, NULL, a.amount_usd, a.reason,
+                               a.deleted, a.create_at, a.update_at
+                        FROM translator_earning_adjustments a
+                        LEFT JOIN translator_chapter_settlements s
+                          ON s.id = a.settlement_id
+                        ON CONFLICT DO NOTHING;
+                    END IF;
+
+                    -- Drop only after the data-copy steps above have run.
+                    DROP TABLE IF EXISTS translator_earning_adjustments;
+                    DROP TABLE IF EXISTS translator_page_earnings;
+                    DROP TABLE IF EXISTS creator_stripe_payout_profiles;
+                    DROP TABLE IF EXISTS creator_payout_supported_currencies;
+                END $$;
                 """);
     }
 
@@ -398,9 +513,10 @@ public class DbInitializer implements CommandLineRunner {
                              AND table_name = 'team_tasks'
                              AND column_name = 'chapter_reward_usd'
                        ) THEN
+                        -- Legacy column name; the value is USD per translated page.
                         UPDATE team_tasks t
                         SET chapter_reward_usd = ROUND(
-                            COALESCE(s.translator_task_rate_vnd, 1.20)
+                            COALESCE(s.translator_task_rate_vnd, 3.50)
                             * COALESCE(p.page_count, 0),
                             2
                         )

@@ -20,7 +20,7 @@ import java.util.UUID;
 @Builder
 public class GlossaryTermEntity extends BaseEntity {
 
-    @Column(name = "comic_id", nullable = false)
+    @Column(name = "comic_id")
     private UUID comicId;
 
     @Column(name = "source_term", nullable = false)

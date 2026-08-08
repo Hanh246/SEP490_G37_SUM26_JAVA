@@ -9,21 +9,20 @@ import com.sep.comiverse.dto.response.CreatorPayoutRequestResponse;
 import com.sep.comiverse.dto.response.TranslatorTaskRevenueResponse;
 import com.sep.comiverse.entity.CreatorPayoutRequestEntity;
 import com.sep.comiverse.entity.CreatorPayoutSettingEntity;
-import com.sep.comiverse.entity.CreatorStripePayoutProfileEntity;
+import com.sep.comiverse.entity.CreatorPayoutAccountEntity;
 import com.sep.comiverse.entity.TeamTaskEntity;
 import com.sep.comiverse.entity.TranslatorChapterSettlementEntity;
-import com.sep.comiverse.entity.TranslatorEarningAdjustmentEntity;
-import com.sep.comiverse.entity.TranslatorPageEarningEntity;
+import com.sep.comiverse.entity.TranslatorEarningEntryEntity;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.entity.enums.CreatorPayoutCurrency;
 import com.sep.comiverse.entity.enums.CreatorPayoutRole;
 import com.sep.comiverse.entity.enums.CreatorPayoutStatus;
+import com.sep.comiverse.entity.enums.TranslatorEarningEntryType;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.ICreatorPayoutRequestRepository;
 import com.sep.comiverse.repository.ITeamTaskRepository;
 import com.sep.comiverse.repository.ITranslatorChapterSettlementRepository;
-import com.sep.comiverse.repository.ITranslatorEarningAdjustmentRepository;
-import com.sep.comiverse.repository.ITranslatorPageEarningRepository;
+import com.sep.comiverse.repository.ITranslatorEarningEntryRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
@@ -70,12 +69,11 @@ public class CreatorPayoutService {
     @Value("${payout.time-zone:Asia/Ho_Chi_Minh}")
     private String payoutTimeZone;
 
-    private final CreatorStripePayoutProfileService payoutProfileService;
+    private final CreatorPayoutAccountService payoutProfileService;
     private final ICreatorPayoutRequestRepository payoutRequestRepository;
     private final ITeamTaskRepository teamTaskRepository;
     private final ITranslatorChapterSettlementRepository translatorSettlementRepository;
-    private final ITranslatorPageEarningRepository translatorPageEarningRepository;
-    private final ITranslatorEarningAdjustmentRepository translatorAdjustmentRepository;
+    private final ITranslatorEarningEntryRepository translatorEarningRepository;
     private final IUserRepository userRepository;
     private final StripeGatewayService stripeGatewayService;
     private final CreatorPayoutSettingsService payoutSettingsService;
@@ -91,7 +89,7 @@ public class CreatorPayoutService {
         YearMonth selectedMonth = resolveMonth(requestedMonth);
         CreatorPayoutSettingEntity settings = payoutSettingsService.currentSettings();
 
-        CreatorStripePayoutProfileEntity account =
+        CreatorPayoutAccountEntity account =
                 payoutProfileService.findEntity(user.getId());
         CreatorPayoutSettingsService.ResolvedCurrency currency =
                 payoutSettingsService.resolveCurrency(
@@ -216,7 +214,7 @@ public class CreatorPayoutService {
         YearMonth payoutMonth = parseMonth(request.getPayoutMonth());
         ensureRequestableMonth(payoutMonth);
 
-        CreatorStripePayoutProfileEntity account =
+        CreatorPayoutAccountEntity account =
                 payoutProfileService.requireReadyProfile(user.getId());
         CreatorPayoutSettingsService.ResolvedCurrency currency =
                 payoutSettingsService.resolveCurrency(account.getCurrency());
@@ -375,7 +373,7 @@ public class CreatorPayoutService {
             throw invalidTransition(payout, "approve");
         }
 
-        CreatorStripePayoutProfileEntity account =
+        CreatorPayoutAccountEntity account =
                 payoutProfileService.requireReadyProfile(payout.getUserId());
 
         if (!payout.getCurrency().equalsIgnoreCase(account.getCurrency())) {
@@ -428,7 +426,7 @@ public class CreatorPayoutService {
             throw invalidTransition(payout, "pay");
         }
 
-        CreatorStripePayoutProfileEntity account =
+        CreatorPayoutAccountEntity account =
                 payoutProfileService.requireReadyProfile(payout.getUserId());
         if (!payout.getCurrency().equalsIgnoreCase(account.getCurrency())) {
             throw new CustomException(
@@ -525,8 +523,7 @@ public class CreatorPayoutService {
                     .reduce(BigDecimal.ZERO, BigDecimal::add));
 
             BigDecimal cumulativeEarned = normalizeUsd(
-                    translatorPageEarningRepository.sumNetAmountThroughMonth(userId, month.toString())
-                            .add(translatorAdjustmentRepository.sumAmountThroughMonth(userId, month.toString()))
+                    translatorEarningRepository.sumAmountThroughMonth(userId, month.toString())
             );
             BigDecimal reserved = normalizeUsd(payoutRequestRepository.sumReservedThroughMonth(
                     userId,
@@ -544,20 +541,12 @@ public class CreatorPayoutService {
 
             YearMonth currentMonth = YearMonth.now(payoutZone());
             BigDecimal pendingCurrentMonth = normalizeUsd(
-                    translatorPageEarningRepository
-                            .findAllByTranslatorIdAndSettlementMonthOrderByCreatedAtAsc(userId, currentMonth.toString())
+                    translatorEarningRepository
+                            .findAllByTranslatorIdAndEntryMonthOrderByCreatedAtAsc(userId, currentMonth.toString())
                             .stream()
-                            .map(TranslatorPageEarningEntity::getNetAmountUsd)
+                            .map(TranslatorEarningEntryEntity::getAmountUsd)
                             .filter(Objects::nonNull)
                             .reduce(BigDecimal.ZERO, BigDecimal::add)
-                            .add(
-                                    translatorAdjustmentRepository
-                                            .findAllByTranslatorIdAndAdjustmentMonthOrderByCreatedAtAsc(userId, currentMonth.toString())
-                                            .stream()
-                                            .map(TranslatorEarningAdjustmentEntity::getAmountUsd)
-                                            .filter(Objects::nonNull)
-                                            .reduce(BigDecimal.ZERO, BigDecimal::add)
-                            )
             );
 
             long totalPages = rows.stream()
@@ -625,27 +614,36 @@ public class CreatorPayoutService {
     }
 
     private List<TranslatorTaskRevenueResponse> loadTranslatorRevenue(UUID translatorId, YearMonth month) {
-        List<TranslatorPageEarningEntity> earnings = translatorPageEarningRepository
-                .findAllByTranslatorIdAndSettlementMonthOrderByCreatedAtAsc(translatorId, month.toString());
-        Map<UUID, List<TranslatorPageEarningEntity>> bySettlement = earnings.stream()
+        List<TranslatorEarningEntryEntity> allEntries = translatorEarningRepository
+                .findAllByTranslatorIdAndEntryMonthOrderByCreatedAtAsc(
+                        translatorId,
+                        month.toString()
+                );
+
+        List<TranslatorEarningEntryEntity> pageEarnings = allEntries.stream()
+                .filter(item -> item.getEntryType() == TranslatorEarningEntryType.PAGE_EARNING)
+                .toList();
+        Map<UUID, List<TranslatorEarningEntryEntity>> bySettlement = pageEarnings.stream()
                 .collect(Collectors.groupingBy(
-                        TranslatorPageEarningEntity::getSettlementId,
+                        TranslatorEarningEntryEntity::getSettlementId,
                         LinkedHashMap::new,
                         Collectors.toList()
                 ));
 
         List<TranslatorTaskRevenueResponse> rows = new ArrayList<>();
-        for (Map.Entry<UUID, List<TranslatorPageEarningEntity>> entry : bySettlement.entrySet()) {
+        for (Map.Entry<UUID, List<TranslatorEarningEntryEntity>> entry : bySettlement.entrySet()) {
             TranslatorChapterSettlementEntity settlement = translatorSettlementRepository
                     .findById(entry.getKey()).orElse(null);
-            List<TranslatorPageEarningEntity> pageRows = entry.getValue();
+            List<TranslatorEarningEntryEntity> pageRows = entry.getValue();
             if (pageRows.isEmpty()) continue;
             TeamTaskEntity task = teamTaskRepository.findByIdWithChapter(pageRows.get(0).getTaskId()).orElse(null);
             BigDecimal gross = normalizeUsd(pageRows.stream()
-                    .map(TranslatorPageEarningEntity::getGrossAmountUsd)
+                    .map(TranslatorEarningEntryEntity::getGrossAmountUsd)
+                    .filter(Objects::nonNull)
                     .reduce(BigDecimal.ZERO, BigDecimal::add));
             BigDecimal net = normalizeUsd(pageRows.stream()
-                    .map(TranslatorPageEarningEntity::getNetAmountUsd)
+                    .map(TranslatorEarningEntryEntity::getAmountUsd)
+                    .filter(Objects::nonNull)
                     .reduce(BigDecimal.ZERO, BigDecimal::add));
             BigDecimal averageFactor = gross.signum() == 0
                     ? BigDecimal.ONE.setScale(2)
@@ -675,13 +673,16 @@ public class CreatorPayoutService {
                     .build());
         }
 
-        for (TranslatorEarningAdjustmentEntity adjustment : translatorAdjustmentRepository
-                .findAllByTranslatorIdAndAdjustmentMonthOrderByCreatedAtAsc(translatorId, month.toString())) {
+        for (TranslatorEarningEntryEntity adjustment : allEntries.stream()
+                .filter(item -> item.getEntryType() != TranslatorEarningEntryType.PAGE_EARNING)
+                .toList()) {
             TeamTaskEntity task = teamTaskRepository.findByIdWithChapter(adjustment.getTaskId()).orElse(null);
             rows.add(TranslatorTaskRevenueResponse.builder()
                     .settlementId(adjustment.getSettlementId())
                     .taskId(adjustment.getTaskId())
-                    .chapterId(task == null || task.getChapter() == null ? null : task.getChapter().getId())
+                    .chapterId(adjustment.getChapterId() != null
+                            ? adjustment.getChapterId()
+                            : task == null || task.getChapter() == null ? null : task.getChapter().getId())
                     .taskTitle(task == null ? "Translation adjustment" : task.getTitle())
                     .chapterNumber(task == null || task.getChapter() == null ? null : task.getChapter().getChapterNumber())
                     .chapterTitle(task == null || task.getChapter() == null ? null : task.getChapter().getTitle())
@@ -799,7 +800,7 @@ public class CreatorPayoutService {
     }
 
     private Requestability evaluateRequestability(
-            CreatorStripePayoutProfileEntity account,
+            CreatorPayoutAccountEntity account,
             CreatorPayoutRequestEntity existing,
             YearMonth selectedMonth,
             BigDecimal withdrawableUsd,

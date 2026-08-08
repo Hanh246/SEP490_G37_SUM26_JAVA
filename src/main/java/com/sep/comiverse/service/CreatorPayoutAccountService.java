@@ -4,12 +4,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.sep.comiverse.dto.request.CreateStripePayoutOnboardingRequest;
 import com.sep.comiverse.dto.response.CreatorPayoutAccountResponse;
 import com.sep.comiverse.dto.response.StripePayoutOnboardingLinkResponse;
-import com.sep.comiverse.entity.CreatorStripePayoutProfileEntity;
+import com.sep.comiverse.entity.CreatorPayoutAccountEntity;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.entity.enums.CreatorPayoutRole;
 import com.sep.comiverse.entity.enums.StripePayoutProfileStatus;
 import com.sep.comiverse.exception.CustomException;
-import com.sep.comiverse.repository.ICreatorStripePayoutProfileRepository;
+import com.sep.comiverse.repository.ICreatorPayoutAccountRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
@@ -28,9 +28,9 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-public class CreatorStripePayoutProfileService {
+public class CreatorPayoutAccountService {
 
-    private final ICreatorStripePayoutProfileRepository profileRepository;
+    private final ICreatorPayoutAccountRepository profileRepository;
     private final IUserRepository userRepository;
     private final StripeGatewayService stripeGatewayService;
     private final CreatorPayoutSettingsService payoutSettingsService;
@@ -39,7 +39,7 @@ public class CreatorStripePayoutProfileService {
     private String defaultCountry;
 
     @Transactional(readOnly = true)
-    public CreatorStripePayoutProfileEntity findEntity(UUID userId) {
+    public CreatorPayoutAccountEntity findEntity(UUID userId) {
         if (userId == null) return null;
         return profileRepository.findByUserIdAndDeletedFalse(userId).orElse(null);
     }
@@ -69,9 +69,9 @@ public class CreatorStripePayoutProfileService {
         CreatorPayoutSettingsService.ResolvedCurrency requestedCurrency =
                 payoutSettingsService.resolveCurrency(request.getPayoutCurrency());
 
-        CreatorStripePayoutProfileEntity profile = profileRepository
+        CreatorPayoutAccountEntity profile = profileRepository
                 .findByUserId(user.getId())
-                .orElseGet(CreatorStripePayoutProfileEntity::new);
+                .orElseGet(CreatorPayoutAccountEntity::new);
 
         String country = normalizeCountry(
                 request.getCountryCode(),
@@ -162,7 +162,7 @@ public class CreatorStripePayoutProfileService {
     @Transactional
     public CreatorPayoutAccountResponse syncProfile(UserPrincipal principal) {
         UserEntity user = requireCreator(principal);
-        CreatorStripePayoutProfileEntity profile =
+        CreatorPayoutAccountEntity profile =
                 profileRepository.findByUserIdAndDeletedFalse(user.getId())
                         .orElseThrow(() -> new CustomException(
                                 404,
@@ -174,8 +174,8 @@ public class CreatorStripePayoutProfileService {
     }
 
     @Transactional(readOnly = true)
-    public CreatorStripePayoutProfileEntity requireReadyProfile(UUID userId) {
-        CreatorStripePayoutProfileEntity profile =
+    public CreatorPayoutAccountEntity requireReadyProfile(UUID userId) {
+        CreatorPayoutAccountEntity profile =
                 profileRepository.findByUserIdAndDeletedFalse(userId)
                         .orElseThrow(() -> new CustomException(
                                 400,
@@ -202,18 +202,18 @@ public class CreatorStripePayoutProfileService {
         String accountId = stripeAccount.path("id").asText("");
         if (!StringUtils.hasText(accountId)) return;
 
-        Optional<CreatorStripePayoutProfileEntity> existing =
+        Optional<CreatorPayoutAccountEntity> existing =
                 profileRepository
                         .findByStripeConnectedAccountIdAndDeletedFalse(accountId);
         if (existing.isEmpty()) return;
 
-        CreatorStripePayoutProfileEntity profile = existing.get();
+        CreatorPayoutAccountEntity profile = existing.get();
         validateTestAccountAndOwner(stripeAccount, profile.getUserId());
         applyStripeSnapshot(profile, stripeAccount);
         profileRepository.save(profile);
     }
 
-    public boolean isReady(CreatorStripePayoutProfileEntity profile) {
+    public boolean isReady(CreatorPayoutAccountEntity profile) {
         return profile != null
                 && Boolean.TRUE.equals(profile.getActive())
                 && Boolean.TRUE.equals(profile.getDetailsSubmitted())
@@ -223,7 +223,7 @@ public class CreatorStripePayoutProfileService {
     }
 
     public CreatorPayoutAccountResponse toResponse(
-            CreatorStripePayoutProfileEntity profile
+            CreatorPayoutAccountEntity profile
     ) {
         if (profile == null) return null;
 
@@ -258,8 +258,8 @@ public class CreatorStripePayoutProfileService {
                 .build();
     }
 
-    private CreatorStripePayoutProfileEntity syncEntity(
-            CreatorStripePayoutProfileEntity profile
+    private CreatorPayoutAccountEntity syncEntity(
+            CreatorPayoutAccountEntity profile
     ) {
         JsonNode stripeAccount =
                 stripeGatewayService.retrieveConnectedAccount(
@@ -271,7 +271,7 @@ public class CreatorStripePayoutProfileService {
     }
 
     private void applyStripeSnapshot(
-            CreatorStripePayoutProfileEntity profile,
+            CreatorPayoutAccountEntity profile,
             JsonNode stripeAccount
     ) {
         String country = normalizeCountry(
@@ -408,7 +408,7 @@ public class CreatorStripePayoutProfileService {
     }
 
     private void assertProfileOwner(
-            CreatorStripePayoutProfileEntity profile,
+            CreatorPayoutAccountEntity profile,
             UUID userId
     ) {
         if (profile.getUserId() != null
