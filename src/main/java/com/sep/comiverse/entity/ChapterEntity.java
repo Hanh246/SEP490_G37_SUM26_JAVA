@@ -18,7 +18,8 @@ import java.util.UUID;
 @Builder
 @Table(name = "chapters", indexes = {
         @Index(name = "idx_chapters_comic_number_deleted", columnList = "comic_id, chapter_number, deleted"),
-        @Index(name = "idx_chapters_moderation_deleted", columnList = "moderation_status, deleted")
+        @Index(name = "idx_chapters_moderation_deleted", columnList = "moderation_status, deleted"),
+        @Index(name = "idx_chapters_comic_status_deleted", columnList = "comic_id, moderation_status, deleted")
 })
 @EqualsAndHashCode(callSuper = true)
 @ToString(exclude = {"comic", "projectTeam"})

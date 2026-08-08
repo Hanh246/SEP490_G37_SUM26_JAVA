@@ -16,7 +16,10 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Table(name = "team_tasks")
+@Table(name = "team_tasks", indexes = {
+        @Index(name = "idx_team_tasks_project_status", columnList = "project_team_id, status"),
+        @Index(name = "idx_team_tasks_assignee_status", columnList = "assignee_id, status")
+})
 public class TeamTaskEntity {
 
     @Id

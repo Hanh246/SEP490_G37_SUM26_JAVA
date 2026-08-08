@@ -15,7 +15,10 @@ import jakarta.persistence.Index;
 @AllArgsConstructor
 @Builder
 @Table(name = "submissions", indexes = {
-        @Index(name = "idx_submissions_author_queue_deleted", columnList = "author_id, queue_type, deleted")
+        @Index(name = "idx_submissions_author_queue_deleted", columnList = "author_id, queue_type, deleted"),
+        @Index(name = "idx_submissions_status_deleted_created", columnList = "status, deleted, create_at"),
+        @Index(name = "idx_submissions_queue_status_deleted", columnList = "queue_type, status, deleted"),
+        @Index(name = "idx_submissions_comic_chapter_deleted", columnList = "comic_id, chapter_id, deleted")
 })
 @EqualsAndHashCode(callSuper = true)
 public class SubmissionEntity extends BaseEntity {

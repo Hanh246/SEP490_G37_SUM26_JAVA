@@ -250,7 +250,7 @@ public class ReviewController {
             taskRepository.save(task);
             translatorPaymentService.settleApprovedTask(task);
         } else if ("changes_requested".equals(decision)) {
-            task.setStatus("in_progress");
+            task.setStatus("under_review");
             task.setCompletedAt(null);
         } else {
             return ResponseEntity.badRequest()
@@ -331,13 +331,13 @@ public class ReviewController {
                     .body(Map.of("success", false, "message", "Only completed (published) translations can be revoked."));
         }
 
-        // 1. Revert task status to in_progress and save rejection reason
-        task.setStatus("in_progress");
+        // 1. Revert task status to under_review and save rejection reason
+        task.setStatus("under_review");
         task.setCompletedAt(null);
         task.setRejectionReason(reason);
         translatorPaymentService.reverseLatestSettlement(taskId, reason);
         taskRepository.save(task);
-        log.info("[revokeTranslation] Task {} reverted to in_progress. Reason: {}", taskId, reason);
+        log.info("[revokeTranslation] Task {} reverted to under_review. Reason: {}", taskId, reason);
 
         // 2. Delete the ChapterTranslation for this chapter + language
         ChapterEntity chapter = task.getChapter();

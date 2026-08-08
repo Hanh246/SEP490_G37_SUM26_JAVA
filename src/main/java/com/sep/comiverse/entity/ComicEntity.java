@@ -20,7 +20,9 @@ import java.util.UUID;
 @Builder
 @Table(name = "comics", indexes = {
         @Index(name = "idx_comics_moderation_deleted", columnList = "moderation_status, deleted"),
-        @Index(name = "idx_comics_author_deleted", columnList = "author_id, deleted")
+        @Index(name = "idx_comics_author_deleted", columnList = "author_id, deleted"),
+        @Index(name = "idx_comics_mod_deleted_created", columnList = "moderation_status, deleted, create_at"),
+        @Index(name = "idx_comics_title", columnList = "title")
 })
 @EqualsAndHashCode(callSuper = true, exclude = "genres")
 @ToString(exclude = "genres")
@@ -113,7 +115,7 @@ public class ComicEntity extends BaseEntity {
 
 
     @Convert(converter = com.sep.comiverse.entity.converter.VectorConverter.class)
-    @Column(name = "summary_vector", columnDefinition = "vector(768)")
+    @Column(name = "summary_vector", columnDefinition = "vector")
     private float[] summaryVector;
 
     @Column(name = "approved_by_id")

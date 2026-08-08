@@ -11,7 +11,10 @@ import java.util.UUID;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Entity
-@Table(name = "appeal_tickets")
+@Table(name = "appeal_tickets", indexes = {
+        @Index(name = "idx_appeal_tickets_status_deleted", columnList = "status, deleted"),
+        @Index(name = "idx_appeal_tickets_author_target", columnList = "author_id, target_id")
+})
 public class AppealTicketEntity extends BaseEntity {
 
     @Column(name = "author_id", nullable = false)

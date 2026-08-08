@@ -16,7 +16,7 @@ public interface IOfflineLicenseRepository extends AbstractCrudRepository<Offlin
 
     @Modifying
     @Transactional
-    @Query("UPDATE OfflineLicenseEntity l SET l.revoked = true, l.updatedAt = CURRENT_TIMESTAMP " +
+    @Query("UPDATE OfflineLicenseEntity l SET l.revoked = true, l.updatedAt = CURRENT_INSTANT " +
             "WHERE l.offlineDeviceId = :deviceId AND l.userId = :userId AND l.deleted = false")
     int revokeByDevice(@Param("deviceId") UUID deviceId, @Param("userId") UUID userId);
 }
