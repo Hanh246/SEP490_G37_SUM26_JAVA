@@ -18,6 +18,14 @@ import lombok.NoArgsConstructor;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * Creator payout account and Stripe Connect profile in one table.
+ * ComiVerse uses Stripe as its only payout provider, so a separate provider
+ * profile table would duplicate the same one-to-one creator account data.
+ *
+ * Wallet balances are deliberately NOT persisted here; they are derived from
+ * immutable earning entries minus reserved/paid payout requests to avoid drift.
+ */
 @Data
 @Entity
 @Builder
@@ -25,23 +33,19 @@ import java.util.UUID;
 @AllArgsConstructor
 @EqualsAndHashCode(callSuper = true)
 @Table(
-        name = "creator_stripe_payout_profiles",
+        name = "creator_payout_accounts",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_creator_stripe_profile_user", columnNames = "user_id"),
-                @UniqueConstraint(name = "uk_creator_stripe_profile_account", columnNames = "stripe_connected_account_id")
+                @UniqueConstraint(name = "uk_creator_payout_account_user", columnNames = "user_id"),
+                @UniqueConstraint(name = "uk_creator_payout_account_stripe", columnNames = "stripe_connected_account_id")
         },
         indexes = {
-                @Index(name = "idx_creator_stripe_profile_role", columnList = "role"),
-                @Index(name = "idx_creator_stripe_profile_status", columnList = "onboarding_status"),
-                @Index(name = "idx_creator_stripe_profile_account", columnList = "stripe_connected_account_id")
+                @Index(name = "idx_creator_payout_account_role", columnList = "role"),
+                @Index(name = "idx_creator_payout_account_status", columnList = "onboarding_status"),
+                @Index(name = "idx_creator_payout_account_stripe", columnList = "stripe_connected_account_id")
         }
 )
-public class CreatorStripePayoutProfileEntity extends BaseEntity {
+public class CreatorPayoutAccountEntity extends BaseEntity {
 
-    /**
-     * Scalar reference only. There is deliberately no JPA relationship to
-     * UserEntity, AuthorEntity, or TranslatorEntity.
-     */
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
@@ -56,19 +60,19 @@ public class CreatorStripePayoutProfileEntity extends BaseEntity {
     private String accountCountry;
 
     @Builder.Default
-    @Column(name = "currency", nullable = false, length = 3)
+    @Column(name = "currency", nullable = false, length = 3, columnDefinition = "varchar(3) default 'USD'")
     private String currency = "USD";
 
     @Builder.Default
-    @Column(name = "details_submitted", nullable = false)
+    @Column(name = "details_submitted", nullable = false, columnDefinition = "boolean default false")
     private Boolean detailsSubmitted = false;
 
     @Builder.Default
-    @Column(name = "charges_enabled", nullable = false)
+    @Column(name = "charges_enabled", nullable = false, columnDefinition = "boolean default false")
     private Boolean chargesEnabled = false;
 
     @Builder.Default
-    @Column(name = "payouts_enabled", nullable = false)
+    @Column(name = "payouts_enabled", nullable = false, columnDefinition = "boolean default false")
     private Boolean payoutsEnabled = false;
 
     @Column(name = "transfers_capability", length = 30)
@@ -91,11 +95,11 @@ public class CreatorStripePayoutProfileEntity extends BaseEntity {
 
     @Enumerated(EnumType.STRING)
     @Builder.Default
-    @Column(name = "onboarding_status", nullable = false, length = 40)
+    @Column(name = "onboarding_status", nullable = false, length = 40, columnDefinition = "varchar(40) default 'CREATED'")
     private StripePayoutProfileStatus onboardingStatus = StripePayoutProfileStatus.CREATED;
 
     @Builder.Default
-    @Column(name = "active", nullable = false)
+    @Column(name = "active", nullable = false, columnDefinition = "boolean default true")
     private Boolean active = true;
 
     @Column(name = "last_synced_at")

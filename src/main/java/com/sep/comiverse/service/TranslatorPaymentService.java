@@ -6,6 +6,7 @@ import com.sep.comiverse.dto.request.HandoverTaskRequest;
 import com.sep.comiverse.dto.response.TaskHandoverResponse;
 import com.sep.comiverse.entity.*;
 import com.sep.comiverse.entity.enums.PageStatus;
+import com.sep.comiverse.entity.enums.TranslatorEarningEntryType;
 import com.sep.comiverse.entity.enums.TranslatorSettlementStatus;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.*;
@@ -33,8 +34,7 @@ public class TranslatorPaymentService {
     private final IPageTranslationRepository pageRepository;
     private final ITaskHandoverRepository handoverRepository;
     private final ITranslatorChapterSettlementRepository settlementRepository;
-    private final ITranslatorPageEarningRepository earningRepository;
-    private final ITranslatorEarningAdjustmentRepository adjustmentRepository;
+    private final ITranslatorEarningEntryRepository earningRepository;
     private final CreatorPayoutSettingsService payoutSettingsService;
     private final ObjectMapper objectMapper;
 
@@ -267,7 +267,7 @@ public class TranslatorPaymentService {
         settlement = settlementRepository.saveAndFlush(settlement);
 
         BigDecimal allocatedGross = BigDecimal.ZERO.setScale(2);
-        List<TranslatorPageEarningEntity> earnings = new ArrayList<>();
+        List<TranslatorEarningEntryEntity> earnings = new ArrayList<>();
         for (int index = 0; index < pages.size(); index++) {
             PageTranslationEntity page = pages.get(index);
             BigDecimal gross = index == pages.size() - 1
@@ -277,17 +277,18 @@ public class TranslatorPaymentService {
             BigDecimal factor = normalizeFactor(page.getResponsibilityFactor());
             BigDecimal net = normalizeMoney(gross.multiply(factor));
 
-            TranslatorPageEarningEntity earning = TranslatorPageEarningEntity.builder()
+            TranslatorEarningEntryEntity earning = TranslatorEarningEntryEntity.builder()
+                    .entryType(TranslatorEarningEntryType.PAGE_EARNING)
                     .settlementId(settlement.getId())
                     .taskId(task.getId())
                     .chapterId(task.getChapter().getId())
                     .pageId(page.getId())
                     .pageNumber(page.getPageNumber())
                     .translatorId(page.getAssignedTranslatorId())
-                    .settlementMonth(month)
+                    .entryMonth(month)
                     .responsibilityFactor(factor)
                     .grossAmountUsd(gross)
-                    .netAmountUsd(net)
+                    .amountUsd(net)
                     .build();
             earning.setDeleted(false);
             earnings.add(earning);
@@ -309,25 +310,31 @@ public class TranslatorPaymentService {
                 ? reason.trim()
                 : "Translation settlement reversed";
         String adjustmentMonth = YearMonth.now(payoutZone()).toString();
-        Map<UUID, BigDecimal> totals = earningRepository.findAllBySettlementId(settlement.getId())
+        Map<UUID, BigDecimal> totals = earningRepository
+                .findAllBySettlementIdAndEntryType(
+                        settlement.getId(),
+                        TranslatorEarningEntryType.PAGE_EARNING
+                )
                 .stream()
                 .collect(Collectors.groupingBy(
-                        TranslatorPageEarningEntity::getTranslatorId,
+                        TranslatorEarningEntryEntity::getTranslatorId,
                         Collectors.reducing(
                                 BigDecimal.ZERO,
-                                TranslatorPageEarningEntity::getNetAmountUsd,
+                                TranslatorEarningEntryEntity::getAmountUsd,
                                 BigDecimal::add
                         )
                 ));
 
-        List<TranslatorEarningAdjustmentEntity> adjustments = totals.entrySet().stream()
+        List<TranslatorEarningEntryEntity> adjustments = totals.entrySet().stream()
                 .filter(entry -> entry.getKey() != null && entry.getValue().signum() != 0)
                 .map(entry -> {
-                    TranslatorEarningAdjustmentEntity adjustment = TranslatorEarningAdjustmentEntity.builder()
+                    TranslatorEarningEntryEntity adjustment = TranslatorEarningEntryEntity.builder()
+                            .entryType(TranslatorEarningEntryType.REVERSAL_ADJUSTMENT)
                             .translatorId(entry.getKey())
                             .taskId(taskId)
                             .settlementId(settlement.getId())
-                            .adjustmentMonth(adjustmentMonth)
+                            .chapterId(settlement.getChapterId())
+                            .entryMonth(adjustmentMonth)
                             .amountUsd(normalizeMoney(entry.getValue().negate()))
                             .reason(normalizedReason)
                             .build();
@@ -335,7 +342,7 @@ public class TranslatorPaymentService {
                     return adjustment;
                 })
                 .toList();
-        adjustmentRepository.saveAll(adjustments);
+        earningRepository.saveAll(adjustments);
 
         settlement.setStatus(TranslatorSettlementStatus.REVERSED);
         settlement.setReversedAt(Instant.now());

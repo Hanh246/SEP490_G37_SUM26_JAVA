@@ -11,7 +11,7 @@ import com.sep.comiverse.dto.response.StripePayoutOnboardingLinkResponse;
 import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.CreatorPayoutService;
 import com.sep.comiverse.service.CreatorPayoutSettingsService;
-import com.sep.comiverse.service.CreatorStripePayoutProfileService;
+import com.sep.comiverse.service.CreatorPayoutAccountService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -28,7 +28,7 @@ import java.util.List;
 public class CreatorPayoutController {
 
     private final CreatorPayoutService creatorPayoutService;
-    private final CreatorStripePayoutProfileService payoutProfileService;
+    private final CreatorPayoutAccountService payoutProfileService;
     private final CreatorPayoutSettingsService payoutSettingsService;
 
     @GetMapping({"", "/overview"})
