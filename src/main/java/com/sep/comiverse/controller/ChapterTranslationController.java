@@ -2,11 +2,16 @@ package com.sep.comiverse.controller;
 
 import com.sep.comiverse.dto.ChapterTranslationDTO;
 import com.sep.comiverse.dto.response.BaseResponse;
+import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.ChapterTranslationEntity;
+import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IChapterTranslationRepository;
 import com.sep.comiverse.plugin.crud.ChapterCrudPlugin;
 import com.sep.comiverse.security.JwtTokenUtil;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,6 +26,7 @@ import java.util.stream.Collectors;
 // by ComicDetail's language picker (shown before entering any chapter).
 @RestController
 @RequiredArgsConstructor
+@Tag(name = "Chapter Translations", description = "Endpoints to view and fetch chapter translations and languages")
 public class ChapterTranslationController {
 
     private final IChapterTranslationRepository chapterTranslationRepository;
@@ -28,6 +34,7 @@ public class ChapterTranslationController {
     private final JwtTokenUtil jwtTokenUtil;
 
     @GetMapping("/chapters/{chapterId}/translations")
+    @Operation(summary = "Get chapter translations", description = "Fetch all available language translations for a specific chapter")
     public ResponseEntity<BaseResponse<List<ChapterTranslationDTO>>> getTranslations(@PathVariable UUID chapterId) {
         UUID userId = jwtTokenUtil.getCurrentUserId();
         if (!chapterCrudPlugin.canAccessChapterContent(chapterId, userId)) {
@@ -42,8 +49,12 @@ public class ChapterTranslationController {
         List<ChapterTranslationDTO> result = translations.stream()
                 .map(t -> ChapterTranslationDTO.builder()
                         .id(t.getId())
+                        .chapterId(chapterId)
                         .languageCode(t.getLanguageCode())
                         .pagesBubbles(t.getPagesBubbles())
+                        .projectTeamId(t.getProjectTeamId())
+                        .createdAt(t.getCreatedAt())
+                        .updatedAt(t.getUpdatedAt())
                         .build())
                 .collect(Collectors.toList());
 
@@ -53,7 +64,41 @@ public class ChapterTranslationController {
                 .build());
     }
 
+    @GetMapping({"/chapters/translations/{id}"})
+    @Operation(summary = "Get translation by ID", description = "Retrieve detailed information of a chapter translation by its ID")
+    public ResponseEntity<BaseResponse<ChapterTranslationDTO>> getTranslationById(@PathVariable UUID id) {
+        ChapterTranslationEntity translation = chapterTranslationRepository.findByIdWithDetails(id)
+                .or(() -> chapterTranslationRepository.findById(id))
+                .filter(t -> !Boolean.TRUE.equals(t.getDeleted()))
+                .orElseThrow(() -> new CustomException(404, "Translation not found", HttpStatus.NOT_FOUND));
+
+        ChapterEntity chapter = translation.getChapter();
+        UUID chapterId = chapter != null ? chapter.getId() : null;
+        String chapterNumber = chapter != null ? chapter.getChapterNumber() : null;
+        UUID comicId = (chapter != null && chapter.getComic() != null) ? chapter.getComic().getId() : null;
+        String comicTitle = (chapter != null && chapter.getComic() != null) ? chapter.getComic().getTitle() : null;
+
+        ChapterTranslationDTO dto = ChapterTranslationDTO.builder()
+                .id(translation.getId())
+                .chapterId(chapterId)
+                .chapterNumber(chapterNumber)
+                .comicId(comicId)
+                .comicTitle(comicTitle)
+                .languageCode(translation.getLanguageCode())
+                .pagesBubbles(translation.getPagesBubbles())
+                .projectTeamId(translation.getProjectTeamId())
+                .createdAt(translation.getCreatedAt())
+                .updatedAt(translation.getUpdatedAt())
+                .build();
+
+        return ResponseEntity.ok(BaseResponse.<ChapterTranslationDTO>builder()
+                .success(true)
+                .data(dto)
+                .build());
+    }
+
     @GetMapping("/comics/{comicId}/translation-languages")
+    @Operation(summary = "Get available translation languages for a comic", description = "Retrieve list of language codes that have at least one translated chapter in the comic")
     public ResponseEntity<BaseResponse<List<String>>> getAvailableLanguages(@PathVariable UUID comicId) {
         List<String> languages = chapterTranslationRepository.findDistinctLanguageCodesByComicId(comicId);
         return ResponseEntity.ok(BaseResponse.<List<String>>builder()
