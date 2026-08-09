@@ -52,6 +52,12 @@ class AuthorComicServiceTest {
     private IComicMetricSnapshotRepository metricSnapshotRepository;
     @Mock
     private NotificationService notificationService;
+    @Mock
+    private com.sep.comiverse.repository.IUserRepository userRepository;
+    @Mock
+    private com.sep.comiverse.service.AuditLogService auditLogService;
+    @Mock
+    private com.sep.comiverse.plugin.crud.ComicCrudPlugin comicCrudPlugin;
 
     private AuthorComicService service;
 
@@ -63,7 +69,10 @@ class AuthorComicServiceTest {
                 chapterRepository,
                 submissionRepository,
                 metricSnapshotRepository,
-                notificationService
+                notificationService,
+                userRepository,
+                auditLogService,
+                comicCrudPlugin
         );
     }
 
@@ -244,7 +253,6 @@ class AuthorComicServiceTest {
                 .publicationStatus(ComicPublicationStatus.ONGOING)
                 .moderationStatus(moderationStatus)
                 .genres(Set.of())
-                .genreIds(List.of())
                 .chapterCount(1)
                 .build();
         comic.setId(UUID.randomUUID());

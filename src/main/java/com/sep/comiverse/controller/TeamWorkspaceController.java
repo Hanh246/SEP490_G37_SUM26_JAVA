@@ -1,9 +1,13 @@
 package com.sep.comiverse.controller;
 
 import com.sep.comiverse.dto.request.CreateTaskRequest;
+import com.sep.comiverse.dto.request.HandoverTaskRequest;
+import com.sep.comiverse.dto.response.TaskHandoverResponse;
+import com.sep.comiverse.dto.response.NotificationResponse;
 import com.sep.comiverse.dto.TeamMemberDto;
 import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.entity.*;
+import com.sep.comiverse.entity.enums.ChapterStatus;
 import com.sep.comiverse.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -13,8 +17,10 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.NotificationService;
 import com.sep.comiverse.service.UserPresenceService;
+import com.sep.comiverse.service.TranslatorPaymentService;
 import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import org.springframework.web.bind.annotation.*;
+import jakarta.validation.Valid;
 
 import java.time.Instant;
 import java.util.*;
@@ -35,11 +41,13 @@ public class TeamWorkspaceController {
     private final IComicRepository comicRepository;
     private final IChapterRepository chapterRepository;
     private final IUserRepository userRepository;
+    private final INotificationRepository notificationRepository;
     private final IPageTranslationRepository iPageTranslationRepository;
     private final ITranslatorRepository translatorRepository;
     private final NotificationService notificationService;
     private final UserPresenceService userPresenceService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final TranslatorPaymentService translatorPaymentService;
 
     // ── ANNOUNCEMENTS ────────────────────────────────
     @GetMapping("/{teamId}/announcements")
@@ -89,6 +97,30 @@ public class TeamWorkspaceController {
     public ResponseEntity<TeamAnnouncementEntity> pinAnnouncement(@PathVariable UUID id) {
         return announcementRepository.findById(id).map(ann -> {
             ann.setIsPinned(ann.getIsPinned() == null ? true : !ann.getIsPinned());
+            return ResponseEntity.ok(announcementRepository.save(ann));
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @PutMapping("/announcements/{id}")
+    public ResponseEntity<TeamAnnouncementEntity> updateAnnouncement(
+            @PathVariable UUID id,
+            @RequestBody Map<String, Object> payload,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return announcementRepository.findById(id).map(ann -> {
+            if (payload.containsKey("content")) {
+                String newContent = (String) payload.get("content");
+                if (newContent != null && !newContent.trim().isEmpty()) {
+                    if (com.sep.comiverse.util.ProfanityFilterUtil.containsProfanity(newContent)) {
+                        throw new com.sep.comiverse.exception.CustomException(400, "Your post contains inappropriate language.", org.springframework.http.HttpStatus.BAD_REQUEST);
+                    }
+                    ann.setContent(newContent.trim());
+                    ann.setIsEdited(true);
+                    ann.setUpdatedAt(java.time.LocalDateTime.now());
+                }
+            }
+            if (payload.containsKey("imageUrl")) {
+                ann.setImageUrl((String) payload.get("imageUrl"));
+            }
             return ResponseEntity.ok(announcementRepository.save(ann));
         }).orElse(ResponseEntity.notFound().build());
     }
@@ -146,6 +178,37 @@ public class TeamWorkspaceController {
             comm.setLikedByUsers(String.join(",", list));
             return ResponseEntity.ok(postCommentRepository.save(comm));
         }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @PutMapping("/comments/{id}")
+    public ResponseEntity<TeamPostCommentEntity> updateComment(
+            @PathVariable UUID id,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return postCommentRepository.findById(id).map(comment -> {
+            String newContent = body.get("content");
+            if (newContent == null || newContent.trim().isEmpty()) {
+                throw new com.sep.comiverse.exception.CustomException(400, "Comment content cannot be empty.", org.springframework.http.HttpStatus.BAD_REQUEST);
+            }
+            if (com.sep.comiverse.util.ProfanityFilterUtil.containsProfanity(newContent)) {
+                throw new com.sep.comiverse.exception.CustomException(400, "Your comment contains inappropriate language.", org.springframework.http.HttpStatus.BAD_REQUEST);
+            }
+            comment.setContent(newContent.trim());
+            comment.setIsEdited(true);
+            comment.setUpdatedAt(java.time.LocalDateTime.now());
+            return ResponseEntity.ok(postCommentRepository.save(comment));
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/comments/{id}")
+    public ResponseEntity<Void> deleteComment(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        if (postCommentRepository.existsById(id)) {
+            postCommentRepository.deleteById(id);
+            return ResponseEntity.ok().build();
+        }
+        return ResponseEntity.notFound().build();
     }
 
     // ── CHAPTER BACKLOG ──────────────────────────────
@@ -228,42 +291,131 @@ public class TeamWorkspaceController {
     }
 
     @PostMapping("/{teamId}/messages/warn")
-    public ResponseEntity<TeamMessageEntity> warnMember(@PathVariable UUID teamId, @RequestBody Map<String, String> payload) {
+    public ResponseEntity<TeamMessageEntity> warnMember(
+            @PathVariable UUID teamId,
+            @RequestBody Map<String, String> payload,
+            @AuthenticationPrincipal UserPrincipal principal) {
         String memberName = payload.get("memberName");
+        String memberIdStr = payload.get("memberId");
+        String reason = payload.getOrDefault("reason", "Violation of group chat guidelines or translation quality standards");
+        if (reason == null || reason.trim().isEmpty()) {
+            reason = "Violation of group chat guidelines or translation quality standards";
+        }
+
+        // 1. Get Project Team info for context
+        ProjectTeamEntity projectTeam = projectTeamRepository.findById(teamId).orElse(null);
+        String projectTitle = projectTeam != null ? (projectTeam.getTitle() != null ? projectTeam.getTitle() : projectTeam.getComicName()) : "Project Team";
+        String leaderName = (principal != null && principal.getUsername() != null) ? principal.getUsername() : (projectTeam != null ? projectTeam.getLeaderName() : "Project Leader");
+
+        // 2. Find target UserEntity
+        UserEntity targetUser = null;
+        if (memberIdStr != null && !memberIdStr.trim().isEmpty()) {
+            try {
+                UUID memberId = UUID.fromString(memberIdStr);
+                targetUser = userRepository.findById(memberId).orElse(null);
+            } catch (Exception ignored) {}
+        }
+        if (targetUser == null && memberName != null && !memberName.trim().isEmpty()) {
+            targetUser = userRepository.findByUsername(memberName).orElse(null);
+            if (targetUser == null) {
+                // Try finding by full name or email if possible
+                List<UserEntity> allUsers = userRepository.findAll();
+                targetUser = allUsers.stream()
+                        .filter(u -> memberName.equalsIgnoreCase(u.getFullName()) || memberName.equalsIgnoreCase(u.getUsername()) || memberName.equalsIgnoreCase(u.getEmail()))
+                        .findFirst()
+                        .orElse(null);
+            }
+        }
+
+        // 3. Persist Notification in DB for target user
+        if (targetUser != null) {
+            NotificationEntity notification = NotificationEntity.builder()
+                    .user(targetUser)
+                    .title("⚠️ Cảnh báo từ Nhóm dịch [" + projectTitle + "]")
+                    .message("Trưởng nhóm (" + leaderName + ") đã gửi cảnh báo cho bạn: \"" + reason + "\". Vui lòng kiểm tra và tuân thủ nội quy nhóm.")
+                    .type("WARNING")
+                    .actionUrl("/translator/projects")
+                    .isRead(false)
+                    .build();
+            NotificationEntity savedNotif = notificationRepository.save(notification);
+
+            // Broadcast real-time notification to user's personal channel
+            NotificationResponse notifResponse = NotificationResponse.builder()
+                    .id(savedNotif.getId())
+                    .title(savedNotif.getTitle())
+                    .message(savedNotif.getMessage())
+                    .type(savedNotif.getType())
+                    .actionUrl(savedNotif.getActionUrl())
+                    .isRead(savedNotif.getIsRead())
+                    .createdAt(savedNotif.getCreatedAt())
+                    .build();
+            messagingTemplate.convertAndSend("/topic/notifications/" + targetUser.getId(), notifResponse);
+        }
+
+        // 4. Save and broadcast system message to group chat
         TeamMessageEntity warningMsg = TeamMessageEntity.builder()
                 .projectTeamId(teamId)
                 .sender("SYSTEM")
                 .avatar("⚠️")
-                .text("Member " + memberName + " has been warned by the Project Leader.")
+                .text("⚠️ [CẢNH BÁO / WARNING] @" + (memberName != null ? memberName : "Thành viên") + " đã bị nhắc nhở bởi Trưởng nhóm. Lý do: " + reason)
                 .time(java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")))
                 .build();
         TeamMessageEntity saved = messageRepository.save(warningMsg);
         messagingTemplate.convertAndSend("/topic/team-workspace/" + teamId, saved);
+
         return ResponseEntity.ok(saved);
     }
 
     // ── TASKS ────────────────────────────────────────
     @GetMapping("/{teamId}/tasks")
-    public ResponseEntity<List<TeamTaskEntity>> getTasks(@PathVariable UUID teamId) {
-        return ResponseEntity.ok(taskRepository.findByProjectTeamId(teamId));
+    public ResponseEntity<List<Map<String, Object>>> getTasks(@PathVariable UUID teamId) {
+        return ResponseEntity.ok(taskRepository.findByProjectTeamId(teamId).stream()
+                .map(this::toTaskResponse)
+                .toList());
     }
 
     @GetMapping("/tasks/by-chapter/{chapterId}")
-    public ResponseEntity<?> getTasksByChapter(@PathVariable UUID chapterId) {
-        List<TeamTaskEntity> tasks = taskRepository.findByChapter_Id(chapterId);
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (TeamTaskEntity t : tasks) {
-            Map<String, Object> m = new HashMap<>();
-            m.put("id", t.getId());
-            m.put("title", t.getTitle());
-            m.put("status", t.getStatus());
-            m.put("assigneeId", t.getAssigneeId());
-            m.put("projectTeamId", t.getProjectTeamId());
-            m.put("rejectionReason", t.getRejectionReason());
-            m.put("dueDate", t.getDueDate());
-            result.add(m);
+    public ResponseEntity<List<Map<String, Object>>> getTasksByChapter(@PathVariable UUID chapterId) {
+        return ResponseEntity.ok(taskRepository.findByChapter_Id(chapterId).stream()
+                .map(this::toTaskResponse)
+                .toList());
+    }
+
+    private Map<String, Object> toTaskResponse(TeamTaskEntity task) {
+        List<PageTranslationEntity> taskPages = iPageTranslationRepository
+                .findByTaskId_IdOrderByPageNumberAsc(task.getId());
+        long completedPages = taskPages.stream()
+                .filter(page -> page.getStatus() == com.sep.comiverse.entity.enums.PageStatus.DONE)
+                .count();
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("id", task.getId());
+        response.put("projectTeamId", task.getProjectTeamId());
+        response.put("title", task.getTitle());
+        response.put("status", task.getStatus());
+        response.put("assigneeId", task.getAssigneeId());
+        response.put("dueDate", task.getDueDate());
+        response.put("chapterRewardUsd", task.getChapterRewardUsd());
+        response.put("rejectionReason", task.getRejectionReason());
+        response.put("completedAt", task.getCompletedAt());
+        response.put("settledAt", task.getSettledAt());
+        response.put("totalPages", taskPages.size());
+        response.put("completedPages", completedPages);
+
+        ChapterEntity chapter = task.getChapter();
+        response.put("chapterId", chapter == null ? null : chapter.getId());
+        response.put("chapterNumber", chapter == null ? null : chapter.getChapterNumber());
+        response.put("chapterTitle", chapter == null ? null : chapter.getTitle());
+        if (chapter != null) {
+            Map<String, Object> chapterResponse = new LinkedHashMap<>();
+            chapterResponse.put("id", chapter.getId());
+            chapterResponse.put("chapterNumber", chapter.getChapterNumber());
+            chapterResponse.put("title", chapter.getTitle());
+            response.put("chapter", chapterResponse);
+        } else {
+            response.put("chapter", null);
         }
-        return ResponseEntity.ok(result);
+        return response;
     }
 
     @PostMapping("/{teamId}/tasks")
@@ -298,10 +450,23 @@ public class TeamWorkspaceController {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", assigneeError));
         }
         String initialStatus = request.getStatus();
-        if (isCompletedStatus(initialStatus) && !canMarkTaskCompleted(principal)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("success", false, "message", "Only a Project Leader can mark a task as completed"));
+        if (isCompletedStatus(initialStatus)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("success", false,
+                            "message", "A task can only become completed after all pages are DONE and the Project Leader approves the review"));
         }
+        List<String> images = chapter.getImages();
+        if (images == null || images.isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Chapter has no pages"));
+        }
+        java.math.BigDecimal chapterRewardUsd = request.getChapterRewardUsd();
+        if (chapterRewardUsd == null || chapterRewardUsd.signum() <= 0) {
+            chapterRewardUsd = translatorPaymentService.deriveChapterRewardUsd(images.size());
+        } else {
+            chapterRewardUsd = chapterRewardUsd.setScale(2, java.math.RoundingMode.HALF_UP);
+        }
+
         TeamTaskEntity task = TeamTaskEntity.builder()
                 .projectTeamId(teamId)
                 .title(request.getTitle())
@@ -309,13 +474,13 @@ public class TeamWorkspaceController {
                 .assigneeId(primaryAssigneeId)
                 .chapter(chapter)
                 .dueDate(request.getDueDate())
-                .completedAt(isCompletedStatus(initialStatus) ? Instant.now() : null)
+                .chapterRewardUsd(chapterRewardUsd)
+                .completedAt(null)
                 .build();
 
         TeamTaskEntity created = taskRepository.save(task);
 
         // === Copy ảnh từ chapter.images -> tạo bộ page_translation riêng cho task này ===
-        List<String> images = chapter.getImages();
         if (images != null && !images.isEmpty()) {
             List<PageTranslationEntity> pages = new ArrayList<>();
             for (int i = 0; i < images.size(); i++) {
@@ -323,6 +488,8 @@ public class TeamWorkspaceController {
                         .taskId(created)
                         .imageUrl(images.get(i))
                         .pageNumber(i + 1)
+                        .assignedTranslatorId(primaryAssigneeId)
+                        .responsibilityFactor(java.math.BigDecimal.ONE.setScale(2))
                         .status(com.sep.comiverse.entity.enums.PageStatus.TODO)
                         .bubbles("[]")
                         .build());
@@ -554,6 +721,12 @@ public class TeamWorkspaceController {
                     .body(Map.of("success", false, "message", "A completed task cannot be submitted for review again"));
         }
 
+        try {
+            translatorPaymentService.validateReadyForReview(taskId);
+        } catch (com.sep.comiverse.exception.CustomException ex) {
+            return ResponseEntity.status(ex.getHttpStatus()).body(Map.of("success", false, "message", ex.getMessage()));
+        }
+
         task.setStatus("under_review");
         task.setCompletedAt(null);
         taskRepository.save(task);
@@ -588,9 +761,10 @@ public class TeamWorkspaceController {
         if (updates.containsKey("status")) {
             String previousStatus = task.getStatus();
             String newStatus = updates.get("status") == null ? null : String.valueOf(updates.get("status"));
-            if (isCompletedStatus(newStatus) && !canMarkTaskCompleted(principal)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(Map.of("success", false, "message", "Only a Project Leader can mark a task as completed"));
+            if (isCompletedStatus(newStatus)) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(Map.of("success", false,
+                                "message", "Use the review approval flow to complete a task after every page is DONE"));
             }
             task.setStatus(newStatus);
             if (isCompletedStatus(newStatus) && (!isCompletedStatus(previousStatus) || task.getCompletedAt() == null)) {
@@ -601,6 +775,22 @@ public class TeamWorkspaceController {
         }
         if (updates.containsKey("dueDate")) {
             task.setDueDate((String) updates.get("dueDate"));
+        }
+        if (updates.containsKey("chapterRewardUsd")) {
+            try {
+                java.math.BigDecimal reward = new java.math.BigDecimal(String.valueOf(updates.get("chapterRewardUsd")))
+                        .setScale(2, java.math.RoundingMode.HALF_UP);
+                if (reward.signum() <= 0) {
+                    return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Chapter reward must be greater than zero"));
+                }
+                if (task.getSettledAt() != null) {
+                    return ResponseEntity.status(HttpStatus.CONFLICT)
+                            .body(Map.of("success", false, "message", "A settled chapter reward cannot be changed"));
+                }
+                task.setChapterRewardUsd(reward);
+            } catch (RuntimeException ex) {
+                return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Invalid chapter reward"));
+            }
         }
         if (updates.containsKey("assigneeId")) {
             Object rawAssigneeId = updates.get("assigneeId");
@@ -634,6 +824,11 @@ public class TeamWorkspaceController {
                         ));
             }
 
+            if (task.getAssigneeId() != null && !task.getAssigneeId().equals(primaryAssigneeId)) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(Map.of("success", false,
+                                "message", "Use the handover endpoint when changing an assignee so completed pages and coefficient K are preserved"));
+            }
             task.setAssigneeId(primaryAssigneeId);
         }
         if (isCompletedStatus(task.getStatus()) && task.getCompletedAt() == null) {
@@ -643,6 +838,29 @@ public class TeamWorkspaceController {
         TeamTaskEntity saved = taskRepository.save(task);
         return ResponseEntity.ok(saved);
     }
+    @PutMapping("/tasks/{taskId}/handover")
+    public ResponseEntity<?> handoverTask(
+            @PathVariable UUID taskId,
+            @Valid @RequestBody HandoverTaskRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        TeamTaskEntity task = taskRepository.findById(taskId).orElse(null);
+        if (task == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("success", false, "message", "Task not found"));
+        }
+        if (!canManageTeamTasks(principal, task.getProjectTeamId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "message", "Only this team's Project Leader can hand over a task"));
+        }
+        String assigneeError = validateTranslatorAssignee(task.getProjectTeamId(), request.getNewAssigneeId());
+        if (assigneeError != null) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", assigneeError));
+        }
+        TaskHandoverResponse response = translatorPaymentService.handover(task, request, principal.getId());
+        return ResponseEntity.ok(response);
+    }
+
     private boolean isCompletedStatus(String status) {
         if (status == null) return false;
         String normalized = status.trim().toLowerCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
@@ -714,6 +932,69 @@ public class TeamWorkspaceController {
         }
 
         return null;
+    }
+    @GetMapping("/{teamId}/chapters")
+    public ResponseEntity<List<Map<String, Object>>> getTeamChapters(
+            @PathVariable UUID teamId
+    ) {
+        ProjectTeamEntity team = projectTeamRepository.findById(teamId)
+                .orElseThrow(() ->
+                        new jakarta.persistence.EntityNotFoundException(
+                                "Project team not found"
+                        )
+                );
+
+        String comicName = team.getComicName();
+        if (comicName == null || comicName.isBlank()) {
+            return ResponseEntity.ok(Collections.emptyList());
+        }
+
+        List<ComicEntity> comics = comicRepository.findAllByTitle(comicName);
+
+        if (comics.isEmpty()) {
+            comics = comicRepository.findAllByTitleIgnoreCase(comicName);
+        }
+
+        if (comics.isEmpty()) {
+            return ResponseEntity.ok(Collections.emptyList());
+        }
+
+        ComicEntity comic = comics.get(0);
+
+        List<ChapterEntity> chapters =
+                chapterRepository
+                        .findAllByComic_IdAndDeletedFalseAndModerationStatus(
+                                comic.getId(),
+                                ChapterStatus.PUBLISHED
+                        );
+
+        List<Map<String, Object>> result = chapters.stream()
+                .map(chapter -> {
+                    Map<String, Object> item = new HashMap<>();
+
+                    item.put("id", chapter.getId());
+                    item.put("chapterId", chapter.getId());
+                    item.put("chapterNumber", chapter.getChapterNumber());
+                    item.put("title", chapter.getTitle());
+                    item.put("comicId", comic.getId());
+                    item.put("comicName", comic.getTitle());
+                    item.put(
+                            "pages",
+                            chapter.getImages() == null
+                                    ? 0
+                                    : chapter.getImages().size()
+                    );
+                    item.put(
+                            "moderationStatus",
+                            chapter.getModerationStatus()
+                    );
+                    item.put("createdAt", chapter.getCreatedAt());
+
+                    return item;
+                })
+                .toList();
+
+        return ResponseEntity.ok(result);
     }
 
 }

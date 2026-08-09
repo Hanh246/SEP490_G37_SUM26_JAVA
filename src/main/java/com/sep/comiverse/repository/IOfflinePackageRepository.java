@@ -18,7 +18,7 @@ public interface IOfflinePackageRepository extends AbstractCrudRepository<Offlin
 
     @Modifying
     @Transactional
-    @Query("UPDATE OfflinePackageEntity p SET p.revoked = true, p.updatedAt = CURRENT_TIMESTAMP " +
+    @Query("UPDATE OfflinePackageEntity p SET p.revoked = true, p.updatedAt = CURRENT_INSTANT " +
             "WHERE p.offlineDeviceId = :deviceId AND p.userId = :userId AND p.deleted = false")
     int revokeByDevice(@Param("deviceId") UUID deviceId, @Param("userId") UUID userId);
 }

@@ -2,7 +2,7 @@ package com.sep.comiverse.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.sep.comiverse.service.StripeGatewayService;
-import com.sep.comiverse.service.CreatorStripePayoutProfileService;
+import com.sep.comiverse.service.CreatorPayoutAccountService;
 import com.sep.comiverse.service.StripeSubscriptionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +20,7 @@ public class StripeWebhookController {
 
     private final StripeGatewayService stripeGatewayService;
     private final StripeSubscriptionService stripeSubscriptionService;
-    private final CreatorStripePayoutProfileService payoutProfileService;
+    private final CreatorPayoutAccountService payoutProfileService;
 
     @PostMapping("/webhook")
     public ResponseEntity<?> handleWebhook(

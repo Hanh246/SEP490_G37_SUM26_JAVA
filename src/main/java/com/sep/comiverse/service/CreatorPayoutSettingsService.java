@@ -4,11 +4,11 @@ import com.sep.comiverse.dto.request.UpdateCreatorPayoutSettingsRequest;
 import com.sep.comiverse.dto.request.UpsertCreatorPayoutCurrencyRequest;
 import com.sep.comiverse.dto.response.CreatorPayoutCurrencyResponse;
 import com.sep.comiverse.dto.response.CreatorPayoutSettingsResponse;
-import com.sep.comiverse.entity.CreatorPayoutCurrencyRateEntity;
+import com.sep.comiverse.entity.CreatorPayoutCurrencyEntity;
 import com.sep.comiverse.entity.CreatorPayoutSettingEntity;
 import com.sep.comiverse.entity.enums.CreatorPayoutCurrency;
 import com.sep.comiverse.exception.CustomException;
-import com.sep.comiverse.repository.ICreatorPayoutCurrencyRateRepository;
+import com.sep.comiverse.repository.ICreatorPayoutCurrencyRepository;
 import com.sep.comiverse.repository.ICreatorPayoutSettingRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,7 +31,7 @@ public class CreatorPayoutSettingsService {
     private static final String DEFAULT_KEY = "DEFAULT";
 
     private final ICreatorPayoutSettingRepository settingRepository;
-    private final ICreatorPayoutCurrencyRateRepository currencyRateRepository;
+    private final ICreatorPayoutCurrencyRepository currencyRateRepository;
     private final JdbcTemplate jdbcTemplate;
 
     @Value("${payout.currency.eur-units-per-usd:0.920000}")
@@ -91,9 +91,9 @@ public class CreatorPayoutSettingsService {
             active = true;
         }
 
-        CreatorPayoutCurrencyRateEntity entity = currencyRateRepository
+        CreatorPayoutCurrencyEntity entity = currencyRateRepository
                 .findByCurrencyCode(currency.getCode())
-                .orElseGet(CreatorPayoutCurrencyRateEntity::new);
+                .orElseGet(CreatorPayoutCurrencyEntity::new);
 
         entity.setCurrencyCode(currency.getCode());
         entity.setDisplayName(currency.getDisplayName());
@@ -128,7 +128,7 @@ public class CreatorPayoutSettingsService {
             throw new CustomException(400, ex.getMessage(), HttpStatus.BAD_REQUEST);
         }
 
-        CreatorPayoutCurrencyRateEntity rate = currencyRateRepository
+        CreatorPayoutCurrencyEntity rate = currencyRateRepository
                 .findByCurrencyCodeAndDeletedFalse(currency.getCode())
                 .orElseThrow(() -> new CustomException(
                         400,
@@ -264,7 +264,7 @@ public class CreatorPayoutSettingsService {
                 : normalizeRate(defaultRate);
 
         jdbcTemplate.update("""
-                INSERT INTO creator_payout_supported_currencies (
+                INSERT INTO creator_payout_currencies (
                     id,
                     currency_code,
                     display_name,
@@ -281,11 +281,11 @@ public class CreatorPayoutSettingsService {
                     symbol = EXCLUDED.symbol,
                     units_per_usd = CASE
                         WHEN EXCLUDED.currency_code = 'USD' THEN 1
-                        ELSE creator_payout_supported_currencies.units_per_usd
+                        ELSE creator_payout_currencies.units_per_usd
                     END,
                     active = CASE
                         WHEN EXCLUDED.currency_code = 'USD' THEN true
-                        ELSE creator_payout_supported_currencies.active
+                        ELSE creator_payout_currencies.active
                     END,
                     deleted = false,
                     update_at = CURRENT_TIMESTAMP
@@ -329,7 +329,7 @@ public class CreatorPayoutSettingsService {
     }
 
     private CreatorPayoutCurrencyResponse toCurrencyResponse(
-            CreatorPayoutCurrencyRateEntity entity
+            CreatorPayoutCurrencyEntity entity
     ) {
         return CreatorPayoutCurrencyResponse.builder()
                 .currencyCode(entity.getCurrencyCode())
