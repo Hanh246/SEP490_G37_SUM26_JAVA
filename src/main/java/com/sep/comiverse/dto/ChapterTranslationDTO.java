@@ -1,5 +1,7 @@
 package com.sep.comiverse.dto;
 
+import com.sep.comiverse.entity.enums.ChapterTranslationStatus;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -21,6 +23,7 @@ public class ChapterTranslationDTO {
     private String languageCode;
     private String pagesBubbles;
     private UUID projectTeamId;
+    private ChapterTranslationStatus status;
     private Instant createdAt;
     private Instant updatedAt;
-}
+}

@@ -4,15 +4,19 @@ import com.sep.comiverse.dto.ChapterTranslationDTO;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.ChapterTranslationEntity;
+import com.sep.comiverse.entity.enums.ChapterTranslationStatus;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IChapterTranslationRepository;
 import com.sep.comiverse.plugin.crud.ChapterCrudPlugin;
 import com.sep.comiverse.security.JwtTokenUtil;
+import com.sep.comiverse.security.UserPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -34,7 +38,7 @@ public class ChapterTranslationController {
     private final JwtTokenUtil jwtTokenUtil;
 
     @GetMapping("/chapters/{chapterId}/translations")
-    @Operation(summary = "Get chapter translations", description = "Fetch all available language translations for a specific chapter")
+    @Operation(summary = "Get chapter translations", description = "Fetch all available published language translations for a specific chapter")
     public ResponseEntity<BaseResponse<List<ChapterTranslationDTO>>> getTranslations(@PathVariable UUID chapterId) {
         UUID userId = jwtTokenUtil.getCurrentUserId();
         if (!chapterCrudPlugin.canAccessChapterContent(chapterId, userId)) {
@@ -44,7 +48,7 @@ public class ChapterTranslationController {
                     .build());
         }
 
-        List<ChapterTranslationEntity> translations = chapterTranslationRepository.findByChapter_Id(chapterId);
+        List<ChapterTranslationEntity> translations = chapterTranslationRepository.findPublishedByChapterId(chapterId);
 
         List<ChapterTranslationDTO> result = translations.stream()
                 .map(t -> ChapterTranslationDTO.builder()
@@ -53,6 +57,7 @@ public class ChapterTranslationController {
                         .languageCode(t.getLanguageCode())
                         .pagesBubbles(t.getPagesBubbles())
                         .projectTeamId(t.getProjectTeamId())
+                        .status(t.getStatus())
                         .createdAt(t.getCreatedAt())
                         .updatedAt(t.getUpdatedAt())
                         .build())
@@ -87,6 +92,7 @@ public class ChapterTranslationController {
                 .languageCode(translation.getLanguageCode())
                 .pagesBubbles(translation.getPagesBubbles())
                 .projectTeamId(translation.getProjectTeamId())
+                .status(translation.getStatus())
                 .createdAt(translation.getCreatedAt())
                 .updatedAt(translation.getUpdatedAt())
                 .build();
@@ -94,6 +100,63 @@ public class ChapterTranslationController {
         return ResponseEntity.ok(BaseResponse.<ChapterTranslationDTO>builder()
                 .success(true)
                 .data(dto)
+                .build());
+    }
+
+    @PatchMapping("/chapters/translations/{id}/status")
+    @PreAuthorize("hasAnyAuthority('MODERATOR', 'PROJECT_LEADER', 'ADMIN')")
+    @Operation(summary = "Update translation status", description = "Update the status of a translation (PUBLISHED, UNPUBLISHED, DRAFT)")
+    public ResponseEntity<BaseResponse<ChapterTranslationDTO>> updateTranslationStatus(
+            @PathVariable UUID id,
+            @RequestParam("status") ChapterTranslationStatus status,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        ChapterTranslationEntity translation = chapterTranslationRepository.findByIdWithDetails(id)
+                .or(() -> chapterTranslationRepository.findById(id))
+                .filter(t -> !Boolean.TRUE.equals(t.getDeleted()))
+                .orElseThrow(() -> new CustomException(404, "Translation not found", HttpStatus.NOT_FOUND));
+
+        if (principal != null && principal.user() != null && principal.user().getRole() != null) {
+            String roleName = principal.user().getRole().getRoleName();
+            if ("PROJECT_LEADER".equalsIgnoreCase(roleName)) {
+                boolean isLeader = chapterTranslationRepository.isUserLeaderOfTranslation(id, principal.getId());
+                if (!isLeader) {
+                    throw new CustomException(403, "Only the team leader of this translation can modify its status", HttpStatus.FORBIDDEN);
+                }
+            }
+        }
+
+        translation.setStatus(status);
+        ChapterTranslationEntity saved = chapterTranslationRepository.save(translation);
+
+        if (saved.getChapter() != null && saved.getChapter().getComic() != null) {
+            chapterCrudPlugin.evictChaptersCache(saved.getChapter().getComic().getId());
+        }
+
+        ChapterEntity chapter = saved.getChapter();
+        UUID chapterId = chapter != null ? chapter.getId() : null;
+        String chapterNumber = chapter != null ? chapter.getChapterNumber() : null;
+        UUID comicId = (chapter != null && chapter.getComic() != null) ? chapter.getComic().getId() : null;
+        String comicTitle = (chapter != null && chapter.getComic() != null) ? chapter.getComic().getTitle() : null;
+
+        ChapterTranslationDTO dto = ChapterTranslationDTO.builder()
+                .id(saved.getId())
+                .chapterId(chapterId)
+                .chapterNumber(chapterNumber)
+                .comicId(comicId)
+                .comicTitle(comicTitle)
+                .languageCode(saved.getLanguageCode())
+                .pagesBubbles(saved.getPagesBubbles())
+                .projectTeamId(saved.getProjectTeamId())
+                .status(saved.getStatus())
+                .createdAt(saved.getCreatedAt())
+                .updatedAt(saved.getUpdatedAt())
+                .build();
+
+        return ResponseEntity.ok(BaseResponse.<ChapterTranslationDTO>builder()
+                .success(true)
+                .data(dto)
+                .message("Translation status updated successfully")
                 .build());
     }
 
@@ -106,4 +169,4 @@ public class ChapterTranslationController {
                 .data(languages)
                 .build());
     }
-}
+}
