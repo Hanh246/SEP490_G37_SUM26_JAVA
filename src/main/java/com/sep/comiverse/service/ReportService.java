@@ -7,6 +7,8 @@ import com.sep.comiverse.dto.response.ReportResponse;
 import com.sep.comiverse.entity.*;
 import com.sep.comiverse.entity.enums.*;
 import com.sep.comiverse.exception.CustomException;
+import com.sep.comiverse.plugin.crud.ChapterCrudPlugin;
+import com.sep.comiverse.plugin.crud.ComicCrudPlugin;
 import com.sep.comiverse.repository.*;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
@@ -35,7 +37,11 @@ public class ReportService {
     private final IComicRepository comicRepository;
     private final IChapterRepository chapterRepository;
     private final IChapterTranslationRepository chapterTranslationRepository;
+    private final IProjectTeamRepository projectTeamRepository;
+    private final ComicCrudPlugin comicCrudPlugin;
+    private final ChapterCrudPlugin chapterCrudPlugin;
     private final NotificationService notificationService;
+
 
     @Transactional
     public ReportResponse createReport(UUID reporterId, CreateReportRequest request) {
@@ -274,8 +280,12 @@ public class ReportService {
                 report.setResolutionNote(resolutionNote);
             }
 
+            // Revoke / unpublish reported content (Comic / Chapter / Translation)
+            revokeReportedTarget(report, resolutionNote);
+
             ReportEntity saved = reportRepository.save(report);
-            log.info("Report accepted: id={}, handlerId={}", saved.getId(), handler != null ? handler.getId() : null);
+            log.info("Report accepted and content revoked: id={}, targetType={}, targetId={}, handlerId={}",
+                    saved.getId(), report.getTargetType(), report.getTargetId(), handler != null ? handler.getId() : null);
 
             // Trigger Notification to Reporter
             try {
@@ -328,6 +338,137 @@ public class ReportService {
             throw new CustomException(400, "Invalid report action: " + request.getAction(), HttpStatus.BAD_REQUEST);
         }
     }
+
+    private void revokeReportedTarget(ReportEntity report, String resolutionNote) {
+        if (report == null || report.getTargetType() == null || report.getTargetId() == null) {
+            return;
+        }
+
+        String reason = (resolutionNote != null && !resolutionNote.isBlank())
+                ? resolutionNote
+                : "Report accepted: content violates platform guidelines";
+
+        switch (report.getTargetType()) {
+            case COMIC -> {
+                comicRepository.findById(report.getTargetId())
+                        .filter(c -> !Boolean.TRUE.equals(c.getDeleted()))
+                        .ifPresent(comic -> {
+                            comic.setModerationStatus(ComicModerationStatus.UNPUBLISHED);
+                            comic.setRejectionReason(reason);
+                            comicRepository.save(comic);
+
+                            try {
+                                if (comicCrudPlugin != null) {
+                                    comicCrudPlugin.evictComicCache(comic.getId());
+                                }
+                            } catch (Exception ex) {
+                                log.warn("Failed to evict comic cache: {}", ex.getMessage());
+                            }
+
+                            if (comic.getAuthorId() != null) {
+                                try {
+                                    notificationService.notifyUser(
+                                            comic.getAuthorId(),
+                                            "Comic Unpublished",
+                                            "Your comic \"" + comic.getTitle() + "\" has been unpublished due to an accepted issue report. Reason: " + reason,
+                                            "COMIC_UNPUBLISHED",
+                                            NotificationPreferenceKey.REVIEW_QUEUE
+                                    );
+                                } catch (Exception ex) {
+                                    log.warn("Failed to notify author for comic unpublish: {}", ex.getMessage());
+                                }
+                            }
+                            log.info("Revoked/Unpublished comic id={} due to accepted report id={}", comic.getId(), report.getId());
+                        });
+            }
+            case CHAPTER -> {
+                chapterRepository.findById(report.getTargetId())
+                        .filter(c -> !Boolean.TRUE.equals(c.getDeleted()))
+                        .ifPresent(chapter -> {
+                            chapter.setModerationStatus(ChapterStatus.UNPUBLISHED);
+                            chapter.setRejectionReason(reason);
+                            chapterRepository.save(chapter);
+
+                            UUID comicId = (chapter.getComic() != null) ? chapter.getComic().getId() : null;
+                            try {
+                                if (chapterCrudPlugin != null) {
+                                    chapterCrudPlugin.evictChapterDetailCache(chapter.getId());
+                                    if (comicId != null) {
+                                        chapterCrudPlugin.evictChaptersCache(comicId);
+                                    }
+                                }
+                                if (comicCrudPlugin != null && comicId != null) {
+                                    comicCrudPlugin.evictComicCache(comicId);
+                                }
+                            } catch (Exception ex) {
+                                log.warn("Failed to evict chapter cache: {}", ex.getMessage());
+                            }
+
+                            if (chapter.getComic() != null && chapter.getComic().getAuthorId() != null) {
+                                try {
+                                    String comicTitle = chapter.getComic().getTitle() != null ? chapter.getComic().getTitle() : "Comic";
+                                    notificationService.notifyUser(
+                                            chapter.getComic().getAuthorId(),
+                                            "Chapter Unpublished",
+                                            "Chapter " + chapter.getChapterNumber() + " of \"" + comicTitle + "\" has been unpublished due to an accepted issue report. Reason: " + reason,
+                                            "CHAPTER_UNPUBLISHED",
+                                            NotificationPreferenceKey.REVIEW_QUEUE
+                                    );
+                                } catch (Exception ex) {
+                                    log.warn("Failed to notify author for chapter unpublish: {}", ex.getMessage());
+                                }
+                            }
+                            log.info("Revoked/Unpublished chapter id={} due to accepted report id={}", chapter.getId(), report.getId());
+                        });
+            }
+            case CHAPTER_TRANSLATIONS -> {
+                chapterTranslationRepository.findById(report.getTargetId())
+                        .filter(t -> !Boolean.TRUE.equals(t.getDeleted()))
+                        .ifPresent(translation -> {
+                            translation.setStatus(ChapterTranslationStatus.UNPUBLISHED);
+                            chapterTranslationRepository.save(translation);
+
+                            UUID comicId = (translation.getChapter() != null && translation.getChapter().getComic() != null)
+                                    ? translation.getChapter().getComic().getId()
+                                    : null;
+                            try {
+                                if (chapterCrudPlugin != null && comicId != null) {
+                                    chapterCrudPlugin.evictChaptersCache(comicId);
+                                }
+                            } catch (Exception ex) {
+                                log.warn("Failed to evict translation chapter cache: {}", ex.getMessage());
+                            }
+
+                            if (translation.getProjectTeamId() != null) {
+                                projectTeamRepository.findById(translation.getProjectTeamId())
+                                        .filter(pt -> !Boolean.TRUE.equals(pt.getDeleted()))
+                                        .ifPresent(team -> {
+                                            if (team.getLeaderId() != null) {
+                                                try {
+                                                    String chapterNum = translation.getChapter() != null ? translation.getChapter().getChapterNumber() : "";
+                                                    String comicTitle = (translation.getChapter() != null && translation.getChapter().getComic() != null)
+                                                            ? translation.getChapter().getComic().getTitle()
+                                                            : "Comic";
+                                                    notificationService.notifyUser(
+                                                            team.getLeaderId(),
+                                                            "Translation Unpublished",
+                                                            "Translation (" + translation.getLanguageCode() + ") for Chapter " + chapterNum + " of \"" + comicTitle + "\" has been unpublished due to an accepted issue report. Reason: " + reason,
+                                                            "TRANSLATION_UNPUBLISHED",
+                                                            NotificationPreferenceKey.REVIEW_QUEUE
+                                                    );
+                                                } catch (Exception ex) {
+                                                    log.warn("Failed to notify project team leader for translation unpublish: {}", ex.getMessage());
+                                                }
+                                            }
+                                        });
+                            }
+                            log.info("Revoked/Unpublished translation id={} due to accepted report id={}", translation.getId(), report.getId());
+                        });
+            }
+            default -> log.warn("No revocation handler for report target type: {}", report.getTargetType());
+        }
+    }
+
 
     private String validateAndGetTargetTitle(ReportTargetType targetType, UUID targetId) {
         if (targetType == null || targetId == null) {
