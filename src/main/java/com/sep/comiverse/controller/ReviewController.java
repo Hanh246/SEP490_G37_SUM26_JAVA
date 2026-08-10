@@ -11,6 +11,7 @@ import com.sep.comiverse.entity.ReviewCommentEntity;
 import com.sep.comiverse.entity.TeamTaskEntity;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
+import com.sep.comiverse.entity.enums.ChapterTranslationStatus;
 import com.sep.comiverse.entity.ChapterTranslationEntity;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IChapterTranslationRepository;
@@ -305,6 +306,8 @@ public class ReviewController {
         translation.setLanguageCode(languageCode);
         translation.setPagesBubbles(pagesBubblesJson);
         translation.setProjectTeamId(teamId);
+        translation.setStatus(ChapterTranslationStatus.PUBLISHED);
+        translation.setDeleted(false);
         chapterTranslationRepository.save(translation);
         log.info("[publishChapterFromTask] Saved ChapterTranslationEntity for chapterId={} languageCode={} teamId={}",
                 savedChapter.getId(), languageCode, teamId);
