@@ -2,6 +2,7 @@ package com.sep.comiverse.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import java.time.Instant;
 import java.util.UUID;
 
 @Data
@@ -43,9 +44,21 @@ public class TeamJoinRequestEntity {
     @Column(name = "cv_file_name")
     private String cvFileName;
 
+    /** PENDING, APPROVED, REJECTED, CANCELLED, AUTO_WITHDRAWN */
+    @Column(name = "status")
+    @Builder.Default
+    private String status = "PENDING";
+
+    @Column(name = "cancelled_at")
+    private Instant cancelledAt;
+
+    @Column(name = "decided_at")
+    private Instant decidedAt;
+
     @Transient
     private Integer activeProjectsCount;
 
     @Transient
     private Integer activeTasksCount;
 }
+

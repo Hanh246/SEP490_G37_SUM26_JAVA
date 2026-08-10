@@ -44,10 +44,16 @@ public class TeamWorkspaceController {
     private final INotificationRepository notificationRepository;
     private final IPageTranslationRepository iPageTranslationRepository;
     private final ITranslatorRepository translatorRepository;
+    private final ITeamJoinBanRepository joinBanRepository;
+    private final ITranslatorCooldownRepository cooldownRepository;
     private final NotificationService notificationService;
     private final UserPresenceService userPresenceService;
     private final SimpMessagingTemplate messagingTemplate;
     private final TranslatorPaymentService translatorPaymentService;
+
+    private static final int MAX_ACTIVE_TEAMS = 5;
+    private static final long CANCEL_COOLDOWN_HOURS = 12;
+    private static final long LEAVE_COOLDOWN_HOURS = 24;
 
     // ── ANNOUNCEMENTS ────────────────────────────────
     @GetMapping("/{teamId}/announcements")
@@ -571,7 +577,11 @@ public class TeamWorkspaceController {
     @GetMapping("/{teamId}/requests")
     public ResponseEntity<List<TeamJoinRequestEntity>> getRequests(@PathVariable UUID teamId) {
         List<TeamJoinRequestEntity> requests = joinRequestRepository.findByProjectTeamId(teamId);
-        for (TeamJoinRequestEntity request : requests) {
+        // Only return PENDING requests to the leader's review queue
+        List<TeamJoinRequestEntity> pendingRequests = requests.stream()
+                .filter(r -> r.getStatus() == null || "PENDING".equalsIgnoreCase(r.getStatus()))
+                .collect(Collectors.toList());
+        for (TeamJoinRequestEntity request : pendingRequests) {
             if (request.getRequesterId() != null) {
                 int activeProjects = (int) projectTeamRepository.countActiveTeamsByUserId(request.getRequesterId());
                 int activeTasks = (int) taskRepository.countActiveTasksByAssigneeId(request.getRequesterId());
@@ -579,7 +589,7 @@ public class TeamWorkspaceController {
                 request.setActiveTasksCount(activeTasks);
             }
         }
-        return ResponseEntity.ok(requests);
+        return ResponseEntity.ok(pendingRequests);
     }
 
     @GetMapping("/requests/by-name")
@@ -593,25 +603,64 @@ public class TeamWorkspaceController {
             @RequestBody TeamJoinRequestEntity request,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
-        if (request.getName() != null && joinRequestRepository.existsByNameAndProjectTeamId(request.getName(), teamId)) {
-            return ResponseEntity.badRequest().body(java.util.Map.of("message", "You have already applied to this team!"));
+        if (principal == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Authentication required."));
         }
+        UUID userId = principal.getId();
+
+        // 1. Check if already applied (PENDING) to this specific team
+        if (joinRequestRepository.existsByRequesterIdAndProjectTeamIdAndStatus(userId, teamId, "PENDING")) {
+            return ResponseEntity.badRequest().body(Map.of("message", "You have already applied to this team!"));
+        }
+
+        // 2. Check if banned from this team
+        if (joinBanRepository.existsByProjectTeamIdAndUserId(teamId, userId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "You are banned from applying to this team."));
+        }
+
+        // 3. Check cooldown (cancel / leave)
+        List<TranslatorCooldownEntity> activeCooldowns = cooldownRepository.findActiveCooldowns(userId, Instant.now());
+        if (!activeCooldowns.isEmpty()) {
+            TranslatorCooldownEntity cd = activeCooldowns.get(0);
+            long remainingMinutes = java.time.Duration.between(Instant.now(), cd.getCooldownUntil()).toMinutes();
+            String timeLabel = remainingMinutes >= 60
+                    ? (remainingMinutes / 60) + "h " + (remainingMinutes % 60) + "m"
+                    : remainingMinutes + " minutes";
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of(
+                    "message", "You are on cooldown. Please wait " + timeLabel + " before applying.",
+                    "cooldownUntil", cd.getCooldownUntil().toString(),
+                    "cooldownType", cd.getCooldownType()
+            ));
+        }
+
+        // 4. Check max 5 slots (joined teams + pending applications)
+        long joinedTeams = projectTeamRepository.countActiveTeamsByUserId(userId);
+        long pendingApps = joinRequestRepository.countByRequesterIdAndStatus(userId, "PENDING");
+        long usedSlots = joinedTeams + pendingApps;
+        if (usedSlots >= MAX_ACTIVE_TEAMS) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "message", "You have reached the maximum of " + MAX_ACTIVE_TEAMS + " active teams/applications. Cancel a pending application or leave a team first.",
+                    "joinedTeams", joinedTeams,
+                    "pendingApplications", pendingApps,
+                    "maxSlots", MAX_ACTIVE_TEAMS
+            ));
+        }
+
+        // All checks passed — create the request
         request.setProjectTeamId(teamId);
-        if (principal != null) {
-            request.setRequesterId(principal.getId());
-            
-            // Fetch Translator Profile to inject CV and Bio
-            translatorRepository.findByUser_Id(principal.getId()).ifPresent(translator -> {
-                request.setCvUrl(translator.getCvUrl());
-                // If user didn't write a custom message, use their Bio
-                if (request.getText() == null || request.getText().trim().isEmpty()) {
-                    request.setText(translator.getBio());
-                } else {
-                    // Prepend bio to custom message if both exist
-                    request.setText(translator.getBio() + "\n\n---\nMessage: " + request.getText());
-                }
-            });
-        }
+        request.setRequesterId(userId);
+        request.setStatus("PENDING");
+
+        // Fetch Translator Profile to inject CV and Bio
+        translatorRepository.findByUser_Id(userId).ifPresent(translator -> {
+            request.setCvUrl(translator.getCvUrl());
+            if (request.getText() == null || request.getText().trim().isEmpty()) {
+                request.setText(translator.getBio());
+            } else {
+                request.setText(translator.getBio() + "\n\n---\nMessage: " + request.getText());
+            }
+        });
+
         TeamJoinRequestEntity saved = joinRequestRepository.save(request);
         projectTeamRepository.findById(teamId).ifPresent(team ->
                 notificationService.notifyUser(
@@ -634,6 +683,9 @@ public class TeamWorkspaceController {
         if (request == null) {
             return ResponseEntity.notFound().build();
         }
+        if (!"PENDING".equalsIgnoreCase(request.getStatus())) {
+            return ResponseEntity.badRequest().body(Map.of("message", "This request is no longer pending."));
+        }
 
         String decision = body == null ? "" : body.getOrDefault("decision", "").trim().toLowerCase();
         if (!"approved".equals(decision) && !"rejected".equals(decision)) {
@@ -641,8 +693,19 @@ public class TeamWorkspaceController {
         }
 
         ProjectTeamEntity team = projectTeamRepository.findById(request.getProjectTeamId()).orElse(null);
-        if (team != null && "approved".equals(decision)) {
+
+        if ("approved".equals(decision)) {
+            // Before approving, check if the translator already hit 5 active teams
             if (request.getRequesterId() != null) {
+                long joinedTeams = projectTeamRepository.countActiveTeamsByUserId(request.getRequesterId());
+                if (joinedTeams >= MAX_ACTIVE_TEAMS) {
+                    return ResponseEntity.badRequest().body(Map.of(
+                            "message", "This translator has already reached the maximum of " + MAX_ACTIVE_TEAMS + " active teams. Cannot approve."
+                    ));
+                }
+            }
+
+            if (team != null && request.getRequesterId() != null) {
                 userRepository.findById(request.getRequesterId()).ifPresent(user -> {
                     if (team.getMembers() == null) {
                         team.setMembers(new ArrayList<>());
@@ -657,9 +720,47 @@ public class TeamWorkspaceController {
                         team.getMembers().add(newMember);
                     }
                 });
+                team.setMembersCount(team.getMembers() == null ? 0 : team.getMembers().size());
+                projectTeamRepository.save(team);
             }
-            team.setMembersCount(team.getMembers() == null ? 0 : team.getMembers().size());
-            projectTeamRepository.save(team);
+
+            // Mark this request as APPROVED
+            request.setStatus("APPROVED");
+            request.setDecidedAt(Instant.now());
+            joinRequestRepository.save(request);
+
+            // Auto-withdraw excess pending applications if translator hit 5 slots
+            if (request.getRequesterId() != null) {
+                long newJoinedCount = projectTeamRepository.countActiveTeamsByUserId(request.getRequesterId());
+                long remainingPending = joinRequestRepository.countByRequesterIdAndStatus(request.getRequesterId(), "PENDING");
+                if (newJoinedCount + remainingPending > MAX_ACTIVE_TEAMS) {
+                    // Need to auto-withdraw some pending apps
+                    long excessCount = (newJoinedCount + remainingPending) - MAX_ACTIVE_TEAMS;
+                    List<TeamJoinRequestEntity> pendingApps = joinRequestRepository.findByRequesterIdAndStatus(request.getRequesterId(), "PENDING");
+                    int withdrawn = 0;
+                    for (TeamJoinRequestEntity pending : pendingApps) {
+                        if (withdrawn >= excessCount) break;
+                        pending.setStatus("AUTO_WITHDRAWN");
+                        pending.setDecidedAt(Instant.now());
+                        joinRequestRepository.save(pending);
+                        withdrawn++;
+
+                        // Notify the translator
+                        notificationService.notifyUser(
+                                pending.getRequesterId(),
+                                "Application auto-withdrawn",
+                                "Your application to " + getTeamName(pending.getProjectTeamId()) + " was auto-withdrawn because you've reached the maximum of " + MAX_ACTIVE_TEAMS + " active teams.",
+                                "WARNING",
+                                NotificationPreferenceKey.TEAM_UPDATES
+                        );
+                    }
+                }
+            }
+        } else {
+            // REJECTED
+            request.setStatus("REJECTED");
+            request.setDecidedAt(Instant.now());
+            joinRequestRepository.save(request);
         }
 
         String teamName = team == null ? "the translation team" : team.getTitle();
@@ -670,8 +771,166 @@ public class TeamWorkspaceController {
                 "approved".equals(decision) ? "UPDATE" : "WARNING",
                 NotificationPreferenceKey.TEAM_UPDATES
         );
-        joinRequestRepository.deleteById(id);
         return ResponseEntity.ok(request);
+    }
+
+    // ── CANCEL APPLICATION ──
+    @PutMapping("/requests/{id}/cancel")
+    public ResponseEntity<?> cancelRequest(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Authentication required."));
+        }
+        TeamJoinRequestEntity request = joinRequestRepository.findById(id).orElse(null);
+        if (request == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (!"PENDING".equalsIgnoreCase(request.getStatus())) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Only pending applications can be cancelled."));
+        }
+        // Only the requester can cancel their own request
+        if (!principal.getId().equals(request.getRequesterId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "You can only cancel your own applications."));
+        }
+
+        request.setStatus("CANCELLED");
+        request.setCancelledAt(Instant.now());
+        joinRequestRepository.save(request);
+
+        // Create 12-hour cooldown
+        cooldownRepository.save(TranslatorCooldownEntity.builder()
+                .userId(principal.getId())
+                .cooldownType("CANCEL")
+                .cooldownUntil(Instant.now().plusSeconds(CANCEL_COOLDOWN_HOURS * 3600))
+                .relatedTeamId(request.getProjectTeamId())
+                .build());
+
+        return ResponseEntity.ok(Map.of("success", true, "message", "Application cancelled. You are on a " + CANCEL_COOLDOWN_HOURS + "-hour cooldown before you can apply again."));
+    }
+
+    // ── BAN / UNBAN ──
+    @PostMapping("/{teamId}/ban/{userId}")
+    public ResponseEntity<?> banUser(
+            @PathVariable UUID teamId,
+            @PathVariable UUID userId,
+            @RequestBody(required = false) Map<String, String> body,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        ProjectTeamEntity team = projectTeamRepository.findById(teamId).orElse(null);
+        if (team == null) {
+            return ResponseEntity.notFound().build();
+        }
+        // Only the team leader can ban
+        if (!principal.getId().equals(team.getLeaderId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "Only the team leader can ban members."));
+        }
+        if (joinBanRepository.existsByProjectTeamIdAndUserId(teamId, userId)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "This user is already banned from this team."));
+        }
+
+        String reason = body != null ? body.getOrDefault("reason", "No reason provided") : "No reason provided";
+
+        // Auto-reject any pending application from this user
+        List<TeamJoinRequestEntity> pendingFromUser = joinRequestRepository.findByRequesterIdAndStatus(userId, "PENDING");
+        for (TeamJoinRequestEntity req : pendingFromUser) {
+            if (req.getProjectTeamId().equals(teamId)) {
+                req.setStatus("REJECTED");
+                req.setDecidedAt(Instant.now());
+                joinRequestRepository.save(req);
+            }
+        }
+
+        joinBanRepository.save(TeamJoinBanEntity.builder()
+                .projectTeamId(teamId)
+                .userId(userId)
+                .bannedBy(principal.getId())
+                .reason(reason)
+                .build());
+
+        notificationService.notifyUser(
+                userId,
+                "Banned from team",
+                "You have been banned from " + team.getTitle() + ". Reason: " + reason,
+                "WARNING",
+                NotificationPreferenceKey.TEAM_UPDATES
+        );
+
+        return ResponseEntity.ok(Map.of("success", true, "message", "User banned from this team."));
+    }
+
+    @DeleteMapping("/{teamId}/ban/{userId}")
+    public ResponseEntity<?> unbanUser(
+            @PathVariable UUID teamId,
+            @PathVariable UUID userId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        ProjectTeamEntity team = projectTeamRepository.findById(teamId).orElse(null);
+        if (team == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (!principal.getId().equals(team.getLeaderId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "Only the team leader can unban members."));
+        }
+
+        joinBanRepository.findByProjectTeamIdAndUserId(teamId, userId).ifPresent(joinBanRepository::delete);
+        return ResponseEntity.ok(Map.of("success", true, "message", "User unbanned."));
+    }
+
+    @GetMapping("/{teamId}/bans")
+    public ResponseEntity<?> getBannedUsers(@PathVariable UUID teamId) {
+        return ResponseEntity.ok(joinBanRepository.findByProjectTeamId(teamId));
+    }
+
+    // ── MY APPLICATION STATUS ──
+    @GetMapping("/my-application-status")
+    public ResponseEntity<?> getMyApplicationStatus(@AuthenticationPrincipal UserPrincipal principal) {
+        if (principal == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        UUID userId = principal.getId();
+        long joinedTeams = projectTeamRepository.countActiveTeamsByUserId(userId);
+        long pendingApps = joinRequestRepository.countByRequesterIdAndStatus(userId, "PENDING");
+        long usedSlots = joinedTeams + pendingApps;
+        long availableSlots = Math.max(0, MAX_ACTIVE_TEAMS - usedSlots);
+
+        // Check active cooldown
+        List<TranslatorCooldownEntity> activeCooldowns = cooldownRepository.findActiveCooldowns(userId, Instant.now());
+        String cooldownUntil = null;
+        String cooldownType = null;
+        if (!activeCooldowns.isEmpty()) {
+            TranslatorCooldownEntity cd = activeCooldowns.get(0);
+            cooldownUntil = cd.getCooldownUntil().toString();
+            cooldownType = cd.getCooldownType();
+        }
+
+        // Get list of pending application team IDs
+        List<TeamJoinRequestEntity> pendingList = joinRequestRepository.findByRequesterIdAndStatus(userId, "PENDING");
+        List<Map<String, Object>> pendingDetails = pendingList.stream().map(req -> {
+            Map<String, Object> m = new HashMap<>();
+            m.put("requestId", req.getId());
+            m.put("projectTeamId", req.getProjectTeamId());
+            m.put("appliedAt", req.getTime());
+            return m;
+        }).collect(Collectors.toList());
+
+        return ResponseEntity.ok(Map.of(
+                "joinedTeams", joinedTeams,
+                "pendingApplications", pendingApps,
+                "usedSlots", usedSlots,
+                "availableSlots", availableSlots,
+                "maxSlots", MAX_ACTIVE_TEAMS,
+                "cooldownUntil", cooldownUntil != null ? cooldownUntil : "",
+                "cooldownType", cooldownType != null ? cooldownType : "",
+                "pendingDetails", pendingDetails
+        ));
     }
 
     @DeleteMapping("/requests/{id}")
@@ -695,11 +954,27 @@ public class TeamWorkspaceController {
             if (removed) {
                 team.setMembersCount(team.getMembers().size());
                 projectTeamRepository.save(team);
-                return ResponseEntity.ok(Map.of("success", true));
+
+                // Create 24-hour cooldown for the leaving member
+                cooldownRepository.save(TranslatorCooldownEntity.builder()
+                        .userId(memberId)
+                        .cooldownType("LEAVE")
+                        .cooldownUntil(Instant.now().plusSeconds(LEAVE_COOLDOWN_HOURS * 3600))
+                        .relatedTeamId(teamId)
+                        .build());
+
+                return ResponseEntity.ok(Map.of("success", true, "message", "Member removed. A " + LEAVE_COOLDOWN_HOURS + "-hour cooldown has been applied."));
             }
         }
 
         return ResponseEntity.notFound().build();
+    }
+
+    /** Helper to get team name by ID */
+    private String getTeamName(UUID teamId) {
+        return projectTeamRepository.findById(teamId)
+                .map(ProjectTeamEntity::getTitle)
+                .orElse("a translation team");
     }
 
     @PutMapping("/tasks/{taskId}/submit-for-review")

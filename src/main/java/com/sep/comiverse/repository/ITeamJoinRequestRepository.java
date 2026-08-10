@@ -11,4 +11,10 @@ public interface ITeamJoinRequestRepository extends JpaRepository<TeamJoinReques
     List<TeamJoinRequestEntity> findByProjectTeamId(UUID projectTeamId);
     boolean existsByNameAndProjectTeamId(String name, UUID projectTeamId);
     List<TeamJoinRequestEntity> findByName(String name);
+
+    // ── New queries for upgraded join flow ──
+    long countByRequesterIdAndStatus(UUID requesterId, String status);
+    List<TeamJoinRequestEntity> findByRequesterIdAndStatus(UUID requesterId, String status);
+    List<TeamJoinRequestEntity> findByRequesterId(UUID requesterId);
+    boolean existsByRequesterIdAndProjectTeamIdAndStatus(UUID requesterId, UUID projectTeamId, String status);
 }
