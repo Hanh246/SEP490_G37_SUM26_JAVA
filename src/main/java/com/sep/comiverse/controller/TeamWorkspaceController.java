@@ -949,6 +949,10 @@ public class TeamWorkspaceController {
             return ResponseEntity.notFound().build();
         }
 
+        if (team.getLeaderId() != null && team.getLeaderId().equals(memberId)) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Cannot remove the Group Leader from the team."));
+        }
+
         if (team.getMembers() != null) {
             boolean removed = team.getMembers().removeIf(m -> m.getUser().getId().equals(memberId));
             if (removed) {
