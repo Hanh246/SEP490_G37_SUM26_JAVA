@@ -4,6 +4,7 @@ import com.sep.comiverse.controller.StripeWebhookController;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sep.comiverse.service.CreatorPayoutAccountService;
 import com.sep.comiverse.service.StripeGatewayService;
 import com.sep.comiverse.service.StripeSubscriptionService;
 import org.junit.jupiter.api.Test;
@@ -20,7 +21,7 @@ class StripeWebhookControllerTest {
     void verifiedWebhookIsProcessedBeforeAcknowledgement() throws Exception {
         StripeGatewayService gateway = mock(StripeGatewayService.class);
         StripeSubscriptionService subscriptionService = mock(StripeSubscriptionService.class);
-        com.sep.comiverse.service.CreatorStripePayoutProfileService payoutProfileService = mock(com.sep.comiverse.service.CreatorStripePayoutProfileService.class);
+        CreatorPayoutAccountService payoutProfileService = mock(CreatorPayoutAccountService.class);
         StripeWebhookController controller = new StripeWebhookController(gateway, subscriptionService, payoutProfileService);
         byte[] payload = """
                 {"id":"evt_123","type":"invoice.paid","data":{"object":{}}}

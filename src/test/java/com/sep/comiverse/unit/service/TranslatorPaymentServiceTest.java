@@ -6,14 +6,17 @@ import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.PageTranslationEntity;
 import com.sep.comiverse.entity.TeamTaskEntity;
 import com.sep.comiverse.entity.TranslatorChapterSettlementEntity;
+import com.sep.comiverse.entity.TranslatorEarningEntryEntity;
 import com.sep.comiverse.entity.enums.PageStatus;
 import com.sep.comiverse.entity.enums.TranslatorSettlementStatus;
 import com.sep.comiverse.exception.CustomException;
+import com.sep.comiverse.repository.ICreatorPayoutCurrencyRepository;
 import com.sep.comiverse.repository.ICreatorPayoutSettingRepository;
 import com.sep.comiverse.repository.IPageTranslationRepository;
 import com.sep.comiverse.repository.ITaskHandoverRepository;
 import com.sep.comiverse.repository.ITeamTaskRepository;
 import com.sep.comiverse.repository.ITranslatorChapterSettlementRepository;
+import com.sep.comiverse.repository.ITranslatorEarningEntryRepository;
 import com.sep.comiverse.service.CreatorPayoutSettingsService;
 import com.sep.comiverse.service.TranslatorPaymentService;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,10 +49,9 @@ class TranslatorPaymentServiceTest {
     @Mock private IPageTranslationRepository pageRepository;
     @Mock private ITaskHandoverRepository handoverRepository;
     @Mock private ITranslatorChapterSettlementRepository settlementRepository;
-    @Mock private ITranslatorPageEarningRepository earningRepository;
-    @Mock private ITranslatorEarningAdjustmentRepository adjustmentRepository;
+    @Mock private ITranslatorEarningEntryRepository earningRepository;
     @Mock private ICreatorPayoutSettingRepository payoutSettingRepository;
-    @Mock private ICreatorPayoutCurrencyRateRepository payoutCurrencyRateRepository;
+    @Mock private ICreatorPayoutCurrencyRepository payoutCurrencyRateRepository;
     @Mock private JdbcTemplate jdbcTemplate;
 
     private TranslatorPaymentService service;
@@ -67,7 +69,6 @@ class TranslatorPaymentServiceTest {
                 handoverRepository,
                 settlementRepository,
                 earningRepository,
-                adjustmentRepository,
                 settingsService,
                 new ObjectMapper()
         );
@@ -150,16 +151,16 @@ class TranslatorPaymentServiceTest {
         service.settleApprovedTask(task);
 
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<TranslatorPageEarningEntity>> captor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<TranslatorEarningEntryEntity>> captor = ArgumentCaptor.forClass(List.class);
         verify(earningRepository).saveAll(captor.capture());
-        List<TranslatorPageEarningEntity> earnings = captor.getValue();
+        List<TranslatorEarningEntryEntity> earnings = captor.getValue();
         assertEquals(10, earnings.size());
 
         var totals = earnings.stream().collect(Collectors.groupingBy(
-                TranslatorPageEarningEntity::getTranslatorId,
+                TranslatorEarningEntryEntity::getTranslatorId,
                 Collectors.reducing(
                         BigDecimal.ZERO,
-                        TranslatorPageEarningEntity::getNetAmountUsd,
+                        TranslatorEarningEntryEntity::getAmountUsd,
                         BigDecimal::add
                 )
         ));
@@ -167,10 +168,11 @@ class TranslatorPaymentServiceTest {
         assertEquals(0, new BigDecimal("40.00").compareTo(totals.get(translatorB)));
         assertEquals(0, new BigDecimal("100.00").compareTo(
                 earnings.stream()
-                        .map(TranslatorPageEarningEntity::getGrossAmountUsd)
+                        .map(TranslatorEarningEntryEntity::getGrossAmountUsd)
                         .reduce(BigDecimal.ZERO, BigDecimal::add)
         ));
     }
+
 
     @Test
     void settlementIsRejectedBeforeWholeChapterApproval() {
