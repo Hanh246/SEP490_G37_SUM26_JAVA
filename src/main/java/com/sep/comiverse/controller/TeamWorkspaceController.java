@@ -695,6 +695,17 @@ public class TeamWorkspaceController {
         ProjectTeamEntity team = projectTeamRepository.findById(request.getProjectTeamId()).orElse(null);
 
         if ("approved".equals(decision)) {
+            // Before approving, check if the team has already reached its maximum capacity
+            if (team != null) {
+                int currentMembers = team.getMembersCount() != null ? team.getMembersCount() : (team.getMembers() != null ? team.getMembers().size() : 0);
+                int maxMembers = team.getMaxMembers() != null ? team.getMaxMembers() : 5;
+                if (currentMembers >= maxMembers) {
+                    return ResponseEntity.badRequest().body(Map.of(
+                            "message", "This project team has already reached its maximum capacity of " + maxMembers + " members. Cannot approve."
+                    ));
+                }
+            }
+
             // Before approving, check if the translator already hit 5 active teams
             if (request.getRequesterId() != null) {
                 long joinedTeams = projectTeamRepository.countActiveTeamsByUserId(request.getRequesterId());
@@ -750,6 +761,30 @@ public class TeamWorkspaceController {
                                 pending.getRequesterId(),
                                 "Application auto-withdrawn",
                                 "Your application to " + getTeamName(pending.getProjectTeamId()) + " was auto-withdrawn because you've reached the maximum of " + MAX_ACTIVE_TEAMS + " active teams.",
+                                "WARNING",
+                                NotificationPreferenceKey.TEAM_UPDATES
+                        );
+                    }
+                }
+            }
+
+            // Auto-reject remaining pending applications for this team if it reached max capacity
+            if (team != null) {
+                int newMembersCount = team.getMembersCount() != null ? team.getMembersCount() : 0;
+                int maxMembers = team.getMaxMembers() != null ? team.getMaxMembers() : 5;
+                if (newMembersCount >= maxMembers) {
+                    List<TeamJoinRequestEntity> remainingApps = joinRequestRepository.findByProjectTeamId(team.getId()).stream()
+                            .filter(r -> "PENDING".equalsIgnoreCase(r.getStatus()))
+                            .toList();
+                    for (TeamJoinRequestEntity pendingApp : remainingApps) {
+                        pendingApp.setStatus("REJECTED");
+                        pendingApp.setDecidedAt(Instant.now());
+                        joinRequestRepository.save(pendingApp);
+
+                        notificationService.notifyUser(
+                                pendingApp.getRequesterId(),
+                                "Application auto-rejected",
+                                "Your application to " + team.getTitle() + " was automatically rejected because the team has reached its maximum capacity.",
                                 "WARNING",
                                 NotificationPreferenceKey.TEAM_UPDATES
                         );
