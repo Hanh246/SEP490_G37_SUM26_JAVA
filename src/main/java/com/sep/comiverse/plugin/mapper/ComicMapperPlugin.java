@@ -4,6 +4,7 @@ import com.sep.comiverse.dto.ComicDTO;
 import com.sep.comiverse.dto.GenreDTO;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.GenreEntity;
+import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.plugin.AbstractMapperPlugin;
 import com.sep.comiverse.repository.IAuthorRepository;
 import com.sep.comiverse.repository.IGenreRepository;
