@@ -51,6 +51,7 @@ public class AuthorComicService {
     private final com.sep.comiverse.repository.IUserRepository userRepository;
     private final AuditLogService auditLogService;
     private final com.sep.comiverse.plugin.crud.ComicCrudPlugin comicCrudPlugin;
+    private final AuthorLicenseService authorLicenseService;
 
     @Transactional
     public void confirmModEdit(UUID comicId, UUID authorId) {
@@ -117,6 +118,7 @@ public class AuthorComicService {
     @Transactional
     public AuthorComicResponse createComic(AuthorComicCreateRequest request) {
         validateCreateRequest(request);
+        authorLicenseService.assertPublishingAllowed(request.getAuthorId());
 
         Set<GenreEntity> genres = resolveGenres(request.getGenres());
         ComicPublicationStatus publicationStatus = request.getPublicationStatus() == null
@@ -246,6 +248,7 @@ public class AuthorComicService {
 
     @Transactional
     public AuthorComicResponse submitForReview(UUID comicId, UUID authorId) {
+        authorLicenseService.assertPublishingAllowed(authorId);
         ComicEntity comic = getOwnedComic(comicId, authorId);
 
         long chapterCount = chapterRepository.countByComic_IdAndDeletedFalse(comicId);

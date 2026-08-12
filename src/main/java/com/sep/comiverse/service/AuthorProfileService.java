@@ -5,6 +5,7 @@ import com.sep.comiverse.dto.response.AuthorProfileResponse;
 import com.sep.comiverse.entity.AuthorEntity;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.entity.enums.AuthorType;
+import com.sep.comiverse.entity.enums.AuthorLicenseStatus;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IAuthorRepository;
 import com.sep.comiverse.repository.IUserRepository;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Service
@@ -22,10 +24,13 @@ public class AuthorProfileService {
 
     private final IAuthorRepository authorRepository;
     private final IUserRepository userRepository;
+    private final AuthorLicenseService authorLicenseService;
 
     @Transactional
     public AuthorProfileResponse getMyProfile(UUID userId) {
-        return toResponse(getOrCreateAuthorProfile(userId));
+        AuthorEntity author = getOrCreateAuthorProfile(userId);
+        authorLicenseService.getMyLicense(userId); // also applies deadline expiry synchronously
+        return toResponse(author);
     }
 
     @Transactional
@@ -44,7 +49,9 @@ public class AuthorProfileService {
         author.setExternalProfileRef(trimToNull(request.getExternalProfileRef()));
         author.setNote(trimToNull(request.getNote()));
 
-        return toResponse(authorRepository.save(author));
+        AuthorEntity saved = authorRepository.save(author);
+        authorLicenseService.getMyLicense(userId); // keep status/deadline current
+        return toResponse(saved);
     }
 
     private AuthorEntity getOrCreateAuthorProfile(UUID userId) {
@@ -68,6 +75,9 @@ public class AuthorProfileService {
                 .legalName(user.getFullName())
                 .avatarUrl(user.getAvatarUrl())
                 .contactEmail(user.getEmail())
+                // Compatibility: pre-existing/legacy Author profiles remain usable.
+                // Admin-created AUTHOR accounts are initialized separately as PENDING_LICENSE.
+                .licenseStatus(AuthorLicenseStatus.ACTIVE)
                 .build();
         return authorRepository.save(author);
     }
@@ -88,7 +98,25 @@ public class AuthorProfileService {
                 .contactEmail(author.getContactEmail())
                 .externalProfileRef(author.getExternalProfileRef())
                 .note(author.getNote())
+                .licenseStatus(authorLicenseService.effectiveStatus(author))
+                .licenseUrl(author.getLicenseUrl())
+                .licenseOriginalFilename(author.getLicenseOriginalFilename())
+                .licenseDeadlineAt(author.getLicenseDeadlineAt())
+                .licenseUploadedAt(author.getLicenseUploadedAt())
+                .licenseVerifiedAt(author.getLicenseVerifiedAt())
+                .licenseRejectionReason(author.getLicenseRejectionReason())
+                .canUploadLicense(canUploadLicense(author))
+                .canPublishComic(authorLicenseService.effectiveStatus(author) == AuthorLicenseStatus.ACTIVE)
+                .canRequestAuthorPayout(authorLicenseService.effectiveStatus(author) == AuthorLicenseStatus.ACTIVE)
                 .build();
+    }
+
+
+    private boolean canUploadLicense(AuthorEntity author) {
+        AuthorLicenseStatus status = authorLicenseService.effectiveStatus(author);
+        return (status == AuthorLicenseStatus.PENDING_LICENSE || status == AuthorLicenseStatus.REJECTED)
+                && author.getLicenseDeadlineAt() != null
+                && author.getLicenseDeadlineAt().isAfter(Instant.now());
     }
 
     private String requiredTrim(String value, String message) {

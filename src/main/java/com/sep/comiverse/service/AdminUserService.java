@@ -3,6 +3,8 @@ package com.sep.comiverse.service;
 import com.sep.comiverse.dto.pagination.AdminUserSearchDTO;
 import com.sep.comiverse.dto.response.AdminUserResponse;
 import com.sep.comiverse.entity.UserEntity;
+import com.sep.comiverse.entity.AuthorEntity;
+import com.sep.comiverse.entity.enums.AuthorLicenseStatus;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.util.EmailUtil;
@@ -31,6 +33,8 @@ public class AdminUserService {
     private final PasswordEncoder passwordEncoder;
     private final EmailUtil emailUtil;
     private final com.sep.comiverse.repository.IRoleRepository roleRepository;
+    private final com.sep.comiverse.repository.IAuthorRepository authorRepository;
+    private final AuthorLicenseService authorLicenseService;
 
     /**
      * List all users with search, role filter, and status filter.
@@ -143,6 +147,12 @@ public class AdminUserService {
         }
 
         userRepository.save(user);
+        String currentRoleName = user.getRole() == null ? "" : user.getRole().getRoleName();
+        if ("AUTHOR".equalsIgnoreCase(currentRoleName)
+                && !authorRepository.existsByUserIdAndDeletedFalse(user.getId())) {
+            // Role conversion to AUTHOR follows the same license workflow as an Admin-created Author.
+            authorLicenseService.initializePendingLicenseAuthor(user, null);
+        }
         return toAdminUserResponse(user);
     }
 
@@ -209,6 +219,10 @@ public class AdminUserService {
             }
         }
 
+        AuthorEntity author = "AUTHOR".equalsIgnoreCase(roleName)
+                ? authorRepository.findByUserIdAndDeletedFalse(user.getId()).orElse(null)
+                : null;
+
         return AdminUserResponse.builder()
                 .id(user.getId())
                 .userId("USR-" + user.getId().toString().substring(0, 8).toUpperCase())
@@ -225,7 +239,24 @@ public class AdminUserService {
                 .updatedDate(user.getUpdatedAt() != null ? java.util.Date.from(user.getUpdatedAt()) : null)
                 .dateOfBirth(user.getDateOfBirth())
                 .assignedLanguages(parsedLangs)
+                .authorId(author == null ? null : author.getId())
+                .authorLicenseStatus(author == null ? null : resolvedAuthorStatus(author).name())
+                .licenseUrl(author == null ? null : author.getLicenseUrl())
+                .licenseOriginalFilename(author == null ? null : author.getLicenseOriginalFilename())
+                .licenseDeadlineAt(author == null ? null : author.getLicenseDeadlineAt())
+                .licenseUploadedAt(author == null ? null : author.getLicenseUploadedAt())
+                .licenseRejectionReason(author == null ? null : author.getLicenseRejectionReason())
                 .build();
+    }
+
+    private AuthorLicenseStatus resolvedAuthorStatus(AuthorEntity author) {
+        AuthorLicenseStatus status = authorLicenseService.effectiveStatus(author);
+        if ((status == AuthorLicenseStatus.PENDING_LICENSE || status == AuthorLicenseStatus.REJECTED)
+                && author.getLicenseDeadlineAt() != null
+                && !author.getLicenseDeadlineAt().isAfter(java.time.Instant.now())) {
+            return AuthorLicenseStatus.EXPIRED;
+        }
+        return status;
     }
 
     private String formatRoleName(String roleName) {

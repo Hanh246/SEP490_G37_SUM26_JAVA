@@ -41,6 +41,7 @@ public class AuthService {
     private final IRoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailUtil emailUtil;
+    private final AuthorLicenseService authorLicenseService;
 
     public UserEntity authenticate(String username, String password) {
         UserEntity user = userRepository.findByUsernameOrEmail(username, username)
@@ -191,6 +192,11 @@ public class AuthService {
 
     @Transactional
     public UserEntity registerStaff(RegisterRequest request) {
+        return registerStaff(request, null);
+    }
+
+    @Transactional
+    public UserEntity registerStaff(RegisterRequest request, java.util.UUID createdByAdminId) {
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new CustomException(400, "Username already exists", HttpStatus.BAD_REQUEST);
         }
@@ -200,8 +206,8 @@ public class AuthService {
         }
 
         String roleParam = request.getRole();
-        final String finalRoleName = (roleParam == null || roleParam.trim().isEmpty()) 
-                ? "MODERATOR" 
+        final String finalRoleName = (roleParam == null || roleParam.trim().isEmpty())
+                ? "MODERATOR"
                 : roleParam.trim().toUpperCase();
 
         RoleEntity targetRole = roleRepository.findByRoleName(finalRoleName)
@@ -213,18 +219,24 @@ public class AuthService {
         }
 
         UserEntity user = UserEntity.builder()
-                .username(request.getUsername())
+                .username(request.getUsername().trim())
                 .password(passwordEncoder.encode(request.getPassword()))
                 .fullName(request.getFullName())
-                .email(request.getEmail())
+                .email(request.getEmail().trim().toLowerCase())
                 .phone(request.getPhone())
                 .role(targetRole)
+                // Account login remains ACTIVE. Author publishing permission is controlled separately
+                // by AuthorEntity.licenseStatus.
                 .status("ACTIVE")
                 .dateOfBirth(request.getDateOfBirth())
                 .assignedLanguages(assignedLanguagesStr)
                 .build();
 
-        return userRepository.save(user);
+        UserEntity saved = userRepository.save(user);
+        if ("AUTHOR".equalsIgnoreCase(finalRoleName)) {
+            authorLicenseService.initializePendingLicenseAuthor(saved, createdByAdminId);
+        }
+        return saved;
     }
 
     @Transactional

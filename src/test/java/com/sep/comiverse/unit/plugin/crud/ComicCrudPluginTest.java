@@ -4,6 +4,9 @@ import com.sep.comiverse.plugin.crud.ComicCrudPlugin;
 
 import com.sep.comiverse.dto.ComicDTO;
 import com.sep.comiverse.entity.ComicEntity;
+import com.sep.comiverse.entity.GenreEntity;
+import com.sep.comiverse.entity.enums.ComicModerationStatus;
+import com.sep.comiverse.entity.enums.ComicPublicationStatus;
 import com.sep.comiverse.plugin.IMapperPlugin;
 import com.sep.comiverse.plugin.IMapperPluginDetail;
 import com.sep.comiverse.repository.IGenreRepository;
@@ -179,6 +182,66 @@ public class ComicCrudPluginTest {
         assertEquals("Korean", existing.getLanguage());
         assertEquals("Korean", result.getLanguage());
         verify(comicRepository).save(existing);
+    }
+
+    @Test
+    void testUpdateComic_AdminManagedFieldsMatchMergedComicEntity() {
+        ComicEntity existing = new ComicEntity();
+        existing.setId(comicId);
+        existing.setTitle("Existing Comic");
+        existing.setLanguage("Japanese");
+        existing.setMinimumAge(13);
+        existing.setPublicationStatus(ComicPublicationStatus.ONGOING);
+        existing.setModerationStatus(ComicModerationStatus.DRAFT);
+
+        UUID genreId = UUID.randomUUID();
+        GenreEntity genre = new GenreEntity();
+        genre.setId(genreId);
+        genre.setName("Action");
+
+        ComicDTO request = new ComicDTO();
+        request.setLanguage("English");
+        request.setMinimumAge(16);
+        request.setPublicationStatus(ComicPublicationStatus.COMPLETED);
+        request.setModerationStatus(ComicModerationStatus.PUBLISHED);
+        request.setGenreIds(List.of(genreId));
+
+        ComicDTO mapped = new ComicDTO();
+        mapped.setId(comicId);
+        mapped.setLanguage("English");
+        mapped.setMinimumAge(16);
+        mapped.setPublicationStatus(ComicPublicationStatus.COMPLETED);
+        mapped.setModerationStatus(ComicModerationStatus.PUBLISHED);
+
+        when(comicRepository.findById(comicId)).thenReturn(Optional.of(existing));
+        when(genreRepository.findAllById(List.of(genreId))).thenReturn(List.of(genre));
+        when(comicRepository.save(existing)).thenReturn(existing);
+        when(mapperPlugin.toDto(existing)).thenReturn(mapped);
+
+        ComicDTO result = comicCrudPlugin.update(comicId, request);
+
+        assertEquals("English", existing.getLanguage());
+        assertEquals(16, existing.getMinimumAge());
+        assertEquals(ComicPublicationStatus.COMPLETED, existing.getPublicationStatus());
+        assertEquals(ComicModerationStatus.PUBLISHED, existing.getModerationStatus());
+        assertEquals(1, existing.getGenres().size());
+        assertTrue(existing.getGenres().contains(genre));
+        assertEquals(ComicModerationStatus.PUBLISHED, result.getModerationStatus());
+        verify(genreRepository).findAllById(List.of(genreId));
+        verify(comicRepository).save(existing);
+    }
+
+    @Test
+    void testUpdateComic_RejectsUnknownComicBeforeApplyingMergedFields() {
+        when(comicRepository.findById(comicId)).thenReturn(Optional.empty());
+        ComicDTO request = new ComicDTO();
+        request.setModerationStatus(ComicModerationStatus.PUBLISHED);
+
+        RuntimeException error = assertThrows(RuntimeException.class, () -> comicCrudPlugin.update(comicId, request));
+
+        assertEquals("Comic not found", error.getMessage());
+        verify(comicRepository, never()).save(any());
+        verifyNoInteractions(genreRepository);
     }
 
     @Test
