@@ -82,5 +82,8 @@ class PushNotificationSenderTest {
                 .contains("\"apns-push-type\":\"alert\"")
                 .contains("\"badge\":7")
                 .contains("\"sound\":\"default\"");
+        assertThat(payload)
+                .contains("\"channel_id\":\"comiverse_activity\"")
+                .contains("\"priority\":\"high\"");
     }
 }

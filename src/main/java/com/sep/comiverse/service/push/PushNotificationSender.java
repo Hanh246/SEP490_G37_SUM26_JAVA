@@ -44,6 +44,10 @@ public class PushNotificationSender {
     public void sendToUser(UUID userId, NotificationResponse notification) {
         FirebaseMessaging messaging = firebaseMessagingProvider.getIfAvailable();
         if (messaging == null || userId == null || notification == null) {
+            if (messaging == null) {
+                log.warn("FCM push skipped: Firebase push is not configured. " +
+                        "Set FIREBASE_PUSH_ENABLED=true and provide service-account credentials.");
+            }
             return;
         }
 
