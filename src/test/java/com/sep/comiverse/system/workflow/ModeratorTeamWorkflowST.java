@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@DisplayName("L3 System Test — BF-05 & BF-06: Translator Onboarding & Translation Team Management")
+@DisplayName("L3 System Test — BF-02: Translator Onboarding & Translation Team Management")
 public class ModeratorTeamWorkflowST extends AbstractIntegrationTest {
 
     @Autowired
@@ -104,7 +104,7 @@ public class ModeratorTeamWorkflowST extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("TC-SYS-BF05-001: Translator Registration -> Role Elevation -> Database Persistence")
+    @DisplayName("TC-SYS-BF02-Flow1: Translator Registration -> Role Elevation -> Database Persistence")
     void testTranslatorRegistrationWorkflow() throws Exception {
         TranslatorRegistrationRequest request = new TranslatorRegistrationRequest();
         request.setSpecializations(List.of("EN-VI Manga Translation"));
@@ -127,7 +127,7 @@ public class ModeratorTeamWorkflowST extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("TC-SYS-BF05-002: Moderator Creates Translation Pool Request -> Unclaimed Project Team Initialized")
+    @DisplayName("TC-SYS-BF02-Flow2: Moderator Creates Translation Pool Request -> Unclaimed Project Team Initialized")
     void testModeratorCreateTranslationPoolRequest() throws Exception {
         // Step 1: Create a Published Comic with source language "vi"
         ComicEntity comic = comicRepository.save(ComicEntity.builder()
@@ -162,7 +162,7 @@ public class ModeratorTeamWorkflowST extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("TC-SYS-BF05-003: Translator Discovers Unclaimed Projects -> Claims Project Team -> Workspace Activated")
+    @DisplayName("TC-SYS-BF02-Flow3: Translator Discovers Unclaimed Projects -> Claims Project Team -> Workspace Activated")
     void testTranslatorClaimsProjectTeam() throws Exception {
         // Step 1: Create an UNCLAIMED Project Team
         ProjectTeamEntity unclaimedProject = projectTeamRepository.save(ProjectTeamEntity.builder()

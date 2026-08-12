@@ -4,6 +4,7 @@ import com.sep.comiverse.dto.ComicDTO;
 import com.sep.comiverse.dto.GenreDTO;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.GenreEntity;
+import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.plugin.AbstractMapperPlugin;
 import com.sep.comiverse.repository.IAuthorRepository;
 import com.sep.comiverse.repository.IGenreRepository;
@@ -111,7 +112,16 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
 
         if (model.getId() != null) {
             int storedCount = model.getChapterCount() != null ? model.getChapterCount() : 0;
-            dto.setChapterCount(storedCount);
+            // Hack to bypass frontend bug on deployed instances:
+            // The FE explicitly hides pending comics if chapterCount <= 0.
+            // Since chapterCount only tracks PUBLISHED chapters, new comics were being hidden.
+            if (storedCount == 0 && 
+               (model.getModerationStatus() == ComicModerationStatus.PENDING || 
+                model.getModerationStatus() == ComicModerationStatus.APPEALED)) {
+                dto.setChapterCount(1);
+            } else {
+                dto.setChapterCount(storedCount);
+            }
             dto.setRejectedChapterCount(0);
             dto.setPendingChapterCount(0);
         }

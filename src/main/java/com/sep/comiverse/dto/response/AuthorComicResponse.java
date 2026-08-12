@@ -39,4 +39,6 @@ public class AuthorComicResponse {
     private Integer chapterCount;
     private Instant createdAt;
     private Instant updatedAt;
+    private Boolean isModEdited;
+    private String previousStateSnapshot;
 }

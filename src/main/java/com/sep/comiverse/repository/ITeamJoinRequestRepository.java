@@ -11,4 +11,15 @@ public interface ITeamJoinRequestRepository extends JpaRepository<TeamJoinReques
     List<TeamJoinRequestEntity> findByProjectTeamId(UUID projectTeamId);
     boolean existsByNameAndProjectTeamId(String name, UUID projectTeamId);
     List<TeamJoinRequestEntity> findByName(String name);
+
+    // ── New queries for upgraded join flow ──
+    @org.springframework.data.jpa.repository.Query("SELECT COUNT(r) FROM TeamJoinRequestEntity r WHERE r.requesterId = :requesterId AND (r.status IS NULL OR r.status = :status)")
+    long countByRequesterIdAndStatus(@org.springframework.data.repository.query.Param("requesterId") UUID requesterId, @org.springframework.data.repository.query.Param("status") String status);
+    @org.springframework.data.jpa.repository.Query("SELECT r FROM TeamJoinRequestEntity r WHERE r.requesterId = :requesterId AND (r.status IS NULL OR r.status = :status)")
+    List<TeamJoinRequestEntity> findByRequesterIdAndStatus(@org.springframework.data.repository.query.Param("requesterId") UUID requesterId, @org.springframework.data.repository.query.Param("status") String status);
+    
+    List<TeamJoinRequestEntity> findByRequesterId(UUID requesterId);
+    
+    @org.springframework.data.jpa.repository.Query("SELECT COUNT(r) > 0 FROM TeamJoinRequestEntity r WHERE r.requesterId = :requesterId AND r.projectTeamId = :projectTeamId AND (r.status IS NULL OR r.status = :status)")
+    boolean existsByRequesterIdAndProjectTeamIdAndStatus(@org.springframework.data.repository.query.Param("requesterId") UUID requesterId, @org.springframework.data.repository.query.Param("projectTeamId") UUID projectTeamId, @org.springframework.data.repository.query.Param("status") String status);
 }

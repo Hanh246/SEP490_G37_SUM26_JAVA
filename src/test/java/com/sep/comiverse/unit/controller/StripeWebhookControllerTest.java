@@ -52,7 +52,7 @@ class StripeWebhookControllerTest {
     }
 
     @Test
-    void verifiedWebhookIsProcessedAndAcknowledged() throws Exception {
+    void verifiedWebhookIsProcessedBeforeAcknowledgement() throws Exception {
         // Arrange
         byte[] rawBody = """
                 {"id":"evt_123","type":"invoice.paid","data":{"object":{}}}
@@ -76,7 +76,8 @@ class StripeWebhookControllerTest {
                 response.getBody()
         );
 
-        verify(stripeGatewayService).verifyAndParseWebhook(payload, "signature");
+        verify(stripeGatewayService)
+                .verifyAndParseWebhook(payload, "signature");
         verify(stripeSubscriptionService).processWebhook(event);
         verifyNoInteractions(payoutProfileService);
     }
@@ -150,6 +151,7 @@ class StripeWebhookControllerTest {
 
         assertEquals(400, exception.getCode());
         assertEquals("Missing Stripe-Signature header", exception.getMessage());
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getHttpStatus());
         verify(stripeGatewayService).verifyAndParseWebhook(payload, null);
         verifyNoInteractions(stripeSubscriptionService, payoutProfileService);
     }

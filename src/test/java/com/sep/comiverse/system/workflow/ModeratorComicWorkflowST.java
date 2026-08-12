@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@DisplayName("L3 System Test — BF-04: Comic & Chapter Moderation Workflow")
+@DisplayName("L3 System Test — BF-01: Comic & Chapter Moderation Workflow")
 public class ModeratorComicWorkflowST extends AbstractIntegrationTest {
 
     @Autowired
@@ -104,7 +104,7 @@ public class ModeratorComicWorkflowST extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("TC-SYS-BF04-001: End-to-End Chapter Submission -> Review Queue -> Approve -> Publish & Reading Access")
+    @DisplayName("TC-SYS-BF01-Flow1: End-to-End Chapter Submission -> Review Queue -> Approve -> Publish & Reading Access")
     void testComicChapterModerationApprovalWorkflow() throws Exception {
         // Step 1: Create Comic & Chapter in PENDING_REVIEW state (Simulating Author Submission)
         ComicEntity comic = comicRepository.save(ComicEntity.builder()
@@ -173,7 +173,7 @@ public class ModeratorComicWorkflowST extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("TC-SYS-BF04-002: End-to-End Chapter Submission -> Review Queue -> Reject with Reason & Tombstone Cleanup")
+    @DisplayName("TC-SYS-BF01-Flow2: End-to-End Chapter Submission -> Review Queue -> Reject with Reason & Tombstone Cleanup")
     void testComicChapterModerationRejectWorkflow() throws Exception {
         // Step 1: Prepare Submission for Low Quality Chapter
         ComicEntity comic = comicRepository.save(ComicEntity.builder()

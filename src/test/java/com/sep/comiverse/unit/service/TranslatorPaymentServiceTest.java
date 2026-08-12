@@ -372,6 +372,7 @@ class TranslatorPaymentServiceTest {
         verify(taskRepository, never()).save(any());
     }
 
+
     @Test
     void settlementIsRejectedBeforeWholeChapterApproval() {
         TeamTaskEntity task = TeamTaskEntity.builder()

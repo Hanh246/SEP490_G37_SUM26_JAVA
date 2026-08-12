@@ -452,6 +452,8 @@ public class AuthorComicService {
                 .chapterCount(chapterCount)
                 .createdAt(comic.getCreatedAt())
                 .updatedAt(comic.getUpdatedAt())
+                .isModEdited(comic.getIsModEdited())
+                .previousStateSnapshot(comic.getPreviousStateSnapshot())
                 .build();
     }
 

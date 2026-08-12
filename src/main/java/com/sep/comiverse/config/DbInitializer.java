@@ -1,5 +1,7 @@
 package com.sep.comiverse.config;
 
+import com.sep.comiverse.entity.*;
+import com.sep.comiverse.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
@@ -7,12 +9,10 @@ import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import com.sep.comiverse.entity.*;
-import com.sep.comiverse.repository.*;
+
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @Component
 @org.springframework.context.annotation.Profile("!integration")
@@ -42,6 +42,7 @@ public class DbInitializer implements CommandLineRunner {
     private final ITeamJoinRequestRepository teamJoinRequestRepository;
     private final IChapterRepository chapterRepository;
     private final IComicMetricSnapshotRepository metricSnapshotRepository;
+    private final IReportCategoryRepository reportCategoryRepository;
 
     @Override
     @Transactional
@@ -71,6 +72,8 @@ public class DbInitializer implements CommandLineRunner {
         createSubmissions();
         createChatFlags();
         createForumThreads();
+        createReportCategories();
+        initReportDatabaseIndexes();
 
         repairMissingProjectTeamLeaders();
 
@@ -814,5 +817,107 @@ public class DbInitializer implements CommandLineRunner {
 
     private void createForumThreads() {
         // Disabled mock seeding
+    }
+
+    private void createReportCategories() {
+        if (reportCategoryRepository.count() == 0) {
+            UserEntity adminUser = userRepository.findByEmail("admin@gmail.com").orElse(null);
+
+            reportCategoryRepository.save(ReportCategoryEntity.builder()
+                    .name("Image & Page Issue")
+                    .description("Chapter images are blurry, broken, fail to load, or out of reading order")
+                    .assignedRole(com.sep.comiverse.entity.enums.ReportAssignedRole.MODERATOR)
+                    .targetTypes(java.util.List.of(com.sep.comiverse.entity.enums.ReportTargetType.CHAPTER))
+                    .isActive(true)
+                    .createdBy(adminUser)
+                    .build());
+
+            reportCategoryRepository.save(ReportCategoryEntity.builder()
+                    .name("Translation Error")
+                    .description("Inaccurate translations, unnatural phrasing, missing dialogue, or typesetting mistakes")
+                    .assignedRole(com.sep.comiverse.entity.enums.ReportAssignedRole.PROJECT_LEADER)
+                    .targetTypes(java.util.List.of(
+                            com.sep.comiverse.entity.enums.ReportTargetType.CHAPTER_TRANSLATIONS
+                    ))
+                    .isActive(true)
+                    .createdBy(adminUser)
+                    .build());
+
+            reportCategoryRepository.save(ReportCategoryEntity.builder()
+                    .name("Duplicate Content")
+                    .description("Duplicate comic title, duplicate chapter uploads, or repeated pages")
+                    .assignedRole(com.sep.comiverse.entity.enums.ReportAssignedRole.MODERATOR)
+                    .targetTypes(java.util.List.of(
+                            com.sep.comiverse.entity.enums.ReportTargetType.COMIC,
+                            com.sep.comiverse.entity.enums.ReportTargetType.CHAPTER,
+                            com.sep.comiverse.entity.enums.ReportTargetType.CHAPTER_TRANSLATIONS
+                    ))
+                    .isActive(true)
+                    .createdBy(adminUser)
+                    .build());
+
+            reportCategoryRepository.save(ReportCategoryEntity.builder()
+                    .name("Spam & Malicious Ads")
+                    .description("Content contains spam comments, phishing links, or unauthorized external ads")
+                    .assignedRole(com.sep.comiverse.entity.enums.ReportAssignedRole.MODERATOR)
+                    .targetTypes(java.util.List.of(
+                            com.sep.comiverse.entity.enums.ReportTargetType.COMIC,
+                            com.sep.comiverse.entity.enums.ReportTargetType.CHAPTER,
+                            com.sep.comiverse.entity.enums.ReportTargetType.CHAPTER_TRANSLATIONS
+                    ))
+                    .isActive(true)
+                    .createdBy(adminUser)
+                    .build());
+
+            reportCategoryRepository.save(ReportCategoryEntity.builder()
+                    .name("Inappropriate Content")
+                    .description("Content violates community guidelines, inappropriate age rating, or copyright violation")
+                    .assignedRole(com.sep.comiverse.entity.enums.ReportAssignedRole.MODERATOR)
+                    .targetTypes(java.util.List.of(
+                            com.sep.comiverse.entity.enums.ReportTargetType.COMIC,
+                            com.sep.comiverse.entity.enums.ReportTargetType.CHAPTER,
+                            com.sep.comiverse.entity.enums.ReportTargetType.CHAPTER_TRANSLATIONS
+                    ))
+                    .isActive(true)
+                    .createdBy(adminUser)
+                    .build());
+
+            reportCategoryRepository.save(ReportCategoryEntity.builder()
+                    .name("Translation Project Delay")
+                    .description("Significant release schedule delays or abandoned translation group chapters")
+                    .assignedRole(com.sep.comiverse.entity.enums.ReportAssignedRole.PROJECT_LEADER)
+                    .targetTypes(java.util.List.of(
+                            com.sep.comiverse.entity.enums.ReportTargetType.COMIC,
+                            com.sep.comiverse.entity.enums.ReportTargetType.CHAPTER_TRANSLATIONS
+                    ))
+                    .isActive(true)
+                    .createdBy(adminUser)
+                    .build());
+
+            System.out.println("✅ Default report categories initialized in DB.");
+        }
+    }
+
+    private void initReportDatabaseIndexes() {
+        try {
+            jdbcTemplate.execute("""
+                    DO $$
+                    BEGIN
+                        IF to_regclass('public.reports') IS NOT NULL THEN
+                            IF NOT EXISTS (
+                                SELECT 1 FROM pg_indexes
+                                WHERE tablename = 'reports' AND indexname = 'uidx_reports_active_per_target'
+                            ) THEN
+                                CREATE UNIQUE INDEX uidx_reports_active_per_target
+                                ON public.reports (reporter_id, target_type, target_id)
+                                WHERE status IN ('PENDING', 'IN_PROGRESS') AND (deleted IS NULL OR deleted = false);
+                            END IF;
+                        END IF;
+                    END $$;
+                    """);
+            System.out.println("✅ Report partial unique index verified in PostgreSQL.");
+        } catch (Exception e) {
+            System.out.println("⚠️ Could not create partial unique index on reports table (DB might still be initializing schema): " + e.getMessage());
+        }
     }
 }
