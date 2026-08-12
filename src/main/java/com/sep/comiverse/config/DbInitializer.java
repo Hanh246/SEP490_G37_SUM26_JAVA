@@ -11,7 +11,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Component
@@ -34,6 +36,7 @@ public class DbInitializer implements CommandLineRunner {
     private final ISubmissionRepository submissionRepository;
     private final IChatFlagRepository chatFlagRepository;
     private final IForumThreadRepository forumThreadRepository;
+    private final IForumCategoryRepository forumCategoryRepository;
     private final IAuthorRepository authorRepository;
 
     private final ITeamAnnouncementRepository teamAnnouncementRepository;
@@ -72,6 +75,7 @@ public class DbInitializer implements CommandLineRunner {
         createSubmissions();
         createChatFlags();
         createForumThreads();
+        createForumCategories();
         createReportCategories();
         initReportDatabaseIndexes();
 
@@ -817,6 +821,31 @@ public class DbInitializer implements CommandLineRunner {
 
     private void createForumThreads() {
         // Disabled mock seeding
+    }
+
+    private void createForumCategories() {
+        Map<String, String> categories = new LinkedHashMap<>();
+        categories.put("General", "#94a3b8");
+        categories.put("Announcements", "#8b5cf6");
+        categories.put("Suggestions", "#3b82f6");
+        categories.put("Support", "#10b981");
+        categories.put("Spoilers", "#ef4444");
+        categories.put("Off-topic", "#f59e0b");
+
+        forumThreadRepository.findAll().stream()
+                .map(ForumThreadEntity::getCategory)
+                .filter(name -> name != null && !name.isBlank())
+                .forEach(name -> categories.putIfAbsent(name.trim(), "#a855f7"));
+
+        categories.forEach((name, color) -> {
+            if (!forumCategoryRepository.existsByNameIgnoreCaseAndDeletedFalse(name)) {
+                forumCategoryRepository.save(ForumCategoryEntity.builder()
+                        .name(name)
+                        .color(color)
+                        .isActive(true)
+                        .build());
+            }
+        });
     }
 
     private void createReportCategories() {

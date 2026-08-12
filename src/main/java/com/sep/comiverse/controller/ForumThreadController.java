@@ -2,6 +2,7 @@ package com.sep.comiverse.controller;
 
 import com.sep.comiverse.dto.ForumThreadDTO;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
+import com.sep.comiverse.dto.request.ReportForumThreadRequest;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.entity.ForumThreadEntity;
 import com.sep.comiverse.exception.CustomException;
@@ -31,6 +32,12 @@ public class ForumThreadController extends BaseController<ForumThreadEntity, For
     private IUserRepository userRepository;
 
     @Autowired
+    private com.sep.comiverse.repository.IForumCategoryRepository forumCategoryRepository;
+
+    @Autowired
+    private com.sep.comiverse.repository.IForumThreadRepository forumThreadRepository;
+
+    @Autowired
     public ForumThreadController(ForumThreadCrudPlugin crud) {
         super(crud, ForumThreadEntity.class);
     }
@@ -55,6 +62,13 @@ public class ForumThreadController extends BaseController<ForumThreadEntity, For
         dto.setIsLocked(false);
         dto.setIsReported(false);
         dto.setReportReason(null);
+        String category = dto.getCategory() == null || dto.getCategory().isBlank()
+                ? "General"
+                : dto.getCategory().trim();
+        if (!forumCategoryRepository.existsByNameIgnoreCaseAndDeletedFalse(category)) {
+            throw new CustomException(400, "Forum category does not exist", HttpStatus.BAD_REQUEST);
+        }
+        dto.setCategory(category);
         return super.create(dto);
     }
 
@@ -67,6 +81,7 @@ public class ForumThreadController extends BaseController<ForumThreadEntity, For
     }
 
     @Override
+    @PreAuthorize("hasAnyAuthority('MODERATOR', 'ADMIN')")
     @org.springframework.transaction.annotation.Transactional
     public ResponseEntity<BaseResponse<ForumThreadDTO>> update(@PathVariable UUID id, @RequestBody ForumThreadDTO dto) {
         ForumThreadDTO existing = crudPlugin.read(id)
@@ -88,18 +103,52 @@ public class ForumThreadController extends BaseController<ForumThreadEntity, For
     }
 
     @Override
+    @PreAuthorize("isAuthenticated()")
     @org.springframework.transaction.annotation.Transactional
     public ResponseEntity<BaseResponse<Void>> delete(@PathVariable UUID id) {
         String threadTitle = "Unknown Thread";
-        try {
-            var opt = crudPlugin.read(id);
-            if (opt.isPresent()) {
-                threadTitle = opt.get().getTitle();
-            }
-        } catch (Exception e) {}
+        ForumThreadDTO existing = crudPlugin.read(id)
+                .orElseThrow(() -> new CustomException(404, "Discussion thread not found", HttpStatus.NOT_FOUND));
+        threadTitle = existing.getTitle();
+        UUID currentUserId = jwtTokenUtil.getCurrentUserId();
+        var currentUser = userRepository.findByIdWithRole(currentUserId)
+                .orElseThrow(() -> new CustomException(404, "User not found", HttpStatus.NOT_FOUND));
+        String role = currentUser.getRole() == null ? "" : currentUser.getRole().getRoleName();
+        boolean moderator = "MODERATOR".equalsIgnoreCase(role) || "ADMIN".equalsIgnoreCase(role);
+        boolean owner = currentUserId.equals(existing.getAuthorId());
+        if (!moderator && !owner) {
+            throw new CustomException(403, "You do not have permission to delete this thread", HttpStatus.FORBIDDEN);
+        }
         
         ResponseEntity<BaseResponse<Void>> response = super.delete(id);
         auditLogService.log("FORUM_MODERATION", "Deleted forum thread: \"" + threadTitle + "\"");
         return response;
+    }
+
+    @PostMapping("/{id}/view")
+    @org.springframework.transaction.annotation.Transactional
+    public ResponseEntity<BaseResponse<Void>> incrementView(@PathVariable UUID id) {
+        if (forumThreadRepository.incrementViews(id) == 0) {
+            throw new CustomException(404, "Discussion thread not found", HttpStatus.NOT_FOUND);
+        }
+        return ResponseEntity.ok(BaseResponse.<Void>builder().success(true).build());
+    }
+
+    @PostMapping("/{id}/report")
+    @PreAuthorize("isAuthenticated()")
+    @org.springframework.transaction.annotation.Transactional
+    public ResponseEntity<BaseResponse<Void>> reportThread(
+            @PathVariable UUID id,
+            @Valid @RequestBody ReportForumThreadRequest request
+    ) {
+        ForumThreadEntity thread = forumThreadRepository.findById(id)
+                .orElseThrow(() -> new CustomException(404, "Discussion thread not found", HttpStatus.NOT_FOUND));
+        thread.setIsReported(true);
+        thread.setReportReason(request.getReason().trim());
+        forumThreadRepository.save(thread);
+        return ResponseEntity.ok(BaseResponse.<Void>builder()
+                .success(true)
+                .message("Forum thread reported successfully")
+                .build());
     }
 }

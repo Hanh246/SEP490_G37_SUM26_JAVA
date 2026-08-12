@@ -207,6 +207,40 @@ class ForumCommentServiceTest {
     }
 
     @Test
+    void createCommentRejectsRepliesWhenThreadIsLocked() {
+        ForumThreadEntity thread = thread(ownerId);
+        thread.setIsLocked(true);
+        when(forumThreadRepository.findById(threadId)).thenReturn(Optional.of(thread));
+
+        CustomException exception = assertThrows(CustomException.class, () ->
+                forumCommentService.createComment(threadId, request("Blocked reply", null), actorId)
+        );
+
+        assertEquals(HttpStatus.CONFLICT, exception.getHttpStatus());
+        assertEquals("This discussion thread is locked", exception.getMessage());
+        verify(forumCommentRepository, never()).save(any());
+    }
+
+    @Test
+    void createCommentKeepsUploadedImageUrl() {
+        String content = "<br><img src=\"https://res.cloudinary.com/comiverse/forum/test.png\" alt=\"Attached Image\">";
+        UUID savedId = UUID.randomUUID();
+        ForumThreadEntity thread = thread(actorId);
+        when(forumThreadRepository.findById(threadId)).thenReturn(Optional.of(thread));
+        when(userRepository.findByIdWithRole(actorId)).thenReturn(Optional.of(user(actorId, "Owner")));
+        when(forumCommentRepository.save(any(ForumCommentEntity.class)))
+                .thenAnswer(invocation -> savedComment(invocation.getArgument(0), savedId));
+
+        ForumCommentDTO result = forumCommentService.createComment(
+                threadId,
+                request(content, null),
+                actorId
+        );
+
+        assertEquals(content, result.getContent());
+    }
+
+    @Test
     void createReplyRejectsParentFromAnotherThread() {
         UUID parentId = UUID.randomUUID();
         ForumCommentEntity parent = ForumCommentEntity.builder()

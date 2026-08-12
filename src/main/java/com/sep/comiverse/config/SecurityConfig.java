@@ -73,6 +73,9 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/genres/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/plans/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/subscriptions/plans").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/forum-threads/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/forum-categories/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/forum-threads/*/view").permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2
