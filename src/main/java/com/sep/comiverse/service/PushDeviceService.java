@@ -1,6 +1,8 @@
 package com.sep.comiverse.service;
 
+import com.google.firebase.messaging.FirebaseMessaging;
 import com.sep.comiverse.dto.request.RegisterPushDeviceRequest;
+import com.sep.comiverse.dto.response.PushDeviceStatusResponse;
 import com.sep.comiverse.entity.PushDeviceTokenEntity;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.exception.CustomException;
@@ -8,6 +10,7 @@ import com.sep.comiverse.repository.IPushDeviceTokenRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +24,7 @@ public class PushDeviceService {
 
     private final IPushDeviceTokenRepository pushDeviceTokenRepository;
     private final IUserRepository userRepository;
+    private final ObjectProvider<FirebaseMessaging> firebaseMessagingProvider;
 
     @Transactional
     public void register(UUID userId, RegisterPushDeviceRequest request) {
@@ -51,6 +55,14 @@ public class PushDeviceService {
         pushDeviceTokenRepository.findByToken(rawToken.trim())
                 .filter(device -> device.getUser() != null && userId.equals(device.getUser().getId()))
                 .ifPresent(pushDeviceTokenRepository::delete);
+    }
+
+    @Transactional(readOnly = true)
+    public PushDeviceStatusResponse status(UUID userId) {
+        return PushDeviceStatusResponse.builder()
+                .serverConfigured(firebaseMessagingProvider.getIfAvailable() != null)
+                .registeredDeviceCount(pushDeviceTokenRepository.countActiveByUserId(userId))
+                .build();
     }
 
     private String normalize(String value) {

@@ -114,6 +114,31 @@ public class EmailUtil {
         );
     }
 
+    public void sendDeviceVerificationOtp(String toEmail, String otp, String name, String deviceName) {
+        String displayDevice = deviceName == null || deviceName.isBlank()
+                ? "a new device"
+                : deviceName.trim();
+        sendEmail(
+                toEmail,
+                "Verify a ComiVerse device change",
+                """
+                <h2>Verify your device change</h2>
+                <p>Hello <strong>%s</strong>,</p>
+                <p>Use this OTP to approve access for <strong>%s</strong> or remove an account device:</p>
+                <h1 style="letter-spacing:8px">%s</h1>
+                <p>This code expires in 5 minutes. Do not share it with anyone.</p>
+                """.formatted(escapeHtml(displayName(name)), escapeHtml(displayDevice), otp),
+                """
+                Hello %s,
+
+                Your ComiVerse device verification OTP is: %s
+                Device: %s
+
+                This code expires in 5 minutes. Do not share it with anyone.
+                """.formatted(displayName(name), otp, displayDevice)
+        );
+    }
+
     public void sendPasswordResetLink(String toEmail, String resetUrl, String name) {
         String safeName = escapeHtml(displayName(name));
         String safeUrl = escapeHtml(resetUrl);
@@ -206,6 +231,7 @@ public class EmailUtil {
             mailSender.send(message);
         } catch (MailException e) {
             log.warn("SMTP mail server unreachable for recipient {}: {}", toEmail, e.getMessage());
+            throw new CustomException(503, "SMTP mail server is temporarily unavailable.", HttpStatus.SERVICE_UNAVAILABLE);
         } catch (MessagingException | UnsupportedEncodingException e) {
             log.error("SMTP email delivery failed for recipient domain {}", emailDomain(toEmail), e);
             throw new CustomException(500, "Could not send email via SMTP.", HttpStatus.INTERNAL_SERVER_ERROR);

@@ -324,6 +324,7 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
                 isTimeField = false;
                 break;
             case "Most Followed":
+            case "Most Bookmarked":
                 sortProperty = "saveCount";
                 isTimeField = false;
                 break;

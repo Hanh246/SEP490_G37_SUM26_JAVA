@@ -1,5 +1,6 @@
 package com.sep.comiverse.unit.service;
 
+import com.google.firebase.messaging.FirebaseMessaging;
 import com.sep.comiverse.dto.request.RegisterPushDeviceRequest;
 import com.sep.comiverse.entity.PushDeviceTokenEntity;
 import com.sep.comiverse.entity.UserEntity;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.springframework.beans.factory.ObjectProvider;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Optional;
@@ -29,12 +31,18 @@ class PushDeviceServiceTest {
     private IPushDeviceTokenRepository pushDeviceTokenRepository;
     @Mock
     private IUserRepository userRepository;
+    @Mock
+    private ObjectProvider<FirebaseMessaging> firebaseMessagingProvider;
 
     private PushDeviceService service;
 
     @BeforeEach
     void setUp() {
-        service = new PushDeviceService(pushDeviceTokenRepository, userRepository);
+        service = new PushDeviceService(
+                pushDeviceTokenRepository,
+                userRepository,
+                firebaseMessagingProvider
+        );
     }
 
     @Test
@@ -77,6 +85,18 @@ class PushDeviceServiceTest {
         service.unregister(ownerId, "fcm-token");
 
         verify(pushDeviceTokenRepository, never()).delete(device);
+    }
+
+    @Test
+    void statusReportsConfiguredServerAndRegisteredDevices() {
+        UUID userId = UUID.randomUUID();
+        when(firebaseMessagingProvider.getIfAvailable()).thenReturn(org.mockito.Mockito.mock(FirebaseMessaging.class));
+        when(pushDeviceTokenRepository.countActiveByUserId(userId)).thenReturn(2L);
+
+        var status = service.status(userId);
+
+        assertTrue(status.isServerConfigured());
+        assertEquals(2L, status.getRegisteredDeviceCount());
     }
 
     private UserEntity activeUser(UUID id) {

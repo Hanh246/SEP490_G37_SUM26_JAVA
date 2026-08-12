@@ -39,24 +39,34 @@ public class JwtTokenUtil {
     }
 
     public String generateToken(com.sep.comiverse.entity.UserEntity user) {
+        return generateToken(user, null);
+    }
+
+    public String generateToken(com.sep.comiverse.entity.UserEntity user, UUID loginDeviceId) {
         Instant expiration = Instant.now().plusMillis(jwtExpirationMs);
-        return buildToken(user, expiration);
+        return buildToken(user, expiration, loginDeviceId);
     }
 
     public String generateRefreshToken(com.sep.comiverse.entity.UserEntity user) {
-        long refreshExpirationMs = 7 * 24 * 60 * 60 * 1000L;
-        Instant expiration = Instant.now().plusMillis(refreshExpirationMs);
-        return buildToken(user, expiration);
+        return generateRefreshToken(user, null);
     }
 
-    private String buildToken(com.sep.comiverse.entity.UserEntity user, Instant expiration) {
-        return Jwts.builder()
+    public String generateRefreshToken(com.sep.comiverse.entity.UserEntity user, UUID loginDeviceId) {
+        long refreshExpirationMs = 7 * 24 * 60 * 60 * 1000L;
+        Instant expiration = Instant.now().plusMillis(refreshExpirationMs);
+        return buildToken(user, expiration, loginDeviceId);
+    }
+
+    private String buildToken(com.sep.comiverse.entity.UserEntity user, Instant expiration, UUID loginDeviceId) {
+        var builder = Jwts.builder()
                 .subject(user.getId().toString())
                 .claim("role", user.getRole() != null ? user.getRole().getRoleName() : "READER")
                 .issuedAt(Date.from(Instant.now()))
-                .expiration(Date.from(expiration))
-                .signWith(signingKey, Jwts.SIG.HS256)
-                .compact();
+                .expiration(Date.from(expiration));
+        if (loginDeviceId != null) {
+            builder.claim("loginDeviceId", loginDeviceId.toString());
+        }
+        return builder.signWith(signingKey, Jwts.SIG.HS256).compact();
     }
 
     public io.jsonwebtoken.Claims getClaimsFromToken(String token) {
@@ -74,6 +84,12 @@ public class JwtTokenUtil {
                 .parseSignedClaims(token)
                 .getPayload()
                 .getSubject();
+    }
+
+    public UUID getLoginDeviceIdFromToken(String token) {
+        Object value = getClaimsFromToken(token).get("loginDeviceId");
+        if (value == null || value.toString().isBlank()) return null;
+        return UUID.fromString(value.toString());
     }
 
     public boolean validateJwtToken(String authToken) {

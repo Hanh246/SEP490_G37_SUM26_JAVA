@@ -24,6 +24,15 @@ public interface IPushDeviceTokenRepository extends JpaRepository<PushDeviceToke
             """)
     List<PushDeviceTokenEntity> findActiveByUserId(@Param("userId") UUID userId);
 
+    @Query("""
+            SELECT COUNT(device)
+            FROM PushDeviceTokenEntity device
+            WHERE device.user.id = :userId
+              AND device.enabled = true
+              AND (device.deleted = false OR device.deleted IS NULL)
+            """)
+    long countActiveByUserId(@Param("userId") UUID userId);
+
     @Modifying
     @Query("DELETE FROM PushDeviceTokenEntity device WHERE device.token IN :tokens")
     int deleteAllByTokenIn(@Param("tokens") Collection<String> tokens);
