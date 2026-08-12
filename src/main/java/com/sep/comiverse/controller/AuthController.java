@@ -89,8 +89,11 @@ public class AuthController {
 
     @PostMapping("/register-staff")
     @PreAuthorize("hasAuthority('ADMIN')")
-    public ResponseEntity<AuthResponse> registerStaff(@Valid @RequestBody RegisterRequest request) {
-        authService.registerStaff(request);
+    public ResponseEntity<AuthResponse> registerStaff(
+            @Valid @RequestBody RegisterRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        authService.registerStaff(request, principal == null ? null : principal.getId());
         return ResponseEntity.ok(new AuthResponse(null, null));
     }
 

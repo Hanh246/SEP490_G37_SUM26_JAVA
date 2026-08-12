@@ -5,9 +5,11 @@ import com.sep.comiverse.dto.response.AdminUserResponse;
 import com.sep.comiverse.entity.RoleEntity;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.exception.CustomException;
+import com.sep.comiverse.repository.IAuthorRepository;
 import com.sep.comiverse.repository.IRoleRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.service.AdminUserService;
+import com.sep.comiverse.service.AuthorLicenseService;
 import com.sep.comiverse.util.EmailUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,12 +44,23 @@ class AdminUserServiceTest {
     private EmailUtil emailUtil;
     @Mock
     private IRoleRepository roleRepository;
+    @Mock
+    private IAuthorRepository authorRepository;
+    @Mock
+    private AuthorLicenseService authorLicenseService;
 
     private AdminUserService service;
 
     @BeforeEach
     void setUp() {
-        service = new AdminUserService(userRepository, passwordEncoder, emailUtil, roleRepository);
+        service = new AdminUserService(
+                userRepository,
+                passwordEncoder,
+                emailUtil,
+                roleRepository,
+                authorRepository,
+                authorLicenseService
+        );
     }
 
     @Test
@@ -157,6 +170,50 @@ class AdminUserServiceTest {
 
         assertEquals("Role not found: UNKNOWN", error.getMessage());
         verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void updateUserToAuthorInitializesPendingLicenseFlowWhenAuthorProfileDoesNotExist() {
+        UUID userId = UUID.randomUUID();
+        UserEntity reader = user(userId, "READER", "ACTIVE");
+        RoleEntity authorRole = RoleEntity.builder().roleName("AUTHOR").build();
+        when(userRepository.findById(userId)).thenReturn(Optional.of(reader));
+        when(roleRepository.findByRoleName("AUTHOR")).thenReturn(Optional.of(authorRole));
+        when(authorRepository.existsByUserIdAndDeletedFalse(userId)).thenReturn(false);
+        when(authorRepository.findByUserIdAndDeletedFalse(userId)).thenReturn(Optional.empty());
+
+        AdminUpdateUserRequest request = new AdminUpdateUserRequest(
+                "Reader One",
+                "author",
+                null
+        );
+
+        AdminUserResponse response = service.updateUser(userId, request);
+
+        assertSame(authorRole, reader.getRole());
+        assertEquals("Author", response.getRole());
+        verify(authorLicenseService).initializePendingLicenseAuthor(reader, null);
+        verify(userRepository).save(reader);
+    }
+
+    @Test
+    void updateExistingAuthorDoesNotReinitializeLicenseFlow() {
+        UUID userId = UUID.randomUUID();
+        UserEntity author = user(userId, "AUTHOR", "ACTIVE");
+        when(userRepository.findById(userId)).thenReturn(Optional.of(author));
+        when(authorRepository.existsByUserIdAndDeletedFalse(userId)).thenReturn(true);
+        when(authorRepository.findByUserIdAndDeletedFalse(userId)).thenReturn(Optional.empty());
+
+        AdminUpdateUserRequest request = new AdminUpdateUserRequest(
+                "Updated Author",
+                null,
+                null
+        );
+
+        service.updateUser(userId, request);
+
+        verify(authorLicenseService, never()).initializePendingLicenseAuthor(any(), any());
+        verify(userRepository).save(author);
     }
 
     @Test

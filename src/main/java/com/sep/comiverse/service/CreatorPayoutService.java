@@ -78,6 +78,7 @@ public class CreatorPayoutService {
     private final StripeGatewayService stripeGatewayService;
     private final CreatorPayoutSettingsService payoutSettingsService;
     private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final AuthorLicenseService authorLicenseService;
 
     @Transactional
     public CreatorPayoutOverviewResponse getOverview(
@@ -132,6 +133,9 @@ public class CreatorPayoutService {
                 calculation.withdrawableUsd(),
                 minimumUsd
         );
+        if (role == CreatorPayoutRole.AUTHOR && !authorLicenseService.isAuthorPayoutAllowed(user.getId())) {
+            requestability = new Requestability(false, "Author payout is disabled until the license is verified");
+        }
         BigDecimal overLimitUsd = role == CreatorPayoutRole.TRANSLATOR
                 ? BigDecimal.ZERO.setScale(2)
                 : normalizeUsd(
@@ -211,6 +215,9 @@ public class CreatorPayoutService {
     ) {
         UserEntity user = requireCreator(principal);
         CreatorPayoutRole role = resolveCreatorRole(user);
+        if (role == CreatorPayoutRole.AUTHOR) {
+            authorLicenseService.assertAuthorPayoutAllowed(user.getId());
+        }
         YearMonth payoutMonth = parseMonth(request.getPayoutMonth());
         ensureRequestableMonth(payoutMonth);
 
@@ -369,6 +376,9 @@ public class CreatorPayoutService {
             String adminNote
     ) {
         CreatorPayoutRequestEntity payout = getLockedPayout(payoutId);
+        if (payout.getRole() == CreatorPayoutRole.AUTHOR) {
+            authorLicenseService.assertAuthorPayoutAllowed(payout.getUserId());
+        }
         if (payout.getStatus() != CreatorPayoutStatus.PENDING) {
             throw invalidTransition(payout, "approve");
         }
@@ -416,6 +426,9 @@ public class CreatorPayoutService {
     @Transactional(noRollbackFor = CustomException.class)
     public CreatorPayoutRequestResponse payWithStripe(UUID payoutId) {
         CreatorPayoutRequestEntity payout = getLockedPayout(payoutId);
+        if (payout.getRole() == CreatorPayoutRole.AUTHOR) {
+            authorLicenseService.assertAuthorPayoutAllowed(payout.getUserId());
+        }
 
         if (payout.getStatus() == CreatorPayoutStatus.PAID
                 && StringUtils.hasText(payout.getStripeTransferId())) {

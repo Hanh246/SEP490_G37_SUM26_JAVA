@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
 import java.util.Date;
 import java.util.UUID;
 
@@ -58,4 +59,25 @@ public class AdminUserResponse {
 
     @JsonProperty("assignedLanguages")
     private java.util.List<String> assignedLanguages;
+
+    @JsonProperty("authorId")
+    private UUID authorId;
+
+    @JsonProperty("authorLicenseStatus")
+    private String authorLicenseStatus;
+
+    @JsonProperty("licenseUrl")
+    private String licenseUrl;
+
+    @JsonProperty("licenseOriginalFilename")
+    private String licenseOriginalFilename;
+
+    @JsonProperty("licenseDeadlineAt")
+    private Instant licenseDeadlineAt;
+
+    @JsonProperty("licenseUploadedAt")
+    private Instant licenseUploadedAt;
+
+    @JsonProperty("licenseRejectionReason")
+    private String licenseRejectionReason;
 }

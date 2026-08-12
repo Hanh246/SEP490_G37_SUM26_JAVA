@@ -54,6 +54,42 @@ public class CloudinaryStorageService {
         }
     }
 
+
+    public CloudinaryUploadResult uploadRawFile(byte[] bytes, String originalFileName, String targetFolder) {
+        if (bytes == null || bytes.length == 0) {
+            throw new CustomException(400, "File bytes cannot be empty", HttpStatus.BAD_REQUEST);
+        }
+
+        String folder = StringUtils.hasText(targetFolder) ? targetFolder : "comiverse/files";
+        String publicId = buildPublicId(originalFileName);
+        if (StringUtils.hasText(originalFileName)) {
+            int dot = originalFileName.lastIndexOf('.');
+            if (dot >= 0 && dot < originalFileName.length() - 1) {
+                publicId = publicId + originalFileName.substring(dot).toLowerCase();
+            }
+        }
+
+        try {
+            Map<?, ?> result = cloudinary.uploader().upload(
+                    bytes,
+                    ObjectUtils.asMap(
+                            "folder", folder,
+                            "public_id", publicId,
+                            "resource_type", "raw",
+                            "overwrite", true
+                    )
+            );
+
+            return CloudinaryUploadResult.builder()
+                    .secureUrl(asString(result.get("secure_url")))
+                    .publicId(asString(result.get("public_id")))
+                    .bytes(asLong(result.get("bytes")))
+                    .build();
+        } catch (IOException e) {
+            throw new CustomException(500, "Failed to upload file to Cloudinary", HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
     private String buildPublicId(String originalFileName) {
         String baseName = StringUtils.hasText(originalFileName) ? originalFileName : UUID.randomUUID().toString();
         int dotIndex = baseName.lastIndexOf('.');

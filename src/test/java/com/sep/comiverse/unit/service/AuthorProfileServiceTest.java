@@ -8,6 +8,7 @@ import com.sep.comiverse.entity.enums.AuthorType;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IAuthorRepository;
 import com.sep.comiverse.repository.IUserRepository;
+import com.sep.comiverse.service.AuthorLicenseService;
 import com.sep.comiverse.service.AuthorProfileService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,12 +36,14 @@ class AuthorProfileServiceTest {
     private IAuthorRepository authorRepository;
     @Mock
     private IUserRepository userRepository;
+    @Mock
+    private AuthorLicenseService authorLicenseService;
 
     private AuthorProfileService service;
 
     @BeforeEach
     void setUp() {
-        service = new AuthorProfileService(authorRepository, userRepository);
+        service = new AuthorProfileService(authorRepository, userRepository, authorLicenseService);
     }
 
     @Test
