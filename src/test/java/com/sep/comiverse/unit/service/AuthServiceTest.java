@@ -7,6 +7,7 @@ import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IRoleRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.service.AuthService;
+import com.sep.comiverse.service.AuthorLicenseService;
 import com.sep.comiverse.util.EmailUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -54,6 +55,8 @@ class AuthServiceTest {
     private PasswordEncoder passwordEncoder;
     @Mock
     private EmailUtil emailUtil;
+    @Mock
+    private AuthorLicenseService authorLicenseService;
 
     private AuthService service;
 
@@ -63,7 +66,7 @@ class AuthServiceTest {
         clearStaticMap("EMAIL_VERIFICATION_FAILURES");
         clearStaticMap("PASSWORD_RESET_THROTTLE");
         clearStaticMap("PASSWORD_RESET_FAILURES");
-        service = new AuthService(userRepository, roleRepository, passwordEncoder, emailUtil);
+        service = new AuthService(userRepository, roleRepository, passwordEncoder, emailUtil, authorLicenseService);
     }
 
     @Test

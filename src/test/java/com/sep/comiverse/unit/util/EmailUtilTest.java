@@ -13,6 +13,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.MailSendException;
 
 import java.util.Properties;
 
@@ -59,6 +60,21 @@ class EmailUtilTest {
                 () -> emailUtil.sendEmail("reader@example.com", "Subject", "<p>Body</p>", "Body")
         );
         verifyNoInteractions(mailSender);
+    }
+
+    @Test
+    void smtpTransportFailureIsReturnedInsteadOfCreatingAnUnusableOtp() {
+        when(mailSender.createMimeMessage()).thenReturn(message);
+        org.mockito.Mockito.doThrow(new MailSendException("SMTP unavailable"))
+                .when(mailSender).send(message);
+        EmailUtil emailUtil = smtpEmailUtil("test-password");
+
+        CustomException error = assertThrows(
+                CustomException.class,
+                () -> emailUtil.sendSignupOtp("reader@example.com", "123456", "Test Reader")
+        );
+
+        assertEquals(503, error.getCode());
     }
 
     @Test

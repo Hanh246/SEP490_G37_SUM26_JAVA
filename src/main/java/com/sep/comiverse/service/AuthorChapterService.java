@@ -63,6 +63,7 @@ public class AuthorChapterService {
     private final CloudinaryStorageService cloudinaryStorageService;
     private final NotificationService notificationService;
     private final ChapterPremiumPolicyService chapterPremiumPolicyService;
+    private final AuthorLicenseService authorLicenseService;
 
     @Value("${author.chapter.max-pages:200}")
     private int maxPages;
@@ -95,6 +96,9 @@ public class AuthorChapterService {
             List<MultipartFile> files,
             List<String> relativePaths
     ) {
+        if (request != null) {
+            authorLicenseService.assertPublishingAllowed(request.getAuthorId());
+        }
         validateUploadRequest(request);
         String chapterNumber = normalizeChapterNumber(request.getChapterNumber());
         if (!StringUtils.hasText(chapterNumber)) {
@@ -152,6 +156,7 @@ public class AuthorChapterService {
 
     @Transactional
     public SubmitChapterReviewResponse submitForReview(UUID comicId, UUID chapterId, UUID authorId) {
+        authorLicenseService.assertPublishingAllowed(authorId);
         ComicEntity comic = authorComicService.getOwnedComic(comicId, authorId);
         ChapterEntity chapter = getOwnedChapter(comicId, chapterId, authorId);
 
@@ -302,6 +307,7 @@ public class AuthorChapterService {
             List<MultipartFile> files,
             List<String> relativePaths
     ) {
+        authorLicenseService.assertPublishingAllowed(authorId);
         ComicEntity comic = authorComicService.getOwnedComic(comicId, authorId);
         ChapterEntity chapter = getOwnedChapter(comicId, chapterId, authorId);
 

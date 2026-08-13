@@ -10,7 +10,11 @@ import com.sep.comiverse.dto.request.ResetPasswordRequest;
 import com.sep.comiverse.dto.request.ChangePasswordRequest;
 import com.sep.comiverse.dto.request.UpdateProfileRequest;
 import com.sep.comiverse.dto.request.VerifyEmailRequest;
+import com.sep.comiverse.dto.request.ReplaceLoginDeviceRequest;
+import com.sep.comiverse.dto.request.ConfirmLoginDeviceRevocationRequest;
 import com.sep.comiverse.dto.response.AuthResponse;
+import com.sep.comiverse.dto.response.DeviceOtpChallengeResponse;
+import com.sep.comiverse.dto.response.LoginDeviceResponse;
 import com.sep.comiverse.dto.response.UserProfileResponse;
 import com.sep.comiverse.dto.request.RegisterRequest;
 import com.sep.comiverse.entity.UserEntity;
@@ -18,11 +22,16 @@ import com.sep.comiverse.security.JwtTokenUtil;
 import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.AuthService;
 import com.sep.comiverse.service.PremiumPlanService;
+import com.sep.comiverse.service.LoginDeviceService;
+import com.sep.comiverse.repository.IUserRepository;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import com.sep.comiverse.exception.CustomException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/auth")
@@ -31,14 +40,87 @@ public class AuthController {
     private final AuthService authService;
     private final JwtTokenUtil jwtTokenUtil;
     private final PremiumPlanService premiumPlanService;
+    private final LoginDeviceService loginDeviceService;
+    private final IUserRepository userRepository;
 
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody AuthRequest request) {
         UserEntity user = authService.authenticate(request.getUsername(), request.getPassword());
-        String token = jwtTokenUtil.generateToken(user);
-        String refreshToken = jwtTokenUtil.generateRefreshToken(user);
+        LoginDeviceService.LoginDecision decision = loginDeviceService.beginLogin(user, request);
+        if (decision.verificationRequired()) {
+            return ResponseEntity.status(HttpStatus.ACCEPTED).body(AuthResponse.builder()
+                    .deviceVerificationRequired(true)
+                    .deviceChallengeId(decision.challengeId())
+                    .deviceChallengeExpiresAt(decision.expiresAt())
+                    .devices(decision.devices())
+                    .build());
+        }
+        String token = jwtTokenUtil.generateToken(user, decision.deviceId());
+        String refreshToken = jwtTokenUtil.generateRefreshToken(user, decision.deviceId());
 
         return ResponseEntity.ok(new AuthResponse(token, refreshToken));
+    }
+
+    @PostMapping("/devices/replace")
+    public ResponseEntity<AuthResponse> replaceLoginDevice(
+            @Valid @RequestBody ReplaceLoginDeviceRequest request
+    ) {
+        if (request.getChallengeId() == null || request.getDeviceToRemoveId() == null) {
+            throw new CustomException(400, "Challenge and device to remove are required", HttpStatus.BAD_REQUEST);
+        }
+        LoginDeviceService.LoginDecision decision = loginDeviceService.confirmReplacement(
+                request.getChallengeId(), request.getDeviceToRemoveId(), request.getOtp());
+        UserEntity user = userRepository.findByIdWithRole(decision.userId()).orElseThrow(() ->
+                new CustomException(404, "User not found", HttpStatus.NOT_FOUND));
+        return ResponseEntity.ok(new AuthResponse(
+                jwtTokenUtil.generateToken(user, decision.deviceId()),
+                jwtTokenUtil.generateRefreshToken(user, decision.deviceId())
+        ));
+    }
+
+    @GetMapping("/devices")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<BaseResponse<List<LoginDeviceResponse>>> listLoginDevices(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        UUID currentDeviceId = null;
+        if (authorization != null && authorization.startsWith("Bearer ")) {
+            currentDeviceId = jwtTokenUtil.getLoginDeviceIdFromToken(authorization.substring(7));
+        }
+        return ResponseEntity.ok(BaseResponse.<List<LoginDeviceResponse>>builder()
+                .success(true)
+                .data(loginDeviceService.list(principal.getId(), currentDeviceId))
+                .build());
+    }
+
+    @PostMapping("/devices/{deviceId}/revoke-otp")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<BaseResponse<DeviceOtpChallengeResponse>> requestLoginDeviceRevocation(
+            @PathVariable UUID deviceId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(BaseResponse.<DeviceOtpChallengeResponse>builder()
+                .success(true)
+                .data(loginDeviceService.requestRevocation(principal.getId(), deviceId))
+                .message("Device verification OTP sent")
+                .build());
+    }
+
+    @PostMapping("/devices/revoke")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<BaseResponse<Void>> confirmLoginDeviceRevocation(
+            @Valid @RequestBody ConfirmLoginDeviceRevocationRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (request.getChallengeId() == null) {
+            throw new CustomException(400, "Device challenge is required", HttpStatus.BAD_REQUEST);
+        }
+        loginDeviceService.confirmRevocation(principal.getId(), request.getChallengeId(), request.getOtp());
+        return ResponseEntity.ok(BaseResponse.<Void>builder()
+                .success(true)
+                .message("Login device removed")
+                .build());
     }
 
     @PostMapping("/register")
@@ -89,8 +171,11 @@ public class AuthController {
 
     @PostMapping("/register-staff")
     @PreAuthorize("hasAuthority('ADMIN')")
-    public ResponseEntity<AuthResponse> registerStaff(@Valid @RequestBody RegisterRequest request) {
-        authService.registerStaff(request);
+    public ResponseEntity<AuthResponse> registerStaff(
+            @Valid @RequestBody RegisterRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        authService.registerStaff(request, principal == null ? null : principal.getId());
         return ResponseEntity.ok(new AuthResponse(null, null));
     }
 

@@ -6,6 +6,8 @@ import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.repository.IRoleRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.security.JwtTokenUtil;
+import com.sep.comiverse.dto.request.AuthRequest;
+import com.sep.comiverse.service.LoginDeviceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
@@ -32,6 +34,7 @@ public class GoogleAuthController {
     private final IUserRepository userRepository;
     private final IRoleRepository roleRepository;
     private final JwtTokenUtil jwtTokenUtil;
+    private final LoginDeviceService loginDeviceService;
     private final RestTemplate restTemplate = new RestTemplate();
 
     /**
@@ -104,8 +107,21 @@ public class GoogleAuthController {
             userRepository.save(user);
         }
 
-        String token        = jwtTokenUtil.generateToken(user);
-        String refreshToken = jwtTokenUtil.generateRefreshToken(user);
+        AuthRequest deviceRequest = new AuthRequest();
+        deviceRequest.setDeviceId(body.get("deviceId"));
+        deviceRequest.setDeviceName(body.get("deviceName"));
+        deviceRequest.setPlatform(body.get("platform"));
+        LoginDeviceService.LoginDecision decision = loginDeviceService.beginLogin(user, deviceRequest);
+        if (decision.verificationRequired()) {
+            return ResponseEntity.status(202).body(AuthResponse.builder()
+                    .deviceVerificationRequired(true)
+                    .deviceChallengeId(decision.challengeId())
+                    .deviceChallengeExpiresAt(decision.expiresAt())
+                    .devices(decision.devices())
+                    .build());
+        }
+        String token        = jwtTokenUtil.generateToken(user, decision.deviceId());
+        String refreshToken = jwtTokenUtil.generateRefreshToken(user, decision.deviceId());
         return ResponseEntity.ok(new AuthResponse(token, refreshToken));
     }
 }

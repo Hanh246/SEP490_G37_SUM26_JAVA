@@ -13,6 +13,7 @@ import com.google.firebase.messaging.Notification;
 import com.google.firebase.messaging.SendResponse;
 import com.sep.comiverse.dto.response.NotificationResponse;
 import com.sep.comiverse.entity.PushDeviceTokenEntity;
+import com.sep.comiverse.repository.INotificationRepository;
 import com.sep.comiverse.repository.IPushDeviceTokenRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +36,7 @@ public class PushNotificationSender {
     private static final int MAX_BATCH_SIZE = 500;
 
     private final IPushDeviceTokenRepository pushDeviceTokenRepository;
+    private final INotificationRepository notificationRepository;
     private final ObjectProvider<FirebaseMessaging> firebaseMessagingProvider;
 
     @Async("pushNotificationExecutor")
@@ -42,6 +44,10 @@ public class PushNotificationSender {
     public void sendToUser(UUID userId, NotificationResponse notification) {
         FirebaseMessaging messaging = firebaseMessagingProvider.getIfAvailable();
         if (messaging == null || userId == null || notification == null) {
+            if (messaging == null) {
+                log.warn("FCM push skipped: Firebase push is not configured. " +
+                        "Set FIREBASE_PUSH_ENABLED=true and provide service-account credentials.");
+            }
             return;
         }
 
@@ -49,20 +55,22 @@ public class PushNotificationSender {
         if (devices.isEmpty()) {
             return;
         }
+        int unreadBadge = toBadgeCount(notificationRepository.countUnreadByUserId(userId));
 
         for (int start = 0; start < devices.size(); start += MAX_BATCH_SIZE) {
             int end = Math.min(start + MAX_BATCH_SIZE, devices.size());
-            sendBatch(messaging, devices.subList(start, end), notification);
+            sendBatch(messaging, devices.subList(start, end), notification, unreadBadge);
         }
     }
 
     private void sendBatch(
             FirebaseMessaging messaging,
             List<PushDeviceTokenEntity> devices,
-            NotificationResponse notification
+            NotificationResponse notification,
+            int unreadBadge
     ) {
         List<Message> messages = devices.stream()
-                .map(device -> buildMessage(device.getToken(), notification))
+                .map(device -> buildMessage(device.getToken(), notification, unreadBadge))
                 .toList();
         try {
             BatchResponse response = messaging.sendEach(messages);
@@ -77,7 +85,7 @@ public class PushNotificationSender {
         }
     }
 
-    private Message buildMessage(String token, NotificationResponse notification) {
+    private Message buildMessage(String token, NotificationResponse notification, int unreadBadge) {
         String title = safe(notification.getTitle(), "ComiVerse update");
         String body = safe(notification.getMessage(), "You have a new notification.");
 
@@ -94,7 +102,11 @@ public class PushNotificationSender {
                         .build())
                 .setApnsConfig(ApnsConfig.builder()
                         .putHeader("apns-priority", "10")
-                        .setAps(Aps.builder().setSound("default").build())
+                        .putHeader("apns-push-type", "alert")
+                        .setAps(Aps.builder()
+                                .setBadge(unreadBadge)
+                                .setSound("default")
+                                .build())
                         .build())
                 .putData("notificationId", value(notification.getId()))
                 .putData("title", title)
@@ -133,5 +145,12 @@ public class PushNotificationSender {
 
     private String value(Object value) {
         return value == null ? "" : value.toString();
+    }
+
+    private int toBadgeCount(long unreadCount) {
+        if (unreadCount <= 0) {
+            return 0;
+        }
+        return unreadCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) unreadCount;
     }
 }

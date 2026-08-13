@@ -3,6 +3,7 @@ package com.sep.comiverse.controller;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.dto.response.NotificationResponse;
 import com.sep.comiverse.dto.response.NotificationPreferencesResponse;
+import com.sep.comiverse.dto.response.PushDeviceStatusResponse;
 import com.sep.comiverse.dto.request.UpdateNotificationPreferencesRequest;
 import com.sep.comiverse.dto.request.RegisterPushDeviceRequest;
 import com.sep.comiverse.dto.request.UnregisterPushDeviceRequest;
@@ -52,6 +53,17 @@ public class NotificationController {
         return ResponseEntity.ok(BaseResponse.<Void>builder()
                 .success(true)
                 .message("Push device unregistered")
+                .build());
+    }
+
+    @GetMapping("/devices/status")
+    @Operation(summary = "Get push status", description = "Check server push configuration and this account's registered devices")
+    public ResponseEntity<BaseResponse<PushDeviceStatusResponse>> getPushStatus(
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(BaseResponse.<PushDeviceStatusResponse>builder()
+                .success(true)
+                .data(pushDeviceService.status(principal.getId()))
                 .build());
     }
 

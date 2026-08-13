@@ -115,9 +115,9 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
             // Hack to bypass frontend bug on deployed instances:
             // The FE explicitly hides pending comics if chapterCount <= 0.
             // Since chapterCount only tracks PUBLISHED chapters, new comics were being hidden.
-            if (storedCount == 0 && 
-               (model.getModerationStatus() == ComicModerationStatus.PENDING || 
-                model.getModerationStatus() == ComicModerationStatus.APPEALED)) {
+            if (storedCount == 0 &&
+               (model.getModerationStatus() == ComicModerationStatus.SUBMITTED_FOR_REVIEW ||
+                Boolean.TRUE.equals(model.getIsAppealed()))) {
                 dto.setChapterCount(1);
             } else {
                 dto.setChapterCount(storedCount);

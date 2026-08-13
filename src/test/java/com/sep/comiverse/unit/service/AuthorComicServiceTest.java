@@ -15,6 +15,7 @@ import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.repository.IGenreRepository;
 import com.sep.comiverse.repository.ISubmissionRepository;
 import com.sep.comiverse.service.AuthorComicService;
+import com.sep.comiverse.service.AuthorLicenseService;
 import com.sep.comiverse.service.NotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -58,6 +59,8 @@ class AuthorComicServiceTest {
     private com.sep.comiverse.service.AuditLogService auditLogService;
     @Mock
     private com.sep.comiverse.plugin.crud.ComicCrudPlugin comicCrudPlugin;
+    @Mock
+    private AuthorLicenseService authorLicenseService;
 
     private AuthorComicService service;
 
@@ -72,7 +75,8 @@ class AuthorComicServiceTest {
                 notificationService,
                 userRepository,
                 auditLogService,
-                comicCrudPlugin
+                comicCrudPlugin,
+                authorLicenseService
         );
     }
 
@@ -103,6 +107,25 @@ class AuthorComicServiceTest {
         assertEquals(0, saved.getChapterCount());
         assertEquals(comicId, response.getId());
         assertEquals(0, response.getChapterCount());
+    }
+
+    @Test
+    void createComicStopsBeforePersistenceWhenAuthorLicenseDoesNotAllowPublishing() {
+        UUID authorId = UUID.randomUUID();
+        AuthorComicCreateRequest request = createRequest(authorId);
+        CustomException licenseError = new CustomException(
+                403,
+                "Author license must be verified before publishing",
+                HttpStatus.FORBIDDEN
+        );
+        org.mockito.Mockito.doThrow(licenseError)
+                .when(authorLicenseService).assertPublishingAllowed(authorId);
+
+        CustomException error = assertThrows(CustomException.class, () -> service.createComic(request));
+
+        assertEquals(HttpStatus.FORBIDDEN, error.getHttpStatus());
+        assertEquals("Author license must be verified before publishing", error.getMessage());
+        verify(comicRepository, never()).save(any());
     }
 
     @Test

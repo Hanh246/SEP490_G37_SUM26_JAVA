@@ -245,6 +245,33 @@ public class OfflineDeviceService {
         licenseRepository.revokeByDevice(device.getId(), userId);
     }
 
+    @Transactional
+    public void revokeMatchingDevice(UUID userId, String deviceIdHash) {
+        deviceRepository.findByUserIdAndDeviceIdHashAndDeletedFalse(userId, deviceIdHash)
+                .filter(device -> !Boolean.TRUE.equals(device.getRevoked()))
+                .ifPresent(device -> {
+                    device.setRevoked(true);
+                    device.setLastSeenAt(Instant.now());
+                    deviceRepository.save(device);
+                    packageRepository.revokeByDevice(device.getId(), userId);
+                    licenseRepository.revokeByDevice(device.getId(), userId);
+                });
+    }
+
+    @Transactional
+    public void restoreMatchingDevice(UUID userId, String deviceIdHash) {
+        deviceRepository.findByUserIdAndDeviceIdHashAndDeletedFalse(userId, deviceIdHash)
+                .filter(device -> Boolean.TRUE.equals(device.getRevoked()))
+                .ifPresent(device -> {
+                    // Packages and licenses revoked with the previous login stay
+                    // revoked. Re-approval only lets this device enroll and
+                    // download fresh packages again.
+                    device.setRevoked(false);
+                    device.setLastSeenAt(Instant.now());
+                    deviceRepository.save(device);
+                });
+    }
+
     private void validateExistingBinding(OfflineDeviceEntity existing, String fingerprint) {
         if (Boolean.TRUE.equals(existing.getRevoked())) {
             throw new OfflineDownloadException(

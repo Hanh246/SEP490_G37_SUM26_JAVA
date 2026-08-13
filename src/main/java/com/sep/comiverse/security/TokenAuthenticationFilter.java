@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.service.CustomUserDetailsService;
+import com.sep.comiverse.service.LoginDeviceService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -28,6 +29,7 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
     private final JwtTokenUtil jwtTokenUtil;
     private final CustomUserDetailsService customUserDetailsService;
     private final ObjectMapper objectMapper;
+    private final LoginDeviceService loginDeviceService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -37,7 +39,12 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
         try {
             if (StringUtils.hasLength(jwt) && jwtTokenUtil.validateJwtToken(jwt)) {
                 String userIdStr = jwtTokenUtil.getSubjectFromJwtToken(jwt);
-                UserDetails userDetails = customUserDetailsService.loadUserById(java.util.UUID.fromString(userIdStr));
+                java.util.UUID userId = java.util.UUID.fromString(userIdStr);
+                java.util.UUID loginDeviceId = jwtTokenUtil.getLoginDeviceIdFromToken(jwt);
+                if (loginDeviceId != null && !loginDeviceService.isActive(userId, loginDeviceId)) {
+                    throw new IllegalStateException("LOGIN_DEVICE_REVOKED");
+                }
+                UserDetails userDetails = customUserDetailsService.loadUserById(userId);
 
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());

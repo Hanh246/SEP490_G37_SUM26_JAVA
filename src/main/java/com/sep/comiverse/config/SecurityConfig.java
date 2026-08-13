@@ -17,8 +17,6 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
@@ -61,11 +59,6 @@ public class SecurityConfig {
     }
 
     @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
-
-    @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .cors(Customizer.withDefaults())
@@ -80,6 +73,9 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/genres/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/plans/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/subscriptions/plans").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/forum-threads/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/forum-categories/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/forum-threads/*/view").permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2

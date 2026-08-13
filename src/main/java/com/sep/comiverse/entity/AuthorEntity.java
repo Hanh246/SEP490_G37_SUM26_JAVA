@@ -1,6 +1,10 @@
 package com.sep.comiverse.entity;
 
 import com.sep.comiverse.entity.enums.AuthorType;
+import com.sep.comiverse.entity.enums.AuthorLicenseStatus;
+
+import java.time.Instant;
+import java.util.UUID;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -57,4 +61,34 @@ public class AuthorEntity extends BaseEntity {
 
     @Column(name = "note", columnDefinition = "TEXT")
     private String note;
+
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "license_status", length = 40)
+    private AuthorLicenseStatus licenseStatus;
+
+    @Column(name = "license_url", length = 1000)
+    private String licenseUrl;
+
+    @Column(name = "license_original_filename", length = 255)
+    private String licenseOriginalFilename;
+
+    @Column(name = "license_deadline_at")
+    private Instant licenseDeadlineAt;
+
+    @Column(name = "license_uploaded_at")
+    private Instant licenseUploadedAt;
+
+    @Column(name = "license_verified_at")
+    private Instant licenseVerifiedAt;
+
+    @Column(name = "license_reviewed_at")
+    private Instant licenseReviewedAt;
+
+    @Column(name = "license_reviewed_by_id")
+    private UUID licenseReviewedById;
+
+    @Column(name = "license_rejection_reason", columnDefinition = "TEXT")
+    private String licenseRejectionReason;
+
 }
