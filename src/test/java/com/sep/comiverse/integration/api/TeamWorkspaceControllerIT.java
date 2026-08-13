@@ -1219,7 +1219,7 @@ public class TeamWorkspaceControllerIT extends AbstractIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id", notNullValue()))
                 .andExpect(jsonPath("$.projectTeamId", is(team.getId().toString())))
-                .andExpect(jsonPath("$.status", is("todo")))
+                .andExpect(jsonPath("$.status", is("backlog")))
                 .andExpect(jsonPath("$.taskType", is("REGULAR")))
                 .andExpect(jsonPath("$.assigneeId", is(translatorUser.getId().toString())));
 
@@ -1285,14 +1285,22 @@ public class TeamWorkspaceControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-070: POST /team-workspace/{teamId}/tasks - Missing assignee should return 400 Bad Request")
+    @DisplayName("TC-INT-TeamWorkspaceController-070: POST /team-workspace/{teamId}/tasks - Missing assignee should return 201 Created")
     void createTaskWithoutAssignee() throws Exception {
         mockMvc.perform(post(BASE_URL + "/{teamId}/tasks", team.getId())
                         .header("Authorization", "Bearer " + leaderToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createTaskBody(backlogChapter.getId(), null))))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message", is("A Translator assignee is required")));
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id", notNullValue()))
+                .andExpect(jsonPath("$.assigneeId", nullValue()))
+                .andExpect(jsonPath("$.status", is("backlog")));
+
+        TeamTaskEntity created = taskRepository.findByChapter_Id(backlogChapter.getId()).get(0);
+        assertThat(created.getAssigneeId()).isNull();
+        assertThat(pageTranslationRepository.findByTaskId_IdOrderByPageNumberAsc(created.getId()))
+                .hasSize(2)
+                .allMatch(page -> page.getAssignedTranslatorId() == null);
     }
 
     @Test
@@ -2190,6 +2198,24 @@ public class TeamWorkspaceControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("TC-INT-TeamWorkspaceController-149b: PUT /team-workspace/tasks/{taskId} - First save of a backlog task should move it to in_progress")
+    void firstSavePromotesBacklogTaskToInProgress() throws Exception {
+        TeamTaskEntity backlogTask = persistTask(backlogChapter, translatorUser.getId(), "backlog");
+
+        ObjectNode body = json();
+        body.put("title", "Started translation");
+
+        mockMvc.perform(put(BASE_URL + "/tasks/{taskId}", backlogTask.getId())
+                        .header("Authorization", "Bearer " + leaderToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title", is("Started translation")))
+                .andExpect(jsonPath("$.status", is("in_progress")));
+    }
+    }
+
+    @Test
     @DisplayName("TC-INT-TeamWorkspaceController-149: PUT /team-workspace/tasks/{taskId} - Status change to an open state clears the completion time and returns 200 OK")
     void updateTaskStatus() throws Exception {
         ObjectNode body = json();
@@ -2291,6 +2317,26 @@ public class TeamWorkspaceControllerIT extends AbstractIntegrationTest {
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.assigneeId", is(translatorUser.getId().toString())));
+    }
+
+    @Test
+    @DisplayName("TC-INT-TeamWorkspaceController-155b: PUT /team-workspace/tasks/{taskId} - First assignee on an unassigned task should return 200 OK and assign pages")
+    void updateTaskWithFirstAssignee() throws Exception {
+        TeamTaskEntity unassignedTask = persistTask(backlogChapter, null, "todo");
+        persistPages(unassignedTask, null, 2, PageStatus.TODO);
+
+        ObjectNode body = json();
+        body.put("assigneeId", translatorUser.getId().toString());
+
+        mockMvc.perform(put(BASE_URL + "/tasks/{taskId}", unassignedTask.getId())
+                        .header("Authorization", "Bearer " + leaderToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.assigneeId", is(translatorUser.getId().toString())));
+
+        assertThat(pageTranslationRepository.findByTaskId_IdOrderByPageNumberAsc(unassignedTask.getId()))
+                .allMatch(page -> translatorUser.getId().equals(page.getAssignedTranslatorId()));
     }
 
     @Test
@@ -2642,7 +2688,7 @@ public class TeamWorkspaceControllerIT extends AbstractIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.taskType", is("REVISION")))
                 .andExpect(jsonPath("$.rejectionReason", is("Fix honorifics on page 1")))
-                .andExpect(jsonPath("$.status", is("todo")));
+                .andExpect(jsonPath("$.status", is("backlog")));
 
         TeamTaskEntity created = taskRepository.findByChapter_Id(revisionChapter.getId()).stream()
                 .filter(t -> "REVISION".equalsIgnoreCase(t.getTaskType()))

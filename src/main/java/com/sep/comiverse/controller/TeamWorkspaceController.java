@@ -484,19 +484,21 @@ public class TeamWorkspaceController {
         }
 
         UUID primaryAssigneeId = request.getAssigneeId();
-        String assigneeError = validateTranslatorAssignee(
-                teamId,
-                primaryAssigneeId
-        );
-        if (assigneeError != null) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", assigneeError));
+        if (primaryAssigneeId != null) {
+            String assigneeError = validateTranslatorAssignee(
+                    teamId,
+                    primaryAssigneeId
+            );
+            if (assigneeError != null) {
+                return ResponseEntity.badRequest().body(Map.of("success", false, "message", assigneeError));
+            }
         }
-        String initialStatus = request.getStatus();
-        if (isCompletedStatus(initialStatus)) {
+        if (isCompletedStatus(request.getStatus())) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(Map.of("success", false,
                             "message", "A task can only become completed after all pages are DONE and the Project Leader approves the review"));
         }
+        String initialStatus = "backlog";
         List<TeamTaskEntity> existingTeamChapterTasks = taskRepository.findByChapter_Id(chapter.getId()).stream()
                 .filter(t -> teamId.equals(t.getProjectTeamId()))
                 .toList();
@@ -1166,12 +1168,17 @@ public class TeamWorkspaceController {
                         .body(Map.of("success", false,
                                 "message", "Use the review approval flow to complete a task after every page is DONE"));
             }
+            if (isBacklogStatus(previousStatus) && isBacklogStatus(newStatus)) {
+                newStatus = "in_progress";
+            }
             task.setStatus(newStatus);
             if (isCompletedStatus(newStatus) && (!isCompletedStatus(previousStatus) || task.getCompletedAt() == null)) {
                 task.setCompletedAt(Instant.now());
             } else if (!isCompletedStatus(newStatus)) {
                 task.setCompletedAt(null);
             }
+        } else if (isBacklogStatus(task.getStatus())) {
+            task.setStatus("in_progress");
         }
         if (updates.containsKey("dueDate")) {
             task.setDueDate((String) updates.get("dueDate"));
@@ -1224,12 +1231,18 @@ public class TeamWorkspaceController {
                         ));
             }
 
-            if (task.getAssigneeId() != null && !task.getAssigneeId().equals(primaryAssigneeId)) {
+            UUID previousAssigneeId = task.getAssigneeId();
+            if (previousAssigneeId != null && !previousAssigneeId.equals(primaryAssigneeId)) {
                 return ResponseEntity.status(HttpStatus.CONFLICT)
                         .body(Map.of("success", false,
                                 "message", "Use the handover endpoint when changing an assignee so completed pages and coefficient K are preserved"));
             }
             task.setAssigneeId(primaryAssigneeId);
+            if (previousAssigneeId == null && primaryAssigneeId != null) {
+                List<PageTranslationEntity> pages = iPageTranslationRepository
+                        .findByTaskId_IdOrderByPageNumberAsc(task.getId());
+                translatorPaymentService.initializePageAssignments(task, pages);
+            }
         }
         if (isCompletedStatus(task.getStatus()) && task.getCompletedAt() == null) {
             task.setCompletedAt(Instant.now());
@@ -1266,6 +1279,12 @@ public class TeamWorkspaceController {
         String normalized = status.trim().toLowerCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
         return "completed".equals(normalized) || "complete".equals(normalized)
                 || "done".equals(normalized) || "published".equals(normalized);
+    }
+
+    private boolean isBacklogStatus(String status) {
+        if (status == null || status.isBlank()) return true;
+        String normalized = status.trim().toLowerCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
+        return "backlog".equals(normalized) || "todo".equals(normalized);
     }
 
     private boolean canMarkTaskCompleted(UserPrincipal principal) {
