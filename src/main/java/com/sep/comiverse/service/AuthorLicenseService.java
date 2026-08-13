@@ -159,10 +159,15 @@ public class AuthorLicenseService {
             throw new CustomException(409, "Only PENDING_VERIFICATION licenses can be rejected", HttpStatus.CONFLICT);
         }
 
+        String rejectionReason = trimToNull(reason);
+        if (rejectionReason == null) {
+            throw new CustomException(400, "Rejection reason is required", HttpStatus.BAD_REQUEST);
+        }
+
         int days = normalizeDeadlineDays(deadlineDays);
         Instant now = Instant.now();
         author.setLicenseStatus(AuthorLicenseStatus.REJECTED);
-        author.setLicenseRejectionReason(trimToNull(reason));
+        author.setLicenseRejectionReason(rejectionReason);
         author.setLicenseReviewedAt(now);
         author.setLicenseReviewedById(reviewerUserId);
         author.setLicenseVerifiedAt(null);
@@ -246,9 +251,15 @@ public class AuthorLicenseService {
         return candidates.size();
     }
 
-    /** Legacy author rows created before this workflow are treated as already ACTIVE. */
+    /**
+     * Fail closed for legacy/incomplete rows. A missing license status must never
+     * silently grant publishing or payout privileges.
+     */
     public AuthorLicenseStatus effectiveStatus(AuthorEntity author) {
-        return author.getLicenseStatus() == null ? AuthorLicenseStatus.ACTIVE : author.getLicenseStatus();
+        if (author == null || author.getLicenseStatus() == null) {
+            return AuthorLicenseStatus.PENDING_LICENSE;
+        }
+        return author.getLicenseStatus();
     }
 
     private AuthorEntity requireAuthor(UUID userId) {
@@ -272,10 +283,28 @@ public class AuthorLicenseService {
     }
 
     private void refreshExpiry(AuthorEntity author) {
-        AuthorLicenseStatus status = effectiveStatus(author);
+        Instant now = Instant.now();
+
+        // Repair legacy/incomplete rows on access instead of treating NULL as ACTIVE.
+        if (author.getLicenseStatus() == null) {
+            author.setLicenseStatus(AuthorLicenseStatus.PENDING_LICENSE);
+            if (author.getLicenseDeadlineAt() == null) {
+                author.setLicenseDeadlineAt(now.plus(Duration.ofDays(DEFAULT_LICENSE_DEADLINE_DAYS)));
+            }
+            authorRepository.save(author);
+            return;
+        }
+
+        AuthorLicenseStatus status = author.getLicenseStatus();
+        if (status == AuthorLicenseStatus.PENDING_LICENSE && author.getLicenseDeadlineAt() == null) {
+            author.setLicenseDeadlineAt(now.plus(Duration.ofDays(DEFAULT_LICENSE_DEADLINE_DAYS)));
+            authorRepository.save(author);
+            return;
+        }
+
         if ((status == AuthorLicenseStatus.PENDING_LICENSE || status == AuthorLicenseStatus.REJECTED)
                 && author.getLicenseDeadlineAt() != null
-                && !author.getLicenseDeadlineAt().isAfter(Instant.now())) {
+                && !author.getLicenseDeadlineAt().isAfter(now)) {
             author.setLicenseStatus(AuthorLicenseStatus.EXPIRED);
             authorRepository.save(author);
         }

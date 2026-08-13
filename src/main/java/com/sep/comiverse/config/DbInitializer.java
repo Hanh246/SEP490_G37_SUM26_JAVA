@@ -55,6 +55,7 @@ public class DbInitializer implements CommandLineRunner {
         jdbcTemplate.execute("UPDATE comics SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
         jdbcTemplate.execute("UPDATE chapters SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
         migrateAuthorLanguageToComics();
+        migrateAuthorLicenseState();
         migrateLegacyChapterPagesIntoChapterImages();
         splitCommaJoinedChapterImageArrays();
         jdbcTemplate.execute("UPDATE chapters SET images = ARRAY[]::text[] WHERE images IS NULL");
@@ -145,6 +146,41 @@ public class DbInitializer implements CommandLineRunner {
         jdbcTemplate.execute("UPDATE comics SET language = 'Unknown' WHERE language IS NULL OR BTRIM(language) = ''");
         jdbcTemplate.execute("ALTER TABLE comics ALTER COLUMN language SET DEFAULT 'Unknown'");
         jdbcTemplate.execute("ALTER TABLE comics ALTER COLUMN language SET NOT NULL");
+    }
+
+
+    /**
+     * Backfills legacy Author rows that predate the license workflow. Missing
+     * status must never imply ACTIVE; such Authors receive a fresh upload
+     * deadline and remain blocked from publishing/payout until verified.
+     */
+    private void migrateAuthorLicenseState() {
+        jdbcTemplate.execute("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'authors'
+                          AND column_name = 'license_status'
+                    ) AND EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'authors'
+                          AND column_name = 'license_deadline_at'
+                    ) THEN
+                        UPDATE authors
+                        SET license_status = 'PENDING_LICENSE',
+                            license_deadline_at = COALESCE(license_deadline_at, NOW() + INTERVAL '7 days')
+                        WHERE license_status IS NULL;
+
+                        UPDATE authors
+                        SET license_deadline_at = NOW() + INTERVAL '7 days'
+                        WHERE license_status = 'PENDING_LICENSE'
+                          AND license_deadline_at IS NULL;
+                    END IF;
+                END $$;
+                """);
     }
 
     private void migrateLegacyChapterPagesIntoChapterImages() {

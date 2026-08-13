@@ -59,12 +59,12 @@ public class AuthorLicenseReviewController {
     @Operation(summary = "Reject an Author license and grant a replacement-upload deadline")
     public ResponseEntity<BaseResponse<AuthorLicenseResponse>> reject(
             @PathVariable UUID authorId,
-            @Valid @RequestBody(required = false) RejectAuthorLicenseRequest request,
+            @Valid @RequestBody RejectAuthorLicenseRequest request,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         UUID reviewerId = requirePrincipal(principal);
-        String reason = request == null ? null : request.getReason();
-        Integer deadlineDays = request == null ? null : request.getDeadlineDays();
+        String reason = request.getReason();
+        Integer deadlineDays = request.getDeadlineDays();
         return ResponseEntity.ok(BaseResponse.<AuthorLicenseResponse>builder()
                 .success(true)
                 .message("License rejected. A new upload deadline has been assigned.")

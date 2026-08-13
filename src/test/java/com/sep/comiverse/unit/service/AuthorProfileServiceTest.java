@@ -5,6 +5,7 @@ import com.sep.comiverse.dto.response.AuthorProfileResponse;
 import com.sep.comiverse.entity.AuthorEntity;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.entity.enums.AuthorType;
+import com.sep.comiverse.entity.enums.AuthorLicenseStatus;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IAuthorRepository;
 import com.sep.comiverse.repository.IUserRepository;
@@ -44,6 +45,9 @@ class AuthorProfileServiceTest {
     @BeforeEach
     void setUp() {
         service = new AuthorProfileService(authorRepository, userRepository, authorLicenseService);
+        org.mockito.Mockito.lenient()
+                .when(authorLicenseService.effectiveStatus(any(AuthorEntity.class)))
+                .thenAnswer(invocation -> invocation.<AuthorEntity>getArgument(0).getLicenseStatus());
     }
 
     @Test
@@ -80,7 +84,10 @@ class AuthorProfileServiceTest {
         assertEquals("author@example.com", response.getContactEmail());
         assertEquals("https://cdn.example/avatar.jpg", response.getAvatarUrl());
         assertEquals(AuthorType.INDIVIDUAL, response.getAuthorType());
-        verify(authorRepository).save(any(AuthorEntity.class));
+        assertEquals(AuthorLicenseStatus.PENDING_LICENSE, response.getLicenseStatus());
+        verify(authorRepository).save(org.mockito.ArgumentMatchers.argThat(saved ->
+                saved.getLicenseStatus() == AuthorLicenseStatus.PENDING_LICENSE
+                        && saved.getLicenseDeadlineAt() != null));
     }
 
     @Test
