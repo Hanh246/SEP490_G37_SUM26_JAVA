@@ -220,7 +220,7 @@ public class ChapterCrudPluginTest {
         when(chapterRepository.findChapterMetadataByComicId(comicId, ChapterStatus.PUBLISHED))
                 .thenReturn(List.of(liteDto));
         when(chapterTranslationRepository.findLanguageCodesByChapterForComic(comicId))
-                .thenReturn(List.of(new Object[]{chapterId, "Vietnamese"}));
+                .thenReturn(List.<Object[]>of(new Object[]{chapterId, "Vietnamese"}));
 
         // Redis mocks
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
