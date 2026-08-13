@@ -1,11 +1,13 @@
 package com.sep.comiverse.integration.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sep.comiverse.entity.AuthorEntity;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.RoleEntity;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.integration.support.AbstractIntegrationTest;
+import com.sep.comiverse.repository.IAuthorRepository;
 import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.repository.IRoleRepository;
 import com.sep.comiverse.repository.IUserRepository;
@@ -35,6 +37,9 @@ public class ComicControllerIT extends AbstractIntegrationTest {
     private IComicRepository comicRepository;
 
     @Autowired
+    private IAuthorRepository authorRepository;
+
+    @Autowired
     private IUserRepository userRepository;
 
     @Autowired
@@ -61,9 +66,18 @@ public class ComicControllerIT extends AbstractIntegrationTest {
                         .role(readerRole)
                         .build()));
 
+        AuthorEntity author = authorRepository.findByUserIdAndDeletedFalse(readerUser.getId())
+                .orElseGet(() -> authorRepository.save(AuthorEntity.builder()
+                        .user(readerUser)
+                        .displayName("Public Pen Name")
+                        .build()));
+        author.setDisplayName("Public Pen Name");
+        authorRepository.save(author);
+
         publishedComic = comicRepository.save(ComicEntity.builder()
                 .title("Sample Test Comic Control")
                 .summary("Sample comic summary control")
+                .authorId(readerUser.getId())
                 .moderationStatus(ComicModerationStatus.PUBLISHED)
                 .build());
     }
@@ -95,7 +109,8 @@ public class ComicControllerIT extends AbstractIntegrationTest {
         mockMvc.perform(get("/comics/" + publishedComic.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success", is(true)))
-                .andExpect(jsonPath("$.data.title", is("Sample Test Comic Control")));
+                .andExpect(jsonPath("$.data.title", is("Sample Test Comic Control")))
+                .andExpect(jsonPath("$.data.authorName", is("Public Pen Name")));
     }
 
     @Test

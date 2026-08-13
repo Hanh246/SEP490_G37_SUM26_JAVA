@@ -76,7 +76,7 @@ public class ComicCrudPluginTest {
         cachedDto.setLikeCount(50);
         cachedDto.setSaveCount(10);
 
-        String cacheKey = "comic:detail:" + comicId.toString();
+        String cacheKey = "comic:detail:v2:" + comicId.toString();
 
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(cacheKey)).thenReturn(cachedDto);
@@ -89,6 +89,47 @@ public class ComicCrudPluginTest {
         assertEquals("Cached Comic", result.getTitle());
         assertEquals(100L, result.getViewCount());
         verify(comicRepository, never()).findById(any());
+    }
+
+
+    @Test
+    void testGetComicDetail_CacheHitWithoutAuthorName_RebuildsCreatorMetadataFromDb() {
+        UUID authorId = UUID.randomUUID();
+
+        ComicDTO staleCachedDto = new ComicDTO();
+        staleCachedDto.setId(comicId);
+        staleCachedDto.setAuthorId(authorId);
+        staleCachedDto.setAuthorName(null);
+        staleCachedDto.setViewCount(10L);
+        staleCachedDto.setLikeCount(0);
+        staleCachedDto.setSaveCount(0);
+
+        ComicEntity comic = new ComicEntity();
+        comic.setId(comicId);
+        comic.setAuthorId(authorId);
+
+        ComicDTO refreshedDto = new ComicDTO();
+        refreshedDto.setId(comicId);
+        refreshedDto.setAuthorId(authorId);
+        refreshedDto.setAuthorName("Public Pen Name");
+        refreshedDto.setViewCount(10L);
+        refreshedDto.setLikeCount(0);
+        refreshedDto.setSaveCount(0);
+
+        String cacheKey = "comic:detail:v2:" + comicId;
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(cacheKey)).thenReturn(staleCachedDto);
+        when(comicRepository.findById(comicId)).thenReturn(Optional.of(comic));
+        when(mapperPlugin.toDto(comic)).thenReturn(refreshedDto);
+        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
+        when(hashOperations.get(anyString(), anyString())).thenReturn(null);
+
+        ComicDTO result = comicCrudPlugin.getComicDetail(comicId);
+
+        assertEquals("Public Pen Name", result.getAuthorName());
+        verify(comicRepository).findById(comicId);
+        verify(valueOperations).set(eq(cacheKey), eq(refreshedDto), any(Duration.class));
     }
 
     @Test
@@ -107,7 +148,7 @@ public class ComicCrudPluginTest {
         loadedDto.setLikeCount(80);
         loadedDto.setSaveCount(15);
 
-        String cacheKey = "comic:detail:" + comicId.toString();
+        String cacheKey = "comic:detail:v2:" + comicId.toString();
 
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(cacheKey)).thenReturn(null);

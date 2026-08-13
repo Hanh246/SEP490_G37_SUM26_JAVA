@@ -55,9 +55,37 @@ public class DbInitializer implements CommandLineRunner {
         jdbcTemplate.execute("UPDATE comics SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
         jdbcTemplate.execute("UPDATE chapters SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
         migrateAuthorLanguageToComics();
+        migrateAuthorLicenseState();
         migrateLegacyChapterPagesIntoChapterImages();
         splitCommaJoinedChapterImageArrays();
         jdbcTemplate.execute("UPDATE chapters SET images = ARRAY[]::text[] WHERE images IS NULL");
+        // page_count is a persisted audit aid. Never clear image URLs here. For
+        // intact rows, synchronize from images. For historical rejected rows whose
+        // URLs were erased by the old tombstone logic, recover at least the count
+        // from the submission text created at submit time.
+        jdbcTemplate.execute("UPDATE chapters SET page_count = cardinality(images) WHERE cardinality(images) > 0 AND (page_count IS NULL OR page_count <> cardinality(images))");
+        jdbcTemplate.execute("UPDATE chapters SET page_count = 0 WHERE page_count IS NULL");
+        jdbcTemplate.execute("""
+                UPDATE submissions
+                SET page_count = ((regexp_match(content, 'has ([0-9]+) image pages', 'i'))[1])::integer
+                WHERE page_count IS NULL
+                  AND content ~* 'has [0-9]+ image pages'
+                """);
+        jdbcTemplate.execute("""
+                UPDATE chapters c
+                SET page_count = latest.page_count
+                FROM (
+                    SELECT DISTINCT ON (chapter_id) chapter_id, page_count
+                    FROM submissions
+                    WHERE chapter_id IS NOT NULL
+                      AND page_count IS NOT NULL
+                    ORDER BY chapter_id, create_at DESC
+                ) latest
+                WHERE c.id = latest.chapter_id
+                  AND cardinality(c.images) = 0
+                  AND c.moderation_status = 'REJECTED'
+                  AND COALESCE(c.page_count, 0) = 0
+                """);
         migrateRevenueAnalyticsSchema();
         migrateCreatorPayoutAmountsToUsd();
         migrateMergedPayoutSchema();
@@ -118,6 +146,41 @@ public class DbInitializer implements CommandLineRunner {
         jdbcTemplate.execute("UPDATE comics SET language = 'Unknown' WHERE language IS NULL OR BTRIM(language) = ''");
         jdbcTemplate.execute("ALTER TABLE comics ALTER COLUMN language SET DEFAULT 'Unknown'");
         jdbcTemplate.execute("ALTER TABLE comics ALTER COLUMN language SET NOT NULL");
+    }
+
+
+    /**
+     * Backfills legacy Author rows that predate the license workflow. Missing
+     * status must never imply ACTIVE; such Authors receive a fresh upload
+     * deadline and remain blocked from publishing/payout until verified.
+     */
+    private void migrateAuthorLicenseState() {
+        jdbcTemplate.execute("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'authors'
+                          AND column_name = 'license_status'
+                    ) AND EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'authors'
+                          AND column_name = 'license_deadline_at'
+                    ) THEN
+                        UPDATE authors
+                        SET license_status = 'PENDING_LICENSE',
+                            license_deadline_at = COALESCE(license_deadline_at, NOW() + INTERVAL '7 days')
+                        WHERE license_status IS NULL;
+
+                        UPDATE authors
+                        SET license_deadline_at = NOW() + INTERVAL '7 days'
+                        WHERE license_status = 'PENDING_LICENSE'
+                          AND license_deadline_at IS NULL;
+                    END IF;
+                END $$;
+                """);
     }
 
     private void migrateLegacyChapterPagesIntoChapterImages() {
