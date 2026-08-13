@@ -58,6 +58,33 @@ public class DbInitializer implements CommandLineRunner {
         migrateLegacyChapterPagesIntoChapterImages();
         splitCommaJoinedChapterImageArrays();
         jdbcTemplate.execute("UPDATE chapters SET images = ARRAY[]::text[] WHERE images IS NULL");
+        // page_count is a persisted audit aid. Never clear image URLs here. For
+        // intact rows, synchronize from images. For historical rejected rows whose
+        // URLs were erased by the old tombstone logic, recover at least the count
+        // from the submission text created at submit time.
+        jdbcTemplate.execute("UPDATE chapters SET page_count = cardinality(images) WHERE cardinality(images) > 0 AND (page_count IS NULL OR page_count <> cardinality(images))");
+        jdbcTemplate.execute("UPDATE chapters SET page_count = 0 WHERE page_count IS NULL");
+        jdbcTemplate.execute("""
+                UPDATE submissions
+                SET page_count = ((regexp_match(content, 'has ([0-9]+) image pages', 'i'))[1])::integer
+                WHERE page_count IS NULL
+                  AND content ~* 'has [0-9]+ image pages'
+                """);
+        jdbcTemplate.execute("""
+                UPDATE chapters c
+                SET page_count = latest.page_count
+                FROM (
+                    SELECT DISTINCT ON (chapter_id) chapter_id, page_count
+                    FROM submissions
+                    WHERE chapter_id IS NOT NULL
+                      AND page_count IS NOT NULL
+                    ORDER BY chapter_id, create_at DESC
+                ) latest
+                WHERE c.id = latest.chapter_id
+                  AND cardinality(c.images) = 0
+                  AND c.moderation_status = 'REJECTED'
+                  AND COALESCE(c.page_count, 0) = 0
+                """);
         migrateRevenueAnalyticsSchema();
         migrateCreatorPayoutAmountsToUsd();
         migrateMergedPayoutSchema();

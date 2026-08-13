@@ -157,6 +157,12 @@ public class ChapterCrudPlugin
                 .viewCount(cacheDto.getViewCount())
                 .isPremium(premiumRequired)
                 .createdAt(cacheDto.getCreatedAt())
+                .moderationStatus(chapter.getModerationStatus())
+                .rejectionReason(chapter.getRejectionReason())
+                .approvedAt(chapter.getApprovedAt())
+                .approvedBy(resolveModeratorName(chapter.getApprovedById()))
+                .rejectedBy(resolveModeratorName(chapter.getRejectedById()))
+                .pageCount(chapter.getPageCount() != null ? chapter.getPageCount() : images.size())
                 .build();
 
         responseDto.setImages(hasContentAccess ? images : Collections.emptyList());
@@ -268,8 +274,11 @@ public class ChapterCrudPlugin
                     .isPremium(chapterPremiumPolicyService.isPremiumChapter(c.getChapterNumber()))
                     .createdAt(c.getCreatedAt())
                     .moderationStatus(c.getModerationStatus())
+                    .rejectionReason(c.getRejectionReason())
+                    .rejectedById(c.getRejectedById())
                     .approvedById(c.getApprovedById())
                     .approvedAt(c.getApprovedAt())
+                    .pageCount(c.getPageCount() != null ? c.getPageCount() : (c.getImages() == null ? 0 : c.getImages().size()))
                     .build()
             ).sorted((a, b) -> toChapterSortNumber(a.getChapterNumber()).compareTo(toChapterSortNumber(b.getChapterNumber()))).toList();
         }
@@ -313,8 +322,11 @@ public class ChapterCrudPlugin
                     .isPremium(chapterPremiumPolicyService.isPremiumChapter(dto.getChapterNumber()))
                     .createdAt(dto.getCreatedAt())
                     .moderationStatus(dto.getModerationStatus())
+                    .rejectionReason(dto.getRejectionReason())
+                    .rejectedById(dto.getRejectedById())
                     .approvedById(dto.getApprovedById())
                     .approvedAt(dto.getApprovedAt())
+                    .pageCount(dto.getPageCount())
                     .translatedLanguages(dto.getTranslatedLanguages())
                     .build();
 

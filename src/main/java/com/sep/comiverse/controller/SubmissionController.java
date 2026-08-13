@@ -8,7 +8,6 @@ import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.ProjectTeamEntity;
 import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
-import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.plugin.crud.SubmissionCrudPlugin;
 import com.sep.comiverse.repository.*;
@@ -23,7 +22,6 @@ import java.math.BigDecimal;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.time.Instant;
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -175,6 +173,8 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             chapter.setModerationStatus(ChapterStatus.PUBLISHED);
             chapter.setApprovedById(modId);
             chapter.setApprovedAt(java.time.Instant.now());
+            chapter.setRejectionReason(null);
+            chapter.setRejectedById(null);
             ChapterEntity savedChapter = chapterRepository.save(chapter);
 
             ComicEntity comic = null;
@@ -217,6 +217,8 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                     ch.setModerationStatus(ChapterStatus.PUBLISHED);
                     ch.setApprovedById(modId);
                     ch.setApprovedAt(java.time.Instant.now());
+                    ch.setRejectionReason(null);
+                    ch.setRejectedById(null);
                     chapterRepository.save(ch);
                     anyNewChapterPublished = true;
                 }
@@ -248,6 +250,8 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                     ch.setModerationStatus(ChapterStatus.PUBLISHED);
                     ch.setApprovedById(modId);
                     ch.setApprovedAt(java.time.Instant.now());
+                    ch.setRejectionReason(null);
+                    ch.setRejectedById(null);
                     chapterRepository.save(ch);
                 }
             }
@@ -356,22 +360,28 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 chapter.setModerationStatus(ChapterStatus.REJECTED);
                 chapter.setRejectionReason(submission.getRejectionReason());
                 chapter.setRejectedById(modId);
-                
-                // Tombstone: Clear heavy images array to prevent DB bloat.
-                // The content hash was already saved during upload to prevent re-uploads.
-                chapter.setImages(new java.util.ArrayList<>());
-                
+
+                // Preserve rejected chapter evidence. If an older code path already
+                // cleared chapters.images before this transaction, recover the URL
+                // list from the immutable submission snapshot captured at submit time.
+                if ((chapter.getImages() == null || chapter.getImages().isEmpty())
+                        && submission.getChapterImages() != null
+                        && !submission.getChapterImages().isEmpty()) {
+                    chapter.setImages(new java.util.ArrayList<>(submission.getChapterImages()));
+                }
                 chapterRepository.save(chapter);
             });
 
-            // Auto-reject comic profile if no viable chapters remain
+            // Auto-reject the comic profile only when every active chapter is really
+            // REJECTED. Do not mix legacy PENDING_REVIEW with SUBMITTED_FOR_REVIEW;
+            // that mismatch used to auto-reject comics while another chapter was still pending.
             if (submission.getComicId() != null) {
-                long pendingCount = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
-                        submission.getComicId(), ChapterStatus.PENDING_REVIEW);
-                long publishedCount = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
-                        submission.getComicId(), ChapterStatus.PUBLISHED);
+                java.util.List<ChapterEntity> activeChapters =
+                        chapterRepository.findAllByComic_IdAndDeletedFalse(submission.getComicId());
+                boolean allChaptersRejected = !activeChapters.isEmpty()
+                        && activeChapters.stream().allMatch(ch -> ch.getModerationStatus() == ChapterStatus.REJECTED);
 
-                if (pendingCount == 0 && publishedCount == 0) {
+                if (allChaptersRejected) {
                     // All chapters are rejected — auto-reject the comic profile submission
                     String autoReason = "All chapters were rejected. Comic profile auto-rejected.";
 
@@ -404,14 +414,14 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 comic.setRejectionReason(submission.getRejectionReason());
                 comicRepository.save(comic);
                 
-                // Tombstone: Clear heavy images array for all chapters to prevent DB bloat
+                // Keep rejected chapter page URLs as moderation evidence until the author
+                // replaces the folder with a corrected version.
                 java.util.List<ChapterEntity> chapters = chapterRepository.findAllByComic_IdAndDeletedFalse(comic.getId());
                 for (ChapterEntity ch : chapters) {
                     if (ch.getModerationStatus() != ChapterStatus.PUBLISHED) {
                         ch.setModerationStatus(ChapterStatus.REJECTED);
                         ch.setRejectionReason(submission.getRejectionReason());
                         ch.setRejectedById(modId);
-                        ch.setImages(new java.util.ArrayList<>());
                         chapterRepository.save(ch);
                     }
                 }

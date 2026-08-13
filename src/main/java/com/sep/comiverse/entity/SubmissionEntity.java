@@ -3,7 +3,11 @@ package com.sep.comiverse.entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import lombok.*;
 
@@ -67,6 +71,15 @@ public class SubmissionEntity extends BaseEntity {
 
     @Column(name = "content", columnDefinition = "TEXT")
     private String content;
+
+    /** Immutable evidence snapshot captured when a chapter is submitted. */
+    @Builder.Default
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "chapter_images")
+    private List<String> chapterImages = new ArrayList<>();
+
+    @Column(name = "page_count")
+    private Integer pageCount;
 
     @Column(name = "rejection_reason", columnDefinition = "TEXT")
     private String rejectionReason;
