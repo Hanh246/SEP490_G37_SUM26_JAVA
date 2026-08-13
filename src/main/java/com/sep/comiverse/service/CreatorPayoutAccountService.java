@@ -102,13 +102,18 @@ public class CreatorPayoutAccountService {
             profile = profileRepository.saveAndFlush(profile);
         } else {
             assertProfileOwner(profile, user.getId());
+
+            profile.setRole(role);
             profile.setRole(role);
             profile.setActive(true);
             profile.setDeleted(false);
 
-            String existingCurrency = StringUtils.hasText(profile.getCurrency())
-                    ? profile.getCurrency().trim().toUpperCase(Locale.ROOT)
-                    : "USD";
+            String existingCurrency =
+                    StringUtils.hasText(profile.getCurrency())
+                            ? profile.getCurrency()
+                            .trim()
+                            .toUpperCase(Locale.ROOT)
+                            : "USD";
 
             if (!existingCurrency.equals(requestedCurrency.code())) {
                 if (Boolean.TRUE.equals(profile.getDetailsSubmitted())
@@ -121,14 +126,30 @@ public class CreatorPayoutAccountService {
                     );
                 }
 
-                stripeGatewayService.updateConnectedAccountDefaultCurrency(
-                        profile.getStripeConnectedAccountId(),
-                        requestedCurrency.code()
-                );
+                stripeGatewayService
+                        .updateConnectedAccountDefaultCurrency(
+                                profile.getStripeConnectedAccountId(),
+                                requestedCurrency.code()
+                        );
+
                 profile.setCurrency(requestedCurrency.code());
             }
 
+            // Get latest state from Stripe
             profile = syncEntity(profile);
+
+            // Existing accounts might never have had transfers requested
+            if (!"active".equalsIgnoreCase(
+                    profile.getTransfersCapability()
+            )) {
+
+                stripeGatewayService.requestTransfersCapability(
+                        profile.getStripeConnectedAccountId()
+                );
+
+                // Retrieve again because requested != active
+                profile = syncEntity(profile);
+            }
         }
 
         String pagePath = role == CreatorPayoutRole.AUTHOR
@@ -173,7 +194,7 @@ public class CreatorPayoutAccountService {
         return toResponse(syncEntity(profile));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public CreatorPayoutAccountEntity requireReadyProfile(UUID userId) {
         CreatorPayoutAccountEntity profile =
                 profileRepository.findByUserIdAndDeletedFalse(userId)
@@ -183,10 +204,66 @@ public class CreatorPayoutAccountService {
                                 HttpStatus.BAD_REQUEST
                         ));
 
+        // Always refresh the Connected Account from Stripe before a payout
+        // readiness check. The persisted capability snapshot can become stale
+        // after Stripe changes verification/capability requirements.
+        profile = syncEntity(profile);
+
+        if (!Boolean.TRUE.equals(profile.getActive())) {
+            throw new CustomException(
+                    400,
+                    "Stripe payout account is inactive",
+                    HttpStatus.BAD_REQUEST
+            );
+        }
+
+        if (!StringUtils.hasText(profile.getStripeConnectedAccountId())) {
+            throw new CustomException(
+                    400,
+                    "Stripe connected account is missing",
+                    HttpStatus.BAD_REQUEST
+            );
+        }
+
+        if (!Boolean.TRUE.equals(profile.getDetailsSubmitted())) {
+            throw new CustomException(
+                    400,
+                    "Complete Stripe onboarding first",
+                    HttpStatus.BAD_REQUEST
+            );
+        }
+
+        String transfersCapability = profile.getTransfersCapability();
+        if (!StringUtils.hasText(transfersCapability)
+                || !"active".equalsIgnoreCase(transfersCapability.trim())) {
+            throw new CustomException(
+                    400,
+                    "Stripe transfers capability is not active. "
+                            + "Complete Stripe verification/onboarding and sync the payout account.",
+                    HttpStatus.BAD_REQUEST
+            );
+        }
+
+        if (!Boolean.TRUE.equals(profile.getPayoutsEnabled())) {
+            throw new CustomException(
+                    400,
+                    "Stripe payouts are not enabled for this connected account",
+                    HttpStatus.BAD_REQUEST
+            );
+        }
+
+        if (!StringUtils.hasText(profile.getExternalAccountLast4())) {
+            throw new CustomException(
+                    400,
+                    "Add a bank account or payout method in Stripe before requesting a payout",
+                    HttpStatus.BAD_REQUEST
+            );
+        }
+
         if (!isReady(profile)) {
             throw new CustomException(
                     400,
-                    "Complete Stripe onboarding and add a payout method first",
+                    "Stripe payout account is not ready",
                     HttpStatus.BAD_REQUEST
             );
         }
@@ -214,12 +291,19 @@ public class CreatorPayoutAccountService {
     }
 
     public boolean isReady(CreatorPayoutAccountEntity profile) {
-        return profile != null
-                && Boolean.TRUE.equals(profile.getActive())
-                && Boolean.TRUE.equals(profile.getDetailsSubmitted())
-                && Boolean.TRUE.equals(profile.getPayoutsEnabled())
-                && "active".equalsIgnoreCase(profile.getTransfersCapability())
-                && StringUtils.hasText(profile.getExternalAccountLast4());
+        if (profile == null) return false;
+        if (!Boolean.TRUE.equals(profile.getActive())) return false;
+        if (!StringUtils.hasText(profile.getStripeConnectedAccountId())) return false;
+        if (!Boolean.TRUE.equals(profile.getDetailsSubmitted())) return false;
+        if (!Boolean.TRUE.equals(profile.getPayoutsEnabled())) return false;
+
+        String transfersCapability = profile.getTransfersCapability();
+        if (!StringUtils.hasText(transfersCapability)
+                || !"active".equalsIgnoreCase(transfersCapability.trim())) {
+            return false;
+        }
+
+        return StringUtils.hasText(profile.getExternalAccountLast4());
     }
 
     public CreatorPayoutAccountResponse toResponse(
