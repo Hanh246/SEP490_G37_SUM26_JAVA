@@ -9,6 +9,7 @@ import com.sep.comiverse.plugin.AbstractMapperPlugin;
 import com.sep.comiverse.repository.IAuthorRepository;
 import com.sep.comiverse.repository.IGenreRepository;
 import com.sep.comiverse.repository.IUserRepository;
+import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;

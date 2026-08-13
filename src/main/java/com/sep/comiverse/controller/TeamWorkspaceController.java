@@ -1,5 +1,7 @@
 package com.sep.comiverse.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sep.comiverse.dto.request.CreateTaskRequest;
 import com.sep.comiverse.dto.request.HandoverTaskRequest;
 import com.sep.comiverse.dto.response.TaskHandoverResponse;
@@ -8,6 +10,9 @@ import com.sep.comiverse.dto.TeamMemberDto;
 import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.entity.*;
 import com.sep.comiverse.entity.enums.ChapterStatus;
+import com.sep.comiverse.entity.enums.ChapterTranslationStatus;
+import com.sep.comiverse.entity.enums.ReportStatus;
+import com.sep.comiverse.entity.enums.ReportTargetType;
 import com.sep.comiverse.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -43,7 +48,11 @@ public class TeamWorkspaceController {
     private final IUserRepository userRepository;
     private final INotificationRepository notificationRepository;
     private final IPageTranslationRepository iPageTranslationRepository;
+    private final IChapterTranslationRepository chapterTranslationRepository;
     private final ITranslatorRepository translatorRepository;
+    private final IReportRepository reportRepository;
+    private final ObjectMapper objectMapper;
+
     private final ITeamJoinBanRepository joinBanRepository;
     private final ITranslatorCooldownRepository cooldownRepository;
     private final NotificationService notificationService;
@@ -52,6 +61,7 @@ public class TeamWorkspaceController {
     private final TranslatorPaymentService translatorPaymentService;
 
     private static final int MAX_ACTIVE_TEAMS = 5;
+    private static final int MAX_ACTIVE_TASKS = 5;
     private static final long CANCEL_COOLDOWN_HOURS = 12;
     private static final long LEAVE_COOLDOWN_HOURS = 24;
 
@@ -248,27 +258,48 @@ public class TeamWorkspaceController {
         // Get all tasks for this project team
         List<TeamTaskEntity> teamTasks = taskRepository.findByProjectTeamId(teamId);
 
-        // Find which chapter IDs already have a task associated with this team
-        java.util.Set<UUID> taskChapterIds = teamTasks.stream()
-                .map(t -> t.getChapter() != null ? t.getChapter().getId() : null)
-                .filter(java.util.Objects::nonNull)
-                .collect(java.util.stream.Collectors.toSet());
+        Map<UUID, List<TeamTaskEntity>> tasksByChapter = teamTasks.stream()
+                .filter(t -> t.getChapter() != null && !isSupersededStatus(t.getStatus()))
+                .collect(Collectors.groupingBy(t -> t.getChapter().getId()));
 
-        // Filter out chapters that already have a task
-        List<ChapterEntity> backlogChapters = publishedChapters.stream()
-                .filter(c -> !taskChapterIds.contains(c.getId()))
+        Map<UUID, TeamTaskEntity> latestPreviousTaskByChapter = new HashMap<>();
+        for (TeamTaskEntity teamTask : teamTasks) {
+            if (teamTask.getChapter() == null || isSupersededStatus(teamTask.getStatus())) {
+                continue;
+            }
+            UUID chapterId = teamTask.getChapter().getId();
+            TeamTaskEntity current = latestPreviousTaskByChapter.get(chapterId);
+            if (current == null || compareTaskRecency(teamTask, current) > 0) {
+                latestPreviousTaskByChapter.put(chapterId, teamTask);
+            }
+        }
+
+        List<Map<String, Object>> result = publishedChapters.stream()
+                .filter(c -> {
+                    List<TeamTaskEntity> existing = tasksByChapter.getOrDefault(c.getId(), List.of());
+                    if (canCreateRevisionTask(c.getId(), team, existing)) {
+                        return true;
+                    }
+                    return existing.isEmpty() && !isTeamTranslationPublished(c.getId(), team);
+                })
+                .map(c -> {
+                    Map<String, Object> map = new HashMap<>();
+                    List<TeamTaskEntity> existing = tasksByChapter.getOrDefault(c.getId(), List.of());
+                    boolean revision = canCreateRevisionTask(c.getId(), team, existing);
+                    TeamTaskEntity previousTask = latestPreviousTaskByChapter.get(c.getId());
+                    map.put("chapterId", c.getId());
+                    map.put("chapterNumber", c.getChapterNumber());
+                    map.put("title", c.getTitle());
+                    map.put("comicName", comic.getTitle());
+                    map.put("pages", c.getImages() != null ? c.getImages().size() : 0);
+                    map.put("approvedAt", c.getCreatedAt());
+                    map.put("revision", revision);
+                    map.put("canCreateTask", true);
+                    map.put("previousTaskId", previousTask != null ? previousTask.getId() : null);
+                    map.put("resolutionNote", revision ? findLatestTranslationReportNote(c.getId(), team) : null);
+                    return map;
+                })
                 .toList();
-
-        List<Map<String, Object>> result = backlogChapters.stream().map(c -> {
-            Map<String, Object> map = new java.util.HashMap<>();
-            map.put("chapterId", c.getId());
-            map.put("chapterNumber", c.getChapterNumber());
-            map.put("title", c.getTitle());
-            map.put("comicName", comic.getTitle());
-            map.put("pages", c.getImages() != null ? c.getImages().size() : 0);
-            map.put("approvedAt", c.getCreatedAt());
-            return map;
-        }).toList();
 
         return ResponseEntity.ok(result);
     }
@@ -399,6 +430,11 @@ public class TeamWorkspaceController {
         response.put("projectTeamId", task.getProjectTeamId());
         response.put("title", task.getTitle());
         response.put("status", task.getStatus());
+        response.put("taskType", task.getTaskType() == null ? "REGULAR" : task.getTaskType());
+        ProjectTeamEntity taskTeam = task.getProjectTeam() != null
+                ? task.getProjectTeam()
+                : projectTeamRepository.findById(task.getProjectTeamId()).orElse(null);
+        response.put("needsRevision", task.getChapter() != null && canCreateRevisionTask(task.getChapter().getId(), taskTeam));
         response.put("assigneeId", task.getAssigneeId());
         response.put("dueDate", task.getDueDate());
         response.put("chapterRewardUsd", task.getChapterRewardUsd());
@@ -461,6 +497,25 @@ public class TeamWorkspaceController {
                     .body(Map.of("success", false,
                             "message", "A task can only become completed after all pages are DONE and the Project Leader approves the review"));
         }
+        List<TeamTaskEntity> existingTeamChapterTasks = taskRepository.findByChapter_Id(chapter.getId()).stream()
+                .filter(t -> teamId.equals(t.getProjectTeamId()))
+                .toList();
+        List<TeamTaskEntity> currentTeamChapterTasks = existingTeamChapterTasks.stream()
+                .filter(t -> !isSupersededStatus(t.getStatus()))
+                .toList();
+        ProjectTeamEntity team = projectTeamRepository.findById(teamId).orElse(null);
+        boolean canRevise = canCreateRevisionTask(chapter.getId(), team, currentTeamChapterTasks);
+        if (!currentTeamChapterTasks.isEmpty() && !canRevise) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("success", false, "message", "This chapter already has a task in this project"));
+        }
+
+        if (currentTeamChapterTasks.isEmpty() && !canRevise && isTeamTranslationPublished(chapter.getId(), team)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("success", false,
+                            "message", "This chapter already has a published translation. A revision task can be created after a translation report is accepted"));
+        }
+
         List<String> images = chapter.getImages();
         if (images == null || images.isEmpty()) {
             return ResponseEntity.badRequest()
@@ -473,35 +528,56 @@ public class TeamWorkspaceController {
             chapterRewardUsd = chapterRewardUsd.setScale(2, java.math.RoundingMode.HALF_UP);
         }
 
+        Map<Integer, String> pageBubblesMap = collectPreviousTranslationBubbles(chapter.getId(), teamId, team);
+        String taskTypeVal = request.getTaskType() != null && !request.getTaskType().isBlank()
+                ? request.getTaskType()
+                : (canRevise ? "REVISION" : "REGULAR");
+        if (canRevise && (taskTypeVal.equalsIgnoreCase("REGULAR") || taskTypeVal.isBlank())) {
+            taskTypeVal = "REVISION";
+        }
+
+        String revisionReason = canRevise ? findLatestTranslationReportNote(chapter.getId(), team) : null;
+
+        if (canRevise && !currentTeamChapterTasks.isEmpty()) {
+            for (TeamTaskEntity existing : currentTeamChapterTasks) {
+                existing.setStatus("superseded");
+                if (existing.getRejectionReason() == null || existing.getRejectionReason().isBlank()) {
+                    existing.setRejectionReason(revisionReason);
+                }
+            }
+            taskRepository.saveAll(currentTeamChapterTasks);
+        }
+
         TeamTaskEntity task = TeamTaskEntity.builder()
                 .projectTeamId(teamId)
                 .title(request.getTitle())
                 .status(initialStatus)
                 .assigneeId(primaryAssigneeId)
                 .chapter(chapter)
+                .taskType(taskTypeVal)
                 .dueDate(request.getDueDate())
                 .chapterRewardUsd(chapterRewardUsd)
+                .rejectionReason(revisionReason)
                 .completedAt(null)
                 .build();
 
         TeamTaskEntity created = taskRepository.save(task);
 
-        // === Copy ảnh từ chapter.images -> tạo bộ page_translation riêng cho task này ===
-        if (images != null && !images.isEmpty()) {
-            List<PageTranslationEntity> pages = new ArrayList<>();
-            for (int i = 0; i < images.size(); i++) {
-                pages.add(PageTranslationEntity.builder()
-                        .taskId(created)
-                        .imageUrl(images.get(i))
-                        .pageNumber(i + 1)
-                        .assignedTranslatorId(primaryAssigneeId)
-                        .responsibilityFactor(java.math.BigDecimal.ONE.setScale(2))
-                        .status(com.sep.comiverse.entity.enums.PageStatus.TODO)
-                        .bubbles("[]")
-                        .build());
-            }
-            iPageTranslationRepository.saveAll(pages);
+        List<PageTranslationEntity> pages = new ArrayList<>();
+        for (int i = 0; i < images.size(); i++) {
+            int pageNum = i + 1;
+            String existingBubbles = pageBubblesMap.getOrDefault(pageNum, "[]");
+            pages.add(PageTranslationEntity.builder()
+                    .taskId(created)
+                    .imageUrl(images.get(i))
+                    .pageNumber(pageNum)
+                    .assignedTranslatorId(primaryAssigneeId)
+                    .responsibilityFactor(java.math.BigDecimal.ONE.setScale(2))
+                    .status(com.sep.comiverse.entity.enums.PageStatus.TODO)
+                    .bubbles(existingBubbles)
+                    .build());
         }
+        iPageTranslationRepository.saveAll(pages);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
@@ -643,6 +719,16 @@ public class TeamWorkspaceController {
                     "joinedTeams", joinedTeams,
                     "pendingApplications", pendingApps,
                     "maxSlots", MAX_ACTIVE_TEAMS
+            ));
+        }
+
+        // 5. Check max active tasks (max 5 active tasks allowed per translator)
+        long activeTasks = taskRepository.countActiveTasksByAssigneeId(userId);
+        if (activeTasks >= MAX_ACTIVE_TASKS) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "message", "Bạn đang xử lý tối đa " + MAX_ACTIVE_TASKS + " công việc dịch thuật cùng lúc. Vui lòng hoàn thành công việc trước khi xin gia nhập nhóm mới.",
+                    "activeTasks", activeTasks,
+                    "maxTasks", MAX_ACTIVE_TASKS
             ));
         }
 
@@ -1178,7 +1264,8 @@ public class TeamWorkspaceController {
     private boolean isCompletedStatus(String status) {
         if (status == null) return false;
         String normalized = status.trim().toLowerCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
-        return "completed".equals(normalized) || "complete".equals(normalized) || "done".equals(normalized);
+        return "completed".equals(normalized) || "complete".equals(normalized)
+                || "done".equals(normalized) || "published".equals(normalized);
     }
 
     private boolean canMarkTaskCompleted(UserPrincipal principal) {
@@ -1245,6 +1332,11 @@ public class TeamWorkspaceController {
             return "Only users with the TRANSLATOR role can be assigned payout-eligible tasks";
         }
 
+        long activeTasks = taskRepository.countActiveTasksByAssigneeId(assigneeId);
+        if (activeTasks >= MAX_ACTIVE_TASKS) {
+            return "Dịch giả này đang xử lý tối đa " + MAX_ACTIVE_TASKS + " công việc cùng lúc, không thể giao thêm task mới.";
+        }
+
         return null;
     }
     @GetMapping("/{teamId}/chapters")
@@ -1282,9 +1374,16 @@ public class TeamWorkspaceController {
                                 ChapterStatus.PUBLISHED
                         );
 
+        List<TeamTaskEntity> teamTasks = taskRepository.findByProjectTeamId(teamId);
+        Map<UUID, List<TeamTaskEntity>> currentTasksByChapter = teamTasks.stream()
+                .filter(t -> t.getChapter() != null && !isSupersededStatus(t.getStatus()))
+                .collect(Collectors.groupingBy(t -> t.getChapter().getId()));
+
         List<Map<String, Object>> result = chapters.stream()
                 .map(chapter -> {
                     Map<String, Object> item = new HashMap<>();
+                    List<TeamTaskEntity> existing = currentTasksByChapter.getOrDefault(chapter.getId(), List.of());
+                    boolean revision = canCreateRevisionTask(chapter.getId(), team, existing);
 
                     item.put("id", chapter.getId());
                     item.put("chapterId", chapter.getId());
@@ -1303,12 +1402,190 @@ public class TeamWorkspaceController {
                             chapter.getModerationStatus()
                     );
                     item.put("createdAt", chapter.getCreatedAt());
+                    item.put("revision", revision);
+                    item.put("canCreateTask", revision || (existing.isEmpty() && !isTeamTranslationPublished(chapter.getId(), team)));
+                    item.put("resolutionNote", revision ? findLatestTranslationReportNote(chapter.getId(), team) : null);
 
                     return item;
                 })
                 .toList();
 
         return ResponseEntity.ok(result);
+    }
+
+    private boolean isActiveTaskStatus(String status) {
+        if (status == null) return false;
+        String normalized = status.trim().toLowerCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
+        return "todo".equals(normalized)
+                || "in_progress".equals(normalized)
+                || "pending_review".equals(normalized)
+                || "under_review".equals(normalized);
+    }
+
+    private int compareTaskRecency(TeamTaskEntity left, TeamTaskEntity right) {
+        Instant leftCompleted = left.getCompletedAt();
+        Instant rightCompleted = right.getCompletedAt();
+        if (leftCompleted != null && rightCompleted != null) {
+            return leftCompleted.compareTo(rightCompleted);
+        }
+        if (leftCompleted != null) return 1;
+        if (rightCompleted != null) return -1;
+        Instant leftSettled = left.getSettledAt();
+        Instant rightSettled = right.getSettledAt();
+        if (leftSettled != null && rightSettled != null) {
+            return leftSettled.compareTo(rightSettled);
+        }
+        if (leftSettled != null) return 1;
+        if (rightSettled != null) return -1;
+        return 0;
+    }
+
+    private List<ChapterTranslationEntity> findTeamTranslations(UUID chapterId, ProjectTeamEntity team) {
+        if (chapterId == null || team == null) {
+            return List.of();
+        }
+        return chapterTranslationRepository.findByChapter_Id(chapterId).stream()
+                .filter(t -> !Boolean.TRUE.equals(t.getDeleted()))
+                .filter(t -> team.getId().equals(t.getProjectTeamId()) || languageMatches(team, t.getLanguageCode()))
+                .toList();
+    }
+
+    private boolean languageMatches(ProjectTeamEntity team, String languageCode) {
+        if (languageCode == null || languageCode.isBlank()) {
+            return false;
+        }
+        String expected = (team.getTargetLang() == null || team.getTargetLang().isBlank())
+                ? "vi"
+                : team.getTargetLang().trim();
+        return expected.equalsIgnoreCase(languageCode.trim());
+    }
+
+    private boolean isSupersededStatus(String status) {
+        return status != null && "superseded".equalsIgnoreCase(status.trim());
+    }
+
+    private boolean canCreateRevisionTask(UUID chapterId, ProjectTeamEntity team) {
+        if (chapterId == null || team == null) {
+            return false;
+        }
+        List<TeamTaskEntity> existing = taskRepository.findByChapter_Id(chapterId).stream()
+                .filter(t -> team.getId().equals(t.getProjectTeamId()))
+                .filter(t -> !isSupersededStatus(t.getStatus()))
+                .toList();
+        return canCreateRevisionTask(chapterId, team, existing);
+    }
+
+    private boolean canCreateRevisionTask(UUID chapterId, ProjectTeamEntity team, List<TeamTaskEntity> existingTasks) {
+        Optional<ReportEntity> acceptedReport = findLatestAcceptedTranslationReport(chapterId, team);
+        if (acceptedReport.isEmpty()) {
+            return false;
+        }
+        Instant resolvedAt = acceptedReport.get().getResolvedAt();
+        return existingTasks.stream()
+                .filter(t -> !isSupersededStatus(t.getStatus()))
+                .noneMatch(t -> isTaskCreatedAfterAcceptedReport(t, resolvedAt));
+    }
+
+    private boolean isTaskCreatedAfterAcceptedReport(TeamTaskEntity task, Instant reportResolvedAt) {
+        if (isActiveTaskStatus(task.getStatus()) && "REVISION".equalsIgnoreCase(task.getTaskType())) {
+            return true;
+        }
+        if (isCompletedStatus(task.getStatus())
+                && task.getCompletedAt() != null
+                && reportResolvedAt != null
+                && task.getCompletedAt().isAfter(reportResolvedAt)) {
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isTeamTranslationPublished(UUID chapterId, ProjectTeamEntity team) {
+        return findTeamTranslations(chapterId, team).stream()
+                .anyMatch(this::isPublishedTranslation);
+    }
+
+    private boolean isPublishedTranslation(ChapterTranslationEntity translation) {
+        if (translation == null || Boolean.TRUE.equals(translation.getDeleted())) {
+            return false;
+        }
+        return translation.getStatus() == null || translation.getStatus() == ChapterTranslationStatus.PUBLISHED;
+    }
+
+    private Optional<ReportEntity> findLatestAcceptedTranslationReport(UUID chapterId, ProjectTeamEntity team) {
+        List<UUID> translationIds = findTeamTranslations(chapterId, team).stream()
+                .map(ChapterTranslationEntity::getId)
+                .toList();
+        if (translationIds.isEmpty()) {
+            return Optional.empty();
+        }
+        return reportRepository.findByTargetTypeAndTargetIdInAndStatusAndDeletedFalseOrderByResolvedAtDesc(
+                        ReportTargetType.CHAPTER_TRANSLATIONS,
+                        translationIds,
+                        ReportStatus.ACCEPTED
+                ).stream()
+                .findFirst();
+    }
+
+    private String findLatestTranslationReportNote(UUID chapterId, ProjectTeamEntity team) {
+        return findLatestAcceptedTranslationReport(chapterId, team)
+                .map(ReportEntity::getResolutionNote)
+                .filter(note -> note != null && !note.isBlank())
+                .orElse(null);
+    }
+
+    private Map<Integer, String> collectPreviousTranslationBubbles(UUID chapterId, UUID teamId, ProjectTeamEntity team) {
+        Map<Integer, String> pageBubblesMap = new HashMap<>();
+
+        findTeamTranslations(chapterId, team).stream()
+                .map(ChapterTranslationEntity::getPagesBubbles)
+                .forEach(json -> mergeBubblesFromPagesBubblesJson(json, pageBubblesMap));
+
+        List<TeamTaskEntity> previousTasks = taskRepository.findByChapter_Id(chapterId).stream()
+                .filter(t -> teamId.equals(t.getProjectTeamId()))
+                .sorted(this::compareTaskRecency)
+                .toList();
+        for (TeamTaskEntity prevTask : previousTasks) {
+            List<PageTranslationEntity> prevPages = iPageTranslationRepository.findByTaskId_IdOrderByPageNumberAsc(prevTask.getId());
+            for (PageTranslationEntity prevPage : prevPages) {
+                if (hasTranslatedBubbles(prevPage.getBubbles())) {
+                    pageBubblesMap.put(prevPage.getPageNumber(), prevPage.getBubbles());
+                }
+            }
+        }
+        return pageBubblesMap;
+    }
+
+    private void mergeBubblesFromPagesBubblesJson(String pagesBubbles, Map<Integer, String> pageBubblesMap) {
+        if (pagesBubbles == null || pagesBubbles.isBlank()) {
+            return;
+        }
+        try {
+            JsonNode rootNode = objectMapper.readTree(pagesBubbles);
+            if (!rootNode.isArray()) {
+                return;
+            }
+            for (JsonNode pageNode : rootNode) {
+                int pageNumber = pageNode.path("pageNumber").asInt(pageNode.path("page_number").asInt(0));
+                JsonNode bubblesNode = pageNode.path("bubbles");
+                if (pageNumber <= 0 || bubblesNode == null || bubblesNode.isMissingNode() || bubblesNode.isNull()) {
+                    continue;
+                }
+                String bubblesJson = bubblesNode.isTextual() ? bubblesNode.asText() : bubblesNode.toString();
+                if (hasTranslatedBubbles(bubblesJson)) {
+                    pageBubblesMap.putIfAbsent(pageNumber, bubblesJson);
+                }
+            }
+        } catch (Exception ignored) {
+            // Keep whatever bubbles were already recovered from previous tasks.
+        }
+    }
+
+    private boolean hasTranslatedBubbles(String bubbles) {
+        if (bubbles == null) {
+            return false;
+        }
+        String trimmed = bubbles.trim();
+        return !trimmed.isEmpty() && !"[]".equals(trimmed) && !"null".equals(trimmed);
     }
 
 }

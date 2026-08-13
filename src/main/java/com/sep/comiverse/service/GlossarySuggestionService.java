@@ -8,6 +8,7 @@ import com.sep.comiverse.entity.PageTranslationEntity;
 import com.sep.comiverse.repository.IGlossaryTermRepository;
 import com.sep.comiverse.repository.IPageTranslationRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class GlossarySuggestionService {
@@ -26,7 +28,13 @@ public class GlossarySuggestionService {
 
     public GlossarySuggestionResponse suggestFromPage(UUID comicId, GlossarySuggestRequest request) {
         String imageUrl = resolveImageUrl(request);
-        String extractedText = ocrService.extractTextFromImageUrl(imageUrl);
+        String extractedText;
+        try {
+            extractedText = ocrService.extractTextFromImageUrl(imageUrl);
+        } catch (Exception e) {
+            log.warn("OCR text extraction failed for image {}: {}", imageUrl, e.getMessage());
+            extractedText = "";
+        }
         List<GlossaryTermEntity> terms = glossaryTermRepository.findByComicIdOrderByCreatedAtDesc(comicId);
         List<GlossaryTermSuggestionDTO> suggestions = matchTerms(extractedText, terms);
 

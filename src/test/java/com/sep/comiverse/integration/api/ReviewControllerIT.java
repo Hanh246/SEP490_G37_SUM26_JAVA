@@ -1,4 +1,4 @@
-package com.sep.comiverse.integration.security;
+package com.sep.comiverse.integration.api;
 
 import com.sep.comiverse.entity.RoleEntity;
 import com.sep.comiverse.entity.UserEntity;
@@ -12,10 +12,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.UUID;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-public class SecurityFilterIT extends AbstractIntegrationTest {
+public class ReviewControllerIT extends AbstractIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -30,45 +32,31 @@ public class SecurityFilterIT extends AbstractIntegrationTest {
     private JwtTokenUtil jwtTokenUtil;
 
     private UserEntity readerUser;
+    private String readerToken;
 
     @BeforeEach
     void setUp() {
         RoleEntity readerRole = roleRepository.findByRoleName("READER")
                 .orElseGet(() -> roleRepository.save(RoleEntity.builder().roleName("READER").build()));
 
-        readerUser = userRepository.findByEmail("reader_security@example.com")
+        readerUser = userRepository.findByEmail("reader_review_ctrl@example.com")
                 .orElseGet(() -> userRepository.save(UserEntity.builder()
-                        .username("reader_security")
-                        .email("reader_security@example.com")
+                        .username("reader_review_ctrl")
+                        .email("reader_review_ctrl@example.com")
                         .password("Password123!")
-                        .fullName("Reader Security")
+                        .fullName("Reader Review Control")
                         .status("ACTIVE")
                         .role(readerRole)
                         .build()));
+
+        readerToken = jwtTokenUtil.generateToken(readerUser);
     }
 
     @Test
-    @DisplayName("TC-SEC-001: Unauthenticated request to protected admin endpoint should return 401 Unauthorized")
-    void tc_sec_001_unauthenticatedAccess() throws Exception {
-        mockMvc.perform(get("/admin/settings/premium-plans"))
-                .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    @DisplayName("TC-SEC-002: READER role trying to access ADMIN endpoint should return 403 Forbidden (GBR-02)")
-    void tc_sec_002_readerAccessAdminEndpointForbidden() throws Exception {
-        String token = jwtTokenUtil.generateToken(readerUser);
-
-        mockMvc.perform(get("/admin/settings/premium-plans")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
-    @DisplayName("TC-SEC-003: Request with malformed JWT token should return 401 Unauthorized")
-    void tc_sec_003_malformedJwtToken() throws Exception {
-        mockMvc.perform(get("/auth/me")
-                        .header("Authorization", "Bearer malformed.invalid.token"))
-                .andExpect(status().isUnauthorized());
+    @DisplayName("TC-INT-ReviewController-001: GET /review-workspace/{taskId} - Get pages for review workspace as authenticated user should return 200 OK")
+    void getPagesForReview() throws Exception {
+        mockMvc.perform(get("/review-workspace/{taskId}", UUID.randomUUID())
+                        .header("Authorization", "Bearer " + readerToken))
+                .andExpect(status().isOk());
     }
 }

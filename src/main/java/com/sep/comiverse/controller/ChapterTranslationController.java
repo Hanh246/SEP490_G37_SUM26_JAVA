@@ -163,10 +163,14 @@ public class ChapterTranslationController {
     @GetMapping("/comics/{comicId}/translation-languages")
     @Operation(summary = "Get available translation languages for a comic", description = "Retrieve list of language codes that have at least one translated chapter in the comic")
     public ResponseEntity<BaseResponse<List<String>>> getAvailableLanguages(@PathVariable UUID comicId) {
-        List<String> languages = chapterTranslationRepository.findDistinctLanguageCodesByComicId(comicId);
+        List<String> languages = chapterTranslationRepository.findDistinctLanguageCodesByComicId(comicId).stream()
+                .filter(code -> code != null && !code.isBlank())
+                .map(com.sep.comiverse.util.LanguageCodes::normalize)
+                .distinct()
+                .toList();
         return ResponseEntity.ok(BaseResponse.<List<String>>builder()
                 .success(true)
                 .data(languages)
                 .build());
     }
-}
+}

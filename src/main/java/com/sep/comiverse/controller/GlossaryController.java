@@ -25,12 +25,12 @@ public class GlossaryController {
     private final IGlossaryTermRepository glossaryTermRepository;
     private final GlossarySuggestionService glossarySuggestionService;
 
-    @GetMapping("/comic/{comicId}")
+    @GetMapping({"/comic/{comicId}", "/project/{comicId}"})
     public ResponseEntity<List<GlossaryTermEntity>> getTerms(@PathVariable UUID comicId) {
         return ResponseEntity.ok(glossaryTermRepository.findByComicIdOrderByCreatedAtDesc(comicId));
     }
 
-    @PostMapping("/comic/{comicId}")
+    @PostMapping({"/comic/{comicId}", "/project/{comicId}"})
     public ResponseEntity<?> createTerm(
             @PathVariable UUID comicId,
             @RequestBody Map<String, String> body,
@@ -44,6 +44,7 @@ public class GlossaryController {
         }
 
         GlossaryTermEntity term = GlossaryTermEntity.builder()
+                .projectId(comicId)
                 .comicId(comicId)
                 .source(source)
                 .target(target)
@@ -73,7 +74,7 @@ public class GlossaryController {
         return ResponseEntity.ok(glossaryTermRepository.save(term));
     }
 
-    @PostMapping("/comic/{comicId}/suggest")
+    @PostMapping({"/comic/{comicId}/suggest", "/project/{comicId}/suggest"})
     public ResponseEntity<?> suggestTerms(
             @PathVariable UUID comicId,
             @RequestBody GlossarySuggestRequest request
