@@ -13,7 +13,8 @@ import java.util.UUID;
 
 @Repository
 public interface ITeamTaskRepository extends JpaRepository<TeamTaskEntity, UUID> {
-    List<TeamTaskEntity> findByProjectTeamId(UUID projectTeamId);
+    @Query("SELECT t FROM TeamTaskEntity t LEFT JOIN FETCH t.chapter WHERE t.projectTeamId = :projectTeamId")
+    List<TeamTaskEntity> findByProjectTeamId(@Param("projectTeamId") UUID projectTeamId);
     @Query("SELECT t FROM TeamTaskEntity t LEFT JOIN FETCH t.chapter WHERE t.id = :id")
     Optional<TeamTaskEntity> findByIdWithChapter(@Param("id") UUID id);
 

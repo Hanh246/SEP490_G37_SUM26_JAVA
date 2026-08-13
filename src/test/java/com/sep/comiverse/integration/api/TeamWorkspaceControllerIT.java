@@ -927,7 +927,8 @@ public class TeamWorkspaceControllerIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$[0].chapterId", is(backlogChapter.getId().toString())))
                 .andExpect(jsonPath("$[0].chapterNumber", is("2")))
                 .andExpect(jsonPath("$[0].comicName", is(COMIC_NAME)))
-                .andExpect(jsonPath("$[0].pages", is(2)));
+                .andExpect(jsonPath("$[0].pages", is(2)))
+                .andExpect(jsonPath("$[0].canCreateTask", is(true)));
     }
 
     @Test
@@ -1221,12 +1222,42 @@ public class TeamWorkspaceControllerIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.projectTeamId", is(team.getId().toString())))
                 .andExpect(jsonPath("$.status", is("backlog")))
                 .andExpect(jsonPath("$.taskType", is("REGULAR")))
-                .andExpect(jsonPath("$.assigneeId", is(translatorUser.getId().toString())));
+                .andExpect(jsonPath("$.assigneeId", is(translatorUser.getId().toString())))
+                .andExpect(jsonPath("$.chapterId", is(backlogChapter.getId().toString())))
+                .andExpect(jsonPath("$.chapter.id", is(backlogChapter.getId().toString())));
 
         TeamTaskEntity created = taskRepository.findByChapter_Id(backlogChapter.getId()).get(0);
         assertThat(created.getChapterRewardUsd())
                 .isEqualByComparingTo(translatorPaymentService.deriveChapterRewardUsd(2));
         assertThat(pageTranslationRepository.findByTaskId_IdOrderByPageNumberAsc(created.getId())).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("TC-INT-TeamWorkspaceController-065b: After creating a task the chapter leaves the backlog and a second create is rejected with 409 Conflict")
+    void createTaskRemovesChapterFromSelectionImmediately() throws Exception {
+        mockMvc.perform(post(BASE_URL + "/{teamId}/tasks", team.getId())
+                        .header("Authorization", "Bearer " + leaderToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createTaskBody(backlogChapter.getId(), translatorUser.getId()))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.chapterId", is(backlogChapter.getId().toString())));
+
+        mockMvc.perform(get(BASE_URL + "/{teamId}/chapter-backlog", team.getId())
+                        .header("Authorization", "Bearer " + leaderToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.chapterId=='" + backlogChapter.getId() + "')]", hasSize(0)));
+
+        mockMvc.perform(get(BASE_URL + "/{teamId}/chapters", team.getId())
+                        .header("Authorization", "Bearer " + leaderToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.chapterId=='" + backlogChapter.getId() + "')].canCreateTask", contains(false)));
+
+        mockMvc.perform(post(BASE_URL + "/{teamId}/tasks", team.getId())
+                        .header("Authorization", "Bearer " + leaderToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createTaskBody(backlogChapter.getId(), translatorUser.getId()))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", is("This chapter already has a task in this project")));
     }
 
     @Test
@@ -2213,7 +2244,6 @@ public class TeamWorkspaceControllerIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.title", is("Started translation")))
                 .andExpect(jsonPath("$.status", is("in_progress")));
     }
-    }
 
     @Test
     @DisplayName("TC-INT-TeamWorkspaceController-149: PUT /team-workspace/tasks/{taskId} - Status change to an open state clears the completion time and returns 200 OK")
@@ -2597,6 +2627,8 @@ public class TeamWorkspaceControllerIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$[?(@.chapterId=='" + taskedChapter.getId() + "')].pages", contains(3)))
                 .andExpect(jsonPath("$[?(@.chapterId=='" + backlogChapter.getId() + "')].pages", contains(2)))
                 .andExpect(jsonPath("$[?(@.chapterId=='" + draftChapter.getId() + "')]", hasSize(0)))
+                .andExpect(jsonPath("$[?(@.chapterId=='" + taskedChapter.getId() + "')].canCreateTask", contains(false)))
+                .andExpect(jsonPath("$[?(@.chapterId=='" + backlogChapter.getId() + "')].canCreateTask", contains(true)))
                 .andExpect(jsonPath("$[0].comicId", is(comic.getId().toString())))
                 .andExpect(jsonPath("$[0].comicName", is(COMIC_NAME)));
     }

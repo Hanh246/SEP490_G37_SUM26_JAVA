@@ -25,6 +25,7 @@ import com.sep.comiverse.service.UserPresenceService;
 import com.sep.comiverse.service.TranslatorPaymentService;
 import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.annotation.Transactional;
 import jakarta.validation.Valid;
 
 import java.time.Instant;
@@ -460,6 +461,7 @@ public class TeamWorkspaceController {
         return response;
     }
 
+    @Transactional
     @PostMapping("/{teamId}/tasks")
     public ResponseEntity<?> createTask(
             @PathVariable UUID teamId,
@@ -581,7 +583,7 @@ public class TeamWorkspaceController {
         }
         iPageTranslationRepository.saveAll(pages);
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+        return ResponseEntity.status(HttpStatus.CREATED).body(toTaskResponse(created));
     }
     @GetMapping("/{teamId}/members")
     public ResponseEntity<?> getTeamMembers(@PathVariable UUID teamId) {
@@ -1435,7 +1437,8 @@ public class TeamWorkspaceController {
     private boolean isActiveTaskStatus(String status) {
         if (status == null) return false;
         String normalized = status.trim().toLowerCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
-        return "todo".equals(normalized)
+        return "backlog".equals(normalized)
+                || "todo".equals(normalized)
                 || "in_progress".equals(normalized)
                 || "pending_review".equals(normalized)
                 || "under_review".equals(normalized);
