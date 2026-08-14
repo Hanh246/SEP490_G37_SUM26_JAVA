@@ -357,8 +357,11 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
         }
         if (submission.getChapterId() != null) {
             chapterRepository.findById(submission.getChapterId()).ifPresent(chapter -> {
+                // If the chapter was already rejected (e.g. via direct chapter API), preserve its specific reason
+                if (chapter.getModerationStatus() != ChapterStatus.REJECTED) {
+                    chapter.setRejectionReason(submission.getRejectionReason());
+                }
                 chapter.setModerationStatus(ChapterStatus.REJECTED);
-                chapter.setRejectionReason(submission.getRejectionReason());
                 chapter.setRejectedById(modId);
 
                 // Preserve rejected chapter evidence. If an older code path already
@@ -425,8 +428,11 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 java.util.List<ChapterEntity> chapters = chapterRepository.findAllByComic_IdAndDeletedFalse(comic.getId());
                 for (ChapterEntity ch : chapters) {
                     if (ch.getModerationStatus() != ChapterStatus.PUBLISHED) {
+                        // Only overwrite the reason if it hasn't been explicitly rejected with a specific reason before
+                        if (ch.getModerationStatus() != ChapterStatus.REJECTED) {
+                            ch.setRejectionReason(submission.getRejectionReason());
+                        }
                         ch.setModerationStatus(ChapterStatus.REJECTED);
-                        ch.setRejectionReason(submission.getRejectionReason());
                         ch.setRejectedById(modId);
                         if (ch.getImages() != null && !ch.getImages().isEmpty()) {
                             ch.setRejectedImagesSnapshot(new java.util.ArrayList<>(ch.getImages()));

@@ -44,9 +44,9 @@ public class AppealService {
         // Check if there is already a pending or approved appeal for this target
         appealTicketRepository.findByTargetIdAndStatusIn(
                 requestDTO.getTargetId(), 
-                Arrays.asList(AppealStatus.PENDING, AppealStatus.APPROVED)
+                Arrays.asList(AppealStatus.PENDING)
         ).ifPresent(ticket -> {
-            throw new IllegalArgumentException("An active or approved appeal already exists for this item.");
+            throw new IllegalArgumentException("An active appeal already exists for this item.");
         });
 
         AppealTicketEntity entity = new AppealTicketEntity();
@@ -143,6 +143,10 @@ public class AppealService {
                             ComicEntity snapshot = objectMapper.readValue(entity.getPreviousStateSnapshot(), ComicEntity.class);
                             
                             // Revert editable fields
+                            if (snapshot.getTitle() != null) comic.setTitle(snapshot.getTitle());
+                            if (snapshot.getSummary() != null) comic.setSummary(snapshot.getSummary());
+                            if (snapshot.getCover() != null) comic.setCover(snapshot.getCover());
+                            if (snapshot.getGenres() != null) comic.setGenres(snapshot.getGenres());
                             if (snapshot.getPublicationStatus() != null) comic.setPublicationStatus(snapshot.getPublicationStatus());
                             if (snapshot.getMinimumAge() != null) comic.setMinimumAge(snapshot.getMinimumAge());
                             if (snapshot.getLanguage() != null) comic.setLanguage(snapshot.getLanguage());
