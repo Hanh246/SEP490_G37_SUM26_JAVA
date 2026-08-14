@@ -697,6 +697,27 @@ public class TeamWorkspaceController {
         }
         UUID userId = principal.getId();
 
+        // 0. Project Leaders manage teams and cannot apply to join any project team
+        String userRole = principal.getRole();
+        if (userRole != null && "PROJECT_LEADER".equalsIgnoreCase(userRole)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Project Leaders manage project teams and cannot apply to join teams."));
+        }
+
+        ProjectTeamEntity team = projectTeamRepository.findById(teamId).orElse(null);
+        if (team == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Project team not found."));
+        }
+
+        // 0a. Check if the user is the leader of this project team
+        if (team.getLeaderId() != null && team.getLeaderId().equals(userId)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "You are the leader of this project team and cannot apply to join your own team."));
+        }
+
+        // 0b. Check if the user is already a member of this project team
+        if (team.getMembers() != null && team.getMembers().stream().anyMatch(m -> m.getUser() != null && userId.equals(m.getUser().getId()))) {
+            return ResponseEntity.badRequest().body(Map.of("message", "You are already an approved member of this project team."));
+        }
+
         // 1. Check if already applied (PENDING) to this specific team
         if (joinRequestRepository.existsByRequesterIdAndProjectTeamIdAndStatus(userId, teamId, "PENDING")) {
             return ResponseEntity.badRequest().body(Map.of("message", "You have already applied to this team!"));
@@ -761,15 +782,15 @@ public class TeamWorkspaceController {
         });
 
         TeamJoinRequestEntity saved = joinRequestRepository.save(request);
-        projectTeamRepository.findById(teamId).ifPresent(team ->
-                notificationService.notifyUser(
-                        team.getLeaderId(),
-                        "New team join request",
-                        saved.getName() + " requested to join " + team.getTitle() + ".",
-                        "INFO",
-                        NotificationPreferenceKey.TEAM_JOIN_REQUESTS
-                )
-        );
+        if (team.getLeaderId() != null) {
+            notificationService.notifyUser(
+                    team.getLeaderId(),
+                    "New team join request",
+                    saved.getName() + " requested to join " + team.getTitle() + ".",
+                    "INFO",
+                    NotificationPreferenceKey.TEAM_JOIN_REQUESTS
+            );
+        }
         return ResponseEntity.ok(saved);
     }
 
