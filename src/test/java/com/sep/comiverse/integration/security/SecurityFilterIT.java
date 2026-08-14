@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 public class SecurityFilterIT extends AbstractIntegrationTest {
@@ -71,4 +72,12 @@ public class SecurityFilterIT extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer malformed.invalid.token"))
                 .andExpect(status().isUnauthorized());
     }
+    @Test
+    @DisplayName("TC-SEC-004: Generic upload endpoint requires authentication")
+    void tc_sec_004_unauthenticatedUploadIsRejected() throws Exception {
+        mockMvc.perform(multipart("/upload/image")
+                        .file("file", "image-bytes".getBytes()))
+                .andExpect(status().isUnauthorized());
+    }
+
 }

@@ -195,6 +195,8 @@ public class AuthorChapterService {
                 .status("pending")
                 .cover(comic.getCover())
                 .content("Chapter " + chapter.getChapterNumber() + " has " + resolvePageCount(chapter) + " image pages waiting for moderation review.")
+                .chapterImages(copyImages(chapter))
+                .pageCount(resolvePageCount(chapter))
                 .build();
         submissionRepository.save(submission);
         notifyModeratorsAboutChapter(comic, chapter);
@@ -242,6 +244,8 @@ public class AuthorChapterService {
             // chapter to preview so the author can submit the updated version again.
             cancelPendingChapterSubmissions(chapterId, authorId);
             chapter.setModerationStatus(hasImages(chapter) ? ChapterStatus.PREVIEW_READY : ChapterStatus.DRAFT);
+            chapter.setRejectionReason(null);
+            chapter.setRejectedById(null);
         }
 
         ChapterEntity savedChapter = chapterRepository.save(chapter);
@@ -328,6 +332,8 @@ public class AuthorChapterService {
         chapter.setImages(imageUrls);
         chapter.setContentHash(contentHash);
         chapter.setModerationStatus(ChapterStatus.PREVIEW_READY);
+        chapter.setRejectionReason(null);
+        chapter.setRejectedById(null);
         cancelPendingChapterSubmissions(chapterId, authorId);
 
         ChapterEntity savedChapter = chapterRepository.save(chapter);
@@ -396,6 +402,8 @@ public class AuthorChapterService {
                 .status("pending")
                 .cover(comic.getCover())
                 .content("Chapter " + chapter.getChapterNumber() + " has " + resolvePageCount(chapter) + " image pages waiting for moderation review.")
+                .chapterImages(copyImages(chapter))
+                .pageCount(resolvePageCount(chapter))
                 .build();
         SubmissionEntity saved = submissionRepository.save(submission);
         notifyModeratorsAboutChapter(comic, chapter);
@@ -653,7 +661,10 @@ public class AuthorChapterService {
     }
 
     private ChapterPreviewResponse toPreviewResponse(ChapterEntity chapter) {
-        List<ChapterPageResponse> pageResponses = buildPageResponses(chapter);
+        List<String> previewImages = resolvePreviewImages(chapter);
+        List<ChapterPageResponse> pageResponses = buildPageResponses(previewImages);
+        int persistedPageCount = chapter.getPageCount() == null ? 0 : chapter.getPageCount();
+        int visiblePageCount = Math.max(persistedPageCount, pageResponses.size());
         return ChapterPreviewResponse.builder()
                 .id(chapter.getId())
                 .comicId(chapter.getComic() == null ? null : chapter.getComic().getId())
@@ -661,25 +672,46 @@ public class AuthorChapterService {
                 .chapterNumber(chapter.getChapterNumber())
                 .title(chapter.getTitle())
                 .status(resolveChapterStatus(chapter))
-                .pageCount(pageResponses.size())
+                .rejectionReason(chapter.getRejectionReason())
+                .pageCount(visiblePageCount)
+                .viewCount(chapter.getViewCount() == null ? 0L : chapter.getViewCount())
                 .createdAt(toDate(chapter.getCreatedAt()))
                 .updatedAt(toDate(chapter.getUpdatedAt()))
                 .pages(pageResponses)
                 .build();
     }
 
-    private List<ChapterPageResponse> buildPageResponses(ChapterEntity chapter) {
-        if (chapter.getImages() == null || chapter.getImages().isEmpty()) {
+    private List<ChapterPageResponse> buildPageResponses(List<String> images) {
+        if (images == null || images.isEmpty()) {
             return List.of();
         }
         List<ChapterPageResponse> responses = new ArrayList<>();
-        for (int index = 0; index < chapter.getImages().size(); index++) {
+        for (int index = 0; index < images.size(); index++) {
             responses.add(ChapterPageResponse.builder()
                     .pageNumber(index + 1)
-                    .imageUrl(chapter.getImages().get(index))
+                    .imageUrl(images.get(index))
                     .build());
         }
         return responses;
+    }
+
+    /**
+     * Prefer the live chapter row, but keep moderation preview resilient by falling
+     * back to the immutable submission evidence snapshot for rejected chapters.
+     */
+    private List<String> resolvePreviewImages(ChapterEntity chapter) {
+        if (chapter != null && chapter.getImages() != null && !chapter.getImages().isEmpty()) {
+            return new ArrayList<>(chapter.getImages());
+        }
+        if (chapter == null || chapter.getId() == null) {
+            return List.of();
+        }
+        return submissionRepository
+                .findTopByChapterIdAndQueueTypeIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(chapter.getId(), "author")
+                .map(SubmissionEntity::getChapterImages)
+                .filter(images -> images != null && !images.isEmpty())
+                .map(images -> (List<String>) new ArrayList<>(images))
+                .orElseGet(List::of);
     }
 
     private String normalizeChapterNumber(String value) {
@@ -748,6 +780,13 @@ public class AuthorChapterService {
 
     private boolean hasImages(ChapterEntity chapter) {
         return chapter.getImages() != null && !chapter.getImages().isEmpty();
+    }
+
+    private List<String> copyImages(ChapterEntity chapter) {
+        if (chapter == null || chapter.getImages() == null || chapter.getImages().isEmpty()) {
+            return new ArrayList<>();
+        }
+        return new ArrayList<>(chapter.getImages());
     }
 
     private int resolvePageCount(ChapterEntity chapter) {

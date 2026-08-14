@@ -30,6 +30,11 @@ public interface ISubmissionRepository extends AbstractCrudRepository<Submission
             String queueType
     );
 
+    Optional<SubmissionEntity> findTopByChapterIdAndQueueTypeIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(
+            UUID chapterId,
+            String queueType
+    );
+
     boolean existsByChapterIdAndAuthorIdAndQueueTypeIgnoreCaseAndStatusIgnoreCaseAndDeletedFalse(
             UUID chapterId,
             UUID authorId,

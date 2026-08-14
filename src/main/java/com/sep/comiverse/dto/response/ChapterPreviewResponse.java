@@ -21,7 +21,9 @@ public class ChapterPreviewResponse {
     private String chapterNumber;
     private String title;
     private ChapterStatus status;
+    private String rejectionReason;
     private Integer pageCount;
+    private Long viewCount;
     private Date createdAt;
     private Date updatedAt;
     private List<ChapterPageResponse> pages;

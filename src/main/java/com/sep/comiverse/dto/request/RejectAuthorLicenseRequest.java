@@ -1,6 +1,7 @@
 package com.sep.comiverse.dto.request;
 
 import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -8,6 +9,7 @@ import lombok.Data;
 @Data
 public class RejectAuthorLicenseRequest {
 
+    @NotBlank(message = "Rejection reason is required")
     @Size(max = 2000, message = "Rejection reason must not exceed 2000 characters")
     private String reason;
 

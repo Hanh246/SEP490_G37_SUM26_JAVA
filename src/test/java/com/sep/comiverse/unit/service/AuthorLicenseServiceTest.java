@@ -13,7 +13,6 @@ import com.sep.comiverse.service.CloudinaryUploadResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
@@ -250,7 +249,7 @@ class AuthorLicenseServiceTest {
     }
 
     @Test
-    void activeAndLegacyAuthors_areAllowedToPublishAndReceivePayout() {
+    void activeAuthors_areAllowedButMissingLicenseStatusFailsClosed() {
         UserEntity user = user("author@example.com");
         AuthorEntity active = author(user, AuthorLicenseStatus.ACTIVE);
         when(authorRepository.findByUserIdAndDeletedFalse(user.getId())).thenReturn(Optional.of(active));
@@ -259,7 +258,26 @@ class AuthorLicenseServiceTest {
         assertTrue(service.isAuthorPayoutAllowed(user.getId()));
 
         active.setLicenseStatus(null);
-        assertEquals(AuthorLicenseStatus.ACTIVE, service.effectiveStatus(active));
+        active.setLicenseDeadlineAt(null);
+        assertEquals(AuthorLicenseStatus.PENDING_LICENSE, service.effectiveStatus(active));
+        assertEquals(403, assertThrows(CustomException.class,
+                () -> service.assertPublishingAllowed(user.getId())).getCode());
+        assertEquals(AuthorLicenseStatus.PENDING_LICENSE, active.getLicenseStatus());
+        assertNotNull(active.getLicenseDeadlineAt());
+    }
+
+    @Test
+    void reject_requiresNonBlankReason_evenWhenServiceCalledDirectly() {
+        UserEntity user = user("author@example.com");
+        AuthorEntity pending = author(user, AuthorLicenseStatus.PENDING_VERIFICATION);
+        when(authorRepository.findById(pending.getId())).thenReturn(Optional.of(pending));
+
+        CustomException blank = assertThrows(CustomException.class,
+                () -> service.reject(pending.getId(), UUID.randomUUID(), "   ", 7));
+
+        assertEquals(400, blank.getCode());
+        assertEquals("Rejection reason is required", blank.getMessage());
+        assertEquals(AuthorLicenseStatus.PENDING_VERIFICATION, pending.getLicenseStatus());
     }
 
     @Test

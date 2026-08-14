@@ -87,7 +87,9 @@ class OfflineChapterPackageServiceTest {
         try (var artifact = prepared.artifact()) {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             artifact.copyTo(bytes);
-            DataInputStream input = new DataInputStream(new ByteArrayInputStream(bytes.toByteArray()));
+            byte[] packageBytes = bytes.toByteArray();
+            assertEquals(-1, indexOf(packageBytes, pageBytes));
+            DataInputStream input = new DataInputStream(new ByteArrayInputStream(packageBytes));
             assertArrayEquals(OfflineChapterPackageService.MAGIC, input.readNBytes(5));
             int manifestLength = input.readInt();
             byte[] manifestBytes = input.readNBytes(manifestLength);
@@ -125,5 +127,18 @@ class OfflineChapterPackageServiceTest {
             assertEquals(0L, ((Number) page.get("offset")).longValue());
             assertEquals(ciphertext.length, ((Number) page.get("length")).intValue());
         }
+    }
+
+    private int indexOf(byte[] source, byte[] candidate) {
+        outer:
+        for (int start = 0; start <= source.length - candidate.length; start++) {
+            for (int index = 0; index < candidate.length; index++) {
+                if (source[start + index] != candidate[index]) {
+                    continue outer;
+                }
+            }
+            return start;
+        }
+        return -1;
     }
 }

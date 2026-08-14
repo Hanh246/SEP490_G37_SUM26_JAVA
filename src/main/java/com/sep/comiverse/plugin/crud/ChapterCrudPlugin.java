@@ -86,20 +86,22 @@ public class ChapterCrudPlugin
                         HttpStatus.NOT_FOUND
                 ));
 
+        boolean isStaffOrPrivileged = false;
+        if (userId != null) {
+            isStaffOrPrivileged = (chapter.getComic() != null && userId.equals(chapter.getComic().getAuthorId()))
+                    || userRepository.findByIdWithRole(userId)
+                    .map(user -> {
+                        String role = user.getRole() == null || user.getRole().getRoleName() == null
+                                ? "READER"
+                                : user.getRole().getRoleName().trim().toUpperCase(Locale.ROOT);
+                        return PREMIUM_BYPASS_ROLES.contains(role);
+                    })
+                    .orElse(false);
+        }
+
         // If not published, restrict access to privileged roles
         if (chapter.getModerationStatus() != ChapterStatus.PUBLISHED) {
-            boolean canViewUnpublished = false;
-            if (userId != null) {
-                canViewUnpublished = userRepository.findByIdWithRole(userId)
-                        .map(user -> {
-                            String role = user.getRole() == null || user.getRole().getRoleName() == null
-                                    ? "READER"
-                                    : user.getRole().getRoleName().trim().toUpperCase(Locale.ROOT);
-                            return PREMIUM_BYPASS_ROLES.contains(role);
-                        })
-                        .orElse(false);
-            }
-            if (!canViewUnpublished) {
+            if (!isStaffOrPrivileged) {
                 throw new CustomException(
                         404,
                         "Chapter not found or not published",
@@ -157,11 +159,17 @@ public class ChapterCrudPlugin
                 .viewCount(cacheDto.getViewCount())
                 .isPremium(premiumRequired)
                 .createdAt(cacheDto.getCreatedAt())
+                .moderationStatus(chapter.getModerationStatus())
+                .rejectionReason(chapter.getRejectionReason())
+                .approvedAt(chapter.getApprovedAt())
+                .approvedBy(resolveModeratorName(chapter.getApprovedById()))
+                .rejectedBy(resolveModeratorName(chapter.getRejectedById()))
+                .pageCount(chapter.getPageCount() != null ? chapter.getPageCount() : images.size())
                 .build();
 
         responseDto.setImages(hasContentAccess ? images : Collections.emptyList());
 
-        if (hasContentAccess) {
+        if (hasContentAccess && chapter.getModerationStatus() == ChapterStatus.PUBLISHED && !isStaffOrPrivileged) {
             try {
                 trackAndIncrementView(responseDto.getComicId(), chapterId, userId, clientIp);
             } catch (Exception ignored) {
@@ -268,8 +276,11 @@ public class ChapterCrudPlugin
                     .isPremium(chapterPremiumPolicyService.isPremiumChapter(c.getChapterNumber()))
                     .createdAt(c.getCreatedAt())
                     .moderationStatus(c.getModerationStatus())
+                    .rejectionReason(c.getRejectionReason())
+                    .rejectedById(c.getRejectedById())
                     .approvedById(c.getApprovedById())
                     .approvedAt(c.getApprovedAt())
+                    .pageCount(c.getPageCount() != null ? c.getPageCount() : (c.getImages() == null ? 0 : c.getImages().size()))
                     .build()
             ).sorted((a, b) -> toChapterSortNumber(a.getChapterNumber()).compareTo(toChapterSortNumber(b.getChapterNumber()))).toList();
         }
@@ -313,8 +324,11 @@ public class ChapterCrudPlugin
                     .isPremium(chapterPremiumPolicyService.isPremiumChapter(dto.getChapterNumber()))
                     .createdAt(dto.getCreatedAt())
                     .moderationStatus(dto.getModerationStatus())
+                    .rejectionReason(dto.getRejectionReason())
+                    .rejectedById(dto.getRejectedById())
                     .approvedById(dto.getApprovedById())
                     .approvedAt(dto.getApprovedAt())
+                    .pageCount(dto.getPageCount())
                     .translatedLanguages(dto.getTranslatedLanguages())
                     .build();
 

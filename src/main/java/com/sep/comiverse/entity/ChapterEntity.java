@@ -44,6 +44,10 @@ public class ChapterEntity extends BaseEntity {
     @Column(name = "rejection_reason", columnDefinition = "TEXT")
     private String rejectionReason;
 
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "rejected_images_snapshot")
+    private List<String> rejectedImagesSnapshot;
+
     /**
      * PostgreSQL text[] column storing chapter image URLs in reading order.
      * This replaces the old chapter_pages table.
@@ -52,6 +56,15 @@ public class ChapterEntity extends BaseEntity {
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(name = "images", nullable = false)
     private List<String> images = new ArrayList<>();
+
+    /**
+     * Persisted moderation snapshot count. The preview can derive this value from
+     * images, but keeping it in the row makes moderation/audit queries resilient
+     * and lets us detect accidental URL loss instead of silently showing 0 pages.
+     */
+    @Builder.Default
+    @Column(name = "page_count", columnDefinition = "integer default 0")
+    private Integer pageCount = 0;
 
     @Builder.Default
     @Column(name = "view_count", nullable = false, columnDefinition = "bigint default 0")
@@ -78,4 +91,15 @@ public class ChapterEntity extends BaseEntity {
 
     @Column(name = "content_hash", length = 64)
     private String contentHash;
+
+    @PrePersist
+    @PreUpdate
+    protected void syncPageCount() {
+        int actualCount = this.images == null ? 0 : this.images.size();
+        // A non-zero persisted count can be historical evidence even when an old
+        // deployment already lost the URL array. Do not silently destroy that audit value.
+        if (actualCount > 0 || this.pageCount == null) {
+            this.pageCount = actualCount;
+        }
+    }
 }

@@ -37,7 +37,7 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
     private final RedisTemplate<String, Object> redisTemplate;
     private final LeaderboardScheduler leaderboardScheduler;
 
-    private static final String COMIC_CACHE_PREFIX = "comic:detail:";
+    private static final String COMIC_CACHE_PREFIX = "comic:detail:v2:";
     private final IGenreRepository genreRepository;
 
     @Autowired
@@ -196,7 +196,17 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
             }
         }
 
-        if (dto == null) {
+        // Older deployments cached ComicDTO before authorName was populated.
+        // Redis can survive an application redeploy, so a cache hit may still carry
+        // null/"Unknown Author" even though the current mapper is correct. Rebuild
+        // those entries from DB instead of returning stale creator metadata.
+        boolean creatorMetadataMissing = dto != null
+                && dto.getAuthorId() != null
+                && (dto.getAuthorName() == null
+                    || dto.getAuthorName().isBlank()
+                    || "Unknown Author".equalsIgnoreCase(dto.getAuthorName().trim()));
+
+        if (dto == null || creatorMetadataMissing) {
             ComicEntity entity = comicRepository.findById(comicId)
                     .orElseThrow(() -> new com.sep.comiverse.exception.CustomException(404, "Comic not found", org.springframework.http.HttpStatus.NOT_FOUND));
 

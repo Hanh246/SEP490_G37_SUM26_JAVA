@@ -18,8 +18,11 @@ public class ChapterLiteDTO {
     private Boolean isPremium;
     private Instant createdAt;
     private ChapterStatus moderationStatus;
+    private String rejectionReason;
+    private UUID rejectedById;
     private UUID approvedById;
     private Instant approvedAt;
+    private Integer pageCount;
     
     @Builder.Default
     private java.util.List<String> translatedLanguages = new java.util.ArrayList<>();

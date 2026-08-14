@@ -1,7 +1,12 @@
 package com.sep.comiverse.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -56,9 +61,11 @@ public class TeamJoinRequestEntity {
     private Instant decidedAt;
 
     @Transient
+    @JsonProperty("activeProjectsCount")
     private Integer activeProjectsCount;
 
     @Transient
+    @JsonProperty("activeTasksCount")
     private Integer activeTasksCount;
 }
 
