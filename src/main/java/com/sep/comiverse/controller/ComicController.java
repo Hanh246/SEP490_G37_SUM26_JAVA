@@ -277,6 +277,10 @@ public class ComicController {
                 // Non-critical — don't fail the update if notification fails
             }
         }
+        
+        try {
+            comicCrudPlugin.evictComicCache(id);
+        } catch (Exception e) {}
 
         return ResponseEntity.ok(BaseResponse.<ComicDTO>builder()
                 .success(true)
@@ -297,6 +301,11 @@ public class ComicController {
             // ignore
         }
         comicCrudPlugin.delete(id);
+        
+        try {
+            comicCrudPlugin.evictComicCache(id);
+        } catch (Exception e) {}
+        
         auditLogService.log("COMIC_MANAGEMENT", "Archived comic profile: " + title);
 
         return ResponseEntity.ok(BaseResponse.<Void>builder()
