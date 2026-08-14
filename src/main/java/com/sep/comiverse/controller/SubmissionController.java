@@ -357,9 +357,10 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 chapter.setRejectionReason(submission.getRejectionReason());
                 chapter.setRejectedById(modId);
                 
-                // Tombstone: Clear heavy images array to prevent DB bloat.
-                // The content hash was already saved during upload to prevent re-uploads.
-                chapter.setImages(new java.util.ArrayList<>());
+                // Save a snapshot of the images at the time of rejection
+                if (chapter.getImages() != null && !chapter.getImages().isEmpty()) {
+                    chapter.setRejectedImagesSnapshot(new java.util.ArrayList<>(chapter.getImages()));
+                }
                 
                 chapterRepository.save(chapter);
             });
@@ -411,7 +412,9 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                         ch.setModerationStatus(ChapterStatus.REJECTED);
                         ch.setRejectionReason(submission.getRejectionReason());
                         ch.setRejectedById(modId);
-                        ch.setImages(new java.util.ArrayList<>());
+                        if (ch.getImages() != null && !ch.getImages().isEmpty()) {
+                            ch.setRejectedImagesSnapshot(new java.util.ArrayList<>(ch.getImages()));
+                        }
                         chapterRepository.save(ch);
                     }
                 }

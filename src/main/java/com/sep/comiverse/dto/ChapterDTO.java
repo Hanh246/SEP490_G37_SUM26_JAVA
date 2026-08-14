@@ -39,6 +39,9 @@ public class ChapterDTO {
     @JsonProperty(access = JsonProperty.Access.AUTO)
     private List<String> images;
 
+    @JsonProperty(access = JsonProperty.Access.AUTO)
+    private List<String> rejectedImagesSnapshot;
+
     private String num;
     private String date;
 
