@@ -41,6 +41,7 @@ class AppealServiceTest {
     @Mock private IUserRepository userRepository;
     @Mock private IComicRepository comicRepository;
     @Mock private com.sep.comiverse.repository.IChapterRepository chapterRepository;
+    @Mock private com.sep.comiverse.repository.IGenreRepository genreRepository;
     @Mock private ModelMapper modelMapper;
     @Mock private NotificationService notificationService;
 
@@ -53,6 +54,7 @@ class AppealServiceTest {
                 userRepository,
                 comicRepository,
                 chapterRepository,
+                genreRepository,
                 modelMapper,
                 new ObjectMapper(),
                 notificationService

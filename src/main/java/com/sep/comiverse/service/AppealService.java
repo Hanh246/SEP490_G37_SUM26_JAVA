@@ -27,6 +27,14 @@ import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.dto.ComicDTO;
 import lombok.extern.slf4j.Slf4j;
 
+import com.sep.comiverse.repository.IGenreRepository;
+import com.sep.comiverse.entity.GenreEntity;
+import com.sep.comiverse.entity.enums.ComicPublicationStatus;
+import com.fasterxml.jackson.databind.JsonNode;
+import java.util.Set;
+import java.util.HashSet;
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -36,6 +44,7 @@ public class AppealService {
     private final IUserRepository userRepository;
     private final IComicRepository comicRepository;
     private final com.sep.comiverse.repository.IChapterRepository chapterRepository;
+    private final IGenreRepository genreRepository;
     private final ModelMapper modelMapper;
     private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
@@ -173,22 +182,62 @@ public class AppealService {
 
                     if (entity.getPreviousStateSnapshot() != null && !entity.getPreviousStateSnapshot().isEmpty()) {
                         try {
-                            ComicEntity snapshot = objectMapper.readValue(entity.getPreviousStateSnapshot(), ComicEntity.class);
+                            JsonNode root = objectMapper.readTree(entity.getPreviousStateSnapshot());
                             
                             // Revert editable fields
-                            if (snapshot.getTitle() != null) comic.setTitle(snapshot.getTitle());
-                            if (snapshot.getSummary() != null) comic.setSummary(snapshot.getSummary());
-                            if (snapshot.getCover() != null) comic.setCover(snapshot.getCover());
-                            if (snapshot.getGenres() != null) comic.setGenres(snapshot.getGenres());
-                            if (snapshot.getPublicationStatus() != null) comic.setPublicationStatus(snapshot.getPublicationStatus());
-                            if (snapshot.getMinimumAge() != null) comic.setMinimumAge(snapshot.getMinimumAge());
-                            if (snapshot.getLanguage() != null) comic.setLanguage(snapshot.getLanguage());
+                            if (root.hasNonNull("title")) comic.setTitle(root.get("title").asText());
+                            if (root.hasNonNull("summary")) comic.setSummary(root.get("summary").asText());
+                            if (root.hasNonNull("cover")) comic.setCover(root.get("cover").asText());
+                            if (root.hasNonNull("language")) comic.setLanguage(root.get("language").asText());
+                            if (root.hasNonNull("minimumAge")) comic.setMinimumAge(root.get("minimumAge").asInt());
+                            
+                            if (root.hasNonNull("publicationStatus")) {
+                                try {
+                                    comic.setPublicationStatus(ComicPublicationStatus.valueOf(root.get("publicationStatus").asText().toUpperCase()));
+                                } catch (Exception ignored) {}
+                            } else if (root.hasNonNull("publication_status")) {
+                                try {
+                                    comic.setPublicationStatus(ComicPublicationStatus.valueOf(root.get("publication_status").asText().toUpperCase()));
+                                } catch (Exception ignored) {}
+                            }
+
+                            // Revert genres
+                            if (genreRepository != null) {
+                                Set<UUID> targetGenreIds = new HashSet<>();
+                                if (root.has("genres") && root.get("genres").isArray()) {
+                                    for (JsonNode gNode : root.get("genres")) {
+                                        if (gNode.isObject() && gNode.hasNonNull("id")) {
+                                            try {
+                                                targetGenreIds.add(UUID.fromString(gNode.get("id").asText()));
+                                            } catch (Exception ignored) {}
+                                        } else if (gNode.isTextual()) {
+                                            try {
+                                                targetGenreIds.add(UUID.fromString(gNode.asText()));
+                                            } catch (Exception ignored) {}
+                                        }
+                                    }
+                                } else if (root.has("genreIds") && root.get("genreIds").isArray()) {
+                                    for (JsonNode gNode : root.get("genreIds")) {
+                                        try {
+                                            targetGenreIds.add(UUID.fromString(gNode.asText()));
+                                        } catch (Exception ignored) {}
+                                    }
+                                }
+                                if (!targetGenreIds.isEmpty()) {
+                                    List<GenreEntity> genreEntities = genreRepository.findAllById(targetGenreIds);
+                                    comic.setGenres(new HashSet<>(genreEntities));
+                                }
+                            }
                             
                             log.info("Successfully reverted comic {} from appeal ticket {}", comic.getId(), entity.getId());
                         } catch (Exception e) {
                             log.error("Failed to deserialize or revert comic state from appeal snapshot", e);
                         }
                     }
+
+                    // Reset Mod Edit flags so comic is restored cleanly
+                    comic.setIsModEdited(false);
+                    comic.setPreviousStateSnapshot(null);
                 }
                 
                 comicRepository.save(comic);
