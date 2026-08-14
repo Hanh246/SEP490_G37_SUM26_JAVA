@@ -106,6 +106,7 @@ public class DbInitializer implements CommandLineRunner {
         createForumCategories();
         createReportCategories();
         initReportDatabaseIndexes();
+        initVectorDatabaseIndexes();
 
         repairMissingProjectTeamLeaders();
 
@@ -1010,6 +1011,42 @@ public class DbInitializer implements CommandLineRunner {
             System.out.println("✅ Report partial unique index verified in PostgreSQL.");
         } catch (Exception e) {
             System.out.println("⚠️ Could not create partial unique index on reports table (DB might still be initializing schema): " + e.getMessage());
+        }
+    }
+
+    private void initVectorDatabaseIndexes() {
+        try {
+            jdbcTemplate.execute("""
+                    DO $$
+                    BEGIN
+                        -- 1. Create HNSW index on comics.summary_vector for cosine distance (<=>)
+                        IF to_regclass('public.comics') IS NOT NULL THEN
+                            IF NOT EXISTS (
+                                SELECT 1 FROM pg_indexes
+                                WHERE tablename = 'comics' AND indexname = 'idx_comics_summary_vector_hnsw'
+                            ) THEN
+                                CREATE INDEX idx_comics_summary_vector_hnsw
+                                ON public.comics USING hnsw (summary_vector vector_cosine_ops);
+                            END IF;
+                        END IF;
+
+                        -- 2. Create HNSW index on users.user_vector for cosine distance (<=>)
+                        IF to_regclass('public.users') IS NOT NULL THEN
+                            IF NOT EXISTS (
+                                SELECT 1 FROM pg_indexes
+                                WHERE tablename = 'users' AND indexname = 'idx_users_user_vector_hnsw'
+                            ) THEN
+                                CREATE INDEX idx_users_user_vector_hnsw
+                                ON public.users USING hnsw (user_vector vector_cosine_ops);
+                            END IF;
+                        END IF;
+                    END $$;
+                    """);
+            System.out.println("✅ Pgvector HNSW indexes on comics and users verified in PostgreSQL.");
+            jdbcTemplate.execute("ANALYZE comics");
+            jdbcTemplate.execute("ANALYZE users");
+        } catch (Exception e) {
+            System.out.println("⚠️ Could not create vector indexes on comics/users table: " + e.getMessage());
         }
     }
 }
