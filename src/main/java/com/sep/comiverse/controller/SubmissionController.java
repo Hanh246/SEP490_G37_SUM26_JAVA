@@ -369,6 +369,12 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                         && !submission.getChapterImages().isEmpty()) {
                     chapter.setImages(new java.util.ArrayList<>(submission.getChapterImages()));
                 }
+
+                // Save a snapshot of the images at the time of rejection
+                if (chapter.getImages() != null && !chapter.getImages().isEmpty()) {
+                    chapter.setRejectedImagesSnapshot(new java.util.ArrayList<>(chapter.getImages()));
+                }
+
                 chapterRepository.save(chapter);
             });
 
@@ -422,6 +428,9 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                         ch.setModerationStatus(ChapterStatus.REJECTED);
                         ch.setRejectionReason(submission.getRejectionReason());
                         ch.setRejectedById(modId);
+                        if (ch.getImages() != null && !ch.getImages().isEmpty()) {
+                            ch.setRejectedImagesSnapshot(new java.util.ArrayList<>(ch.getImages()));
+                        }
                         chapterRepository.save(ch);
                     }
                 }

@@ -44,6 +44,10 @@ public class ChapterEntity extends BaseEntity {
     @Column(name = "rejection_reason", columnDefinition = "TEXT")
     private String rejectionReason;
 
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "rejected_images_snapshot")
+    private List<String> rejectedImagesSnapshot;
+
     /**
      * PostgreSQL text[] column storing chapter image URLs in reading order.
      * This replaces the old chapter_pages table.
