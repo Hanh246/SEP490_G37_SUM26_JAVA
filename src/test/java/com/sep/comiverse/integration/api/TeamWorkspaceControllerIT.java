@@ -2183,24 +2183,25 @@ public class TeamWorkspaceControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-141: PUT /team-workspace/tasks/{taskId}/submit-for-review - Task with unfinished pages should return 409 Conflict")
+    @DisplayName("TC-INT-TeamWorkspaceController-141: PUT /team-workspace/tasks/{taskId}/submit-for-review - Task with unfinished pages can still be submitted")
     void submitForReviewWithIncompletePages() throws Exception {
         mockMvc.perform(put(BASE_URL + "/tasks/{taskId}/submit-for-review", task.getId())
                         .header("Authorization", "Bearer " + translatorToken))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.success", is(false)))
-                .andExpect(jsonPath("$.message", containsString("All pages must be marked DONE before review")));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)));
+
+        assertThat(taskRepository.findById(task.getId()).orElseThrow().getStatus()).isEqualTo("under_review");
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-142: PUT /team-workspace/tasks/{taskId}/submit-for-review - Task without pages should return 409 Conflict")
+    @DisplayName("TC-INT-TeamWorkspaceController-142: PUT /team-workspace/tasks/{taskId}/submit-for-review - Task without pages can still be submitted")
     void submitForReviewWithoutPages() throws Exception {
         TeamTaskEntity emptyTask = persistTask(backlogChapter, translatorUser.getId(), "in_progress");
 
         mockMvc.perform(put(BASE_URL + "/tasks/{taskId}/submit-for-review", emptyTask.getId())
                         .header("Authorization", "Bearer " + leaderToken))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message", is("The task has no pages to review")));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)));
     }
 
     @Test

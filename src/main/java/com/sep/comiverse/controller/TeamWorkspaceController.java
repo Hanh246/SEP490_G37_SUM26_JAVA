@@ -1145,12 +1145,6 @@ public class TeamWorkspaceController {
                     .body(Map.of("success", false, "message", "A completed task cannot be submitted for review again"));
         }
 
-        try {
-            translatorPaymentService.validateReadyForReview(taskId);
-        } catch (com.sep.comiverse.exception.CustomException ex) {
-            return ResponseEntity.status(ex.getHttpStatus()).body(Map.of("success", false, "message", ex.getMessage()));
-        }
-
         task.setStatus("under_review");
         task.setCompletedAt(null);
         taskRepository.save(task);
