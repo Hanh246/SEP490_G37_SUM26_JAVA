@@ -23,6 +23,8 @@ import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.NotificationService;
 import com.sep.comiverse.service.UserPresenceService;
 import com.sep.comiverse.service.TranslatorPaymentService;
+import com.sep.comiverse.service.TeamTaskReviewService;
+import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,6 +62,7 @@ public class TeamWorkspaceController {
     private final UserPresenceService userPresenceService;
     private final SimpMessagingTemplate messagingTemplate;
     private final TranslatorPaymentService translatorPaymentService;
+    private final TeamTaskReviewService teamTaskReviewService;
 
     private static final int MAX_ACTIVE_TEAMS = 5;
     private static final int MAX_ACTIVE_TASKS = 5;
@@ -612,10 +615,18 @@ public class TeamWorkspaceController {
             return ResponseEntity.ok(Collections.emptyList());
         }
 
+        List<UUID> memberUserIds = members.stream()
+                .map(m -> m.getUser().getId())
+                .toList();
+        Map<UUID, TranslatorEntity> translatorsByUserId = translatorRepository.findAllByUser_IdIn(memberUserIds)
+                .stream()
+                .collect(Collectors.toMap(t -> t.getUser().getId(), t -> t, (a, b) -> a));
+
         List<TeamMemberDto> result = members.stream()
                 .map(m -> {
                     UserEntity u = m.getUser();
-                    return TeamMemberDto.builder()
+                    TranslatorEntity translator = translatorsByUserId.get(u.getId());
+                    TeamMemberDto.TeamMemberDtoBuilder builder = TeamMemberDto.builder()
                             .id(u.getId())
                             .name(u.getFullName())
                             .role(team.getLeaderId() != null && team.getLeaderId().equals(u.getId())
@@ -624,8 +635,17 @@ public class TeamWorkspaceController {
                             .avatar(computeInitials(u.getFullName()))
                             .online(userPresenceService.isOnline(u.getId()))
                             .lastSeenAt(u.getLastSeenAt())
-                            .joinDate(m.getCreatedAt())
-                            .build();
+                            .joinDate(m.getCreatedAt());
+                    if (translator != null) {
+                        builder.cvUrl(translator.getCvUrl())
+                                .bio(translator.getBio())
+                                .experienceYears(translator.getExperienceYears())
+                                .joinedProjectCount(translator.getJoinedProjectCount())
+                                .phoneNumber(translator.getPhoneNumber())
+                                .facebookUrl(translator.getFacebookUrl())
+                                .specializations(translator.getSpecializations());
+                    }
+                    return builder.build();
                 })
                 .collect(Collectors.toList());
 
@@ -1185,8 +1205,14 @@ public class TeamWorkspaceController {
             return ResponseEntity.status(404).body(Map.of("success", false, "message", "Task not found"));
         }
         if (!canManageTeamTasks(principal, task.getProjectTeamId())) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("success", false, "message", "Only this team's Project Leader can edit tasks"));
+            boolean isAssignee = principal != null
+                    && principal.getId() != null
+                    && principal.getId().equals(task.getAssigneeId());
+            if (!isAssignee) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("success", false, "message", "Only this team's Project Leader can edit tasks"));
+            }
+            return promoteAssignedTaskToInProgress(task, updates);
         }
 
         if (updates.containsKey("title")) {
@@ -1195,19 +1221,33 @@ public class TeamWorkspaceController {
         if (updates.containsKey("status")) {
             String previousStatus = task.getStatus();
             String newStatus = updates.get("status") == null ? null : String.valueOf(updates.get("status"));
-            if (isCompletedStatus(newStatus)) {
-                return ResponseEntity.status(HttpStatus.CONFLICT)
-                        .body(Map.of("success", false,
-                                "message", "Use the review approval flow to complete a task after every page is DONE"));
-            }
-            if (isBacklogStatus(previousStatus) && isBacklogStatus(newStatus)) {
+            if (isChangesRequestedStatus(newStatus) && isUnderReviewStatus(previousStatus)) {
                 newStatus = "in_progress";
             }
-            task.setStatus(newStatus);
-            if (isCompletedStatus(newStatus) && (!isCompletedStatus(previousStatus) || task.getCompletedAt() == null)) {
-                task.setCompletedAt(Instant.now());
-            } else if (!isCompletedStatus(newStatus)) {
-                task.setCompletedAt(null);
+            if (isCompletedStatus(newStatus)) {
+                if (isCompletedStatus(previousStatus)) {
+                    // already completed
+                } else if (isSupersededStatus(previousStatus)) {
+                    return ResponseEntity.status(HttpStatus.CONFLICT)
+                            .body(Map.of("success", false, "message", "A superseded task cannot be completed"));
+                } else {
+                    try {
+                        task = teamTaskReviewService.approveAndPublish(task, principal.getId());
+                    } catch (CustomException ex) {
+                        return ResponseEntity.status(ex.getHttpStatus())
+                                .body(Map.of("success", false, "message", ex.getMessage()));
+                    }
+                }
+            } else if (isUnderReviewStatus(previousStatus) && isInProgressStatus(newStatus)) {
+                task = teamTaskReviewService.returnToInProgress(task);
+            } else {
+                if (isBacklogStatus(previousStatus) && isBacklogStatus(newStatus)) {
+                    newStatus = "in_progress";
+                }
+                task.setStatus(newStatus);
+                if (!isCompletedStatus(newStatus)) {
+                    task.setCompletedAt(null);
+                }
             }
         } else if (isBacklogStatus(task.getStatus())) {
             task.setStatus("in_progress");
@@ -1319,6 +1359,77 @@ public class TeamWorkspaceController {
         return "backlog".equals(normalized) || "todo".equals(normalized);
     }
 
+    private boolean isInProgressStatus(String status) {
+        if (status == null || status.isBlank()) return false;
+        String normalized = status.trim().toLowerCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
+        return "in_progress".equals(normalized);
+    }
+
+    private boolean isChangesRequestedStatus(String status) {
+        if (status == null || status.isBlank()) return false;
+        String normalized = status.trim().toLowerCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
+        return "changes_requested".equals(normalized) || "request_changes".equals(normalized);
+    }
+
+    private boolean isReviewLockedStatus(String status) {
+        if (status == null || status.isBlank()) return false;
+        String normalized = status.trim().toLowerCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
+        return "under_review".equals(normalized)
+                || "in_review".equals(normalized)
+                || "superseded".equals(normalized);
+    }
+
+    private boolean isUnderReviewStatus(String status) {
+        if (status == null || status.isBlank()) return false;
+        String normalized = status.trim().toLowerCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
+        return "under_review".equals(normalized) || "in_review".equals(normalized);
+    }
+
+    /**
+     * Translators may only use PUT /tasks/{id} to move their own backlog/todo
+     * task to in_progress — the same path Edit Task uses. All other edits stay
+     * Project Leader-only.
+     */
+    private ResponseEntity<?> promoteAssignedTaskToInProgress(TeamTaskEntity task, Map<String, Object> updates) {
+        if (updates != null) {
+            for (String key : updates.keySet()) {
+                if (!"status".equals(key)) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                            .body(Map.of("success", false, "message", "Only this team's Project Leader can edit tasks"));
+                }
+            }
+        }
+
+        String requested = (updates != null && updates.containsKey("status") && updates.get("status") != null)
+                ? String.valueOf(updates.get("status"))
+                : "in_progress";
+        if (isCompletedStatus(requested) || isReviewLockedStatus(requested)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "message", "Only this team's Project Leader can edit tasks"));
+        }
+        if (!isBacklogStatus(requested) && !isInProgressStatus(requested)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "message", "Only this team's Project Leader can edit tasks"));
+        }
+
+        if (isCompletedStatus(task.getStatus()) || isReviewLockedStatus(task.getStatus())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("success", false,
+                            "message", "Pages cannot be edited while the task is under review or completed"));
+        }
+        if (isInProgressStatus(task.getStatus()) || isChangesRequestedStatus(task.getStatus())) {
+            return ResponseEntity.ok(task);
+        }
+        if (isBacklogStatus(task.getStatus())) {
+            task.setStatus("in_progress");
+            task.setCompletedAt(null);
+            return ResponseEntity.ok(taskRepository.save(task));
+        }
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(Map.of("success", false, "message", "Only this team's Project Leader can edit tasks"));
+    }
+
     private boolean canMarkTaskCompleted(UserPrincipal principal) {
         return principal != null && "PROJECT_LEADER".equalsIgnoreCase(principal.getRole());
     }
@@ -1358,18 +1469,23 @@ public class TeamWorkspaceController {
             return "Project team not found";
         }
 
-        List<ProjectTeamMemberEntity> teamMembers =
-                team.getMembers() == null
-                        ? List.of()
-                        : team.getMembers();
-
-        UserEntity member = teamMembers.stream()
-                .filter(Objects::nonNull)
-                .map(ProjectTeamMemberEntity::getUser)
-                .filter(Objects::nonNull)
-                .filter(user -> assigneeId.equals(user.getId()))
-                .findFirst()
-                .orElse(null);
+        boolean isTeamLeader = team.getLeaderId() != null && team.getLeaderId().equals(assigneeId);
+        UserEntity member = null;
+        if (isTeamLeader) {
+            member = userRepository.findById(assigneeId).orElse(null);
+        } else {
+            List<ProjectTeamMemberEntity> teamMembers =
+                    team.getMembers() == null
+                            ? List.of()
+                            : team.getMembers();
+            member = teamMembers.stream()
+                    .filter(Objects::nonNull)
+                    .map(ProjectTeamMemberEntity::getUser)
+                    .filter(Objects::nonNull)
+                    .filter(user -> assigneeId.equals(user.getId()))
+                    .findFirst()
+                    .orElse(null);
+        }
 
         if (member == null) {
             return "The assignee must be an approved member of this project team";
@@ -1379,7 +1495,7 @@ public class TeamWorkspaceController {
                 ? ""
                 : member.getRole().getRoleName();
 
-        if (!"TRANSLATOR".equalsIgnoreCase(role)) {
+        if (!"TRANSLATOR".equalsIgnoreCase(role) && !"PROJECT_LEADER".equalsIgnoreCase(role)) {
             return "Only users with the TRANSLATOR role can be assigned payout-eligible tasks";
         }
 

@@ -15,15 +15,16 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
-@Controller
+@RestController
+@RequestMapping("/translate-workspace")
 @RequiredArgsConstructor
 public class PageController {
     private final IPageTranslationRepository pageTranslationRepository;
@@ -31,13 +32,13 @@ public class PageController {
     private final IChapterTranslationRepository chapterTranslationRepository;
     private final TranslatorPaymentService translatorPaymentService;
 
-    @GetMapping("/translate-workspace/{taskId}")
+    @GetMapping("/{taskId}")
     public ResponseEntity<?> getPagesForTask(@PathVariable UUID taskId) {
         List<PageTranslationEntity> pages = pageTranslationRepository.findByTaskId_IdOrderByPageNumberAsc(taskId);
         return ResponseEntity.ok(pages.stream().map(this::toPageDetailDto).toList());
     }
 
-    @PutMapping("/translate-workspace/pages/{pageId}/bubbles")
+    @PutMapping("/pages/{pageId}/bubbles")
     public ResponseEntity<?> saveBubbles(
             @PathVariable UUID pageId,
             @RequestBody ChapterPageDTO request,
@@ -54,12 +55,23 @@ public class PageController {
                     .body(Map.of("success", false, "message", "Pages cannot be edited while the task is under review or completed"));
         }
 
-        page.setBubbles(request.getBubbles() != null ? request.getBubbles() : "[]");
+        String bubbles = request.getBubbles() != null ? request.getBubbles() : "[]";
+        page.setBubbles(bubbles);
+        if (hasTranslationWork(bubbles)) {
+            page.setStatus(PageStatus.DONE);
+            page.setCompletedAt(Instant.now());
+            if (principal != null && principal.getId() != null) {
+                page.setAssignedTranslatorId(principal.getId());
+            }
+        } else {
+            page.setStatus(PageStatus.TODO);
+            page.setCompletedAt(null);
+        }
         pageTranslationRepository.save(page);
         return ResponseEntity.ok(toPageDetailDto(page));
     }
 
-    @PutMapping("/translate-workspace/pages/{pageId}/status")
+    @PutMapping("/pages/{pageId}/status")
     public ResponseEntity<?> updatePageStatus(
             @PathVariable UUID pageId,
             @RequestBody Map<String, String> body,
@@ -84,6 +96,18 @@ public class PageController {
                     .body(Map.of("success", false, "message", "Status must be TODO or DONE"));
         }
         return ResponseEntity.ok(toPageDetailDto(translatorPaymentService.updatePageStatus(page, status)));
+    }
+
+    private boolean hasTranslationWork(String bubbles) {
+        if (bubbles == null) return false;
+        String trimmed = bubbles.trim();
+        if (trimmed.isEmpty() || "[]".equals(trimmed) || "{}".equals(trimmed) || "null".equalsIgnoreCase(trimmed)) {
+            return false;
+        }
+        if (trimmed.contains("\"selections\"")) {
+            return trimmed.matches("(?s).*\"selections\"\\s*:\\s*\\[\\s*\\{.*");
+        }
+        return trimmed.startsWith("[") && trimmed.contains("{");
     }
 
     private ChapterPageDTO toPageDetailDto(PageTranslationEntity page) {

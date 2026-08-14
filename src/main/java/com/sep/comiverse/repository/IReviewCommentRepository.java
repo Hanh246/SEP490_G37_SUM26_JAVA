@@ -13,4 +13,5 @@ public interface IReviewCommentRepository extends JpaRepository<ReviewCommentEnt
     List<ReviewCommentEntity> findByPage_IdOrderByCreatedAtAsc(UUID pageId);
     Optional<ReviewCommentEntity> findByPage_IdAndBubbleIdAndAuthor_Id(UUID pageId, String bubbleId, UUID authorId);
     Optional<ReviewCommentEntity> findByPage_IdAndBubbleIdIsNullAndAuthor_Id(UUID pageId, UUID authorId);
+    long countByPage_TaskId_IdAndResolvedFalse(UUID taskId);
 }
