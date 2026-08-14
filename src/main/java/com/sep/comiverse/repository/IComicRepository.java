@@ -23,16 +23,6 @@ import java.util.UUID;
 public interface IComicRepository
         extends AbstractCrudRepository<ComicEntity, UUID> {
 
-    /*
-     * ComicEntity chỉ lưu authorId.
-     *
-     * Generic search sử dụng field "author", vì vậy cần chuyển field này
-     * thành AuthorEntity.displayName.
-     *
-     * Hỗ trợ cả hai cách dữ liệu cũ có thể đang lưu:
-     * - comics.author_id = authors.id
-     * - comics.author_id = users.id
-     */
     @Override
     default Specification<ComicEntity> contains(
             List<String> fields,
@@ -130,6 +120,15 @@ public interface IComicRepository
             UUID id,
             ComicModerationStatus moderationStatus
     );
+
+    @Query("""
+            SELECT c
+            FROM ComicEntity c
+            LEFT JOIN FETCH c.genres
+            WHERE c.id = :id
+              AND c.deleted = false
+            """)
+    Optional<ComicEntity> findByIdWithGenres(@Param("id") UUID id);
 
     List<ComicEntity> findAllByTitle(String title);
 
@@ -411,62 +410,35 @@ public interface IComicRepository
             int limit
     );
 
-    /*
-     * Phiên bản hiện tại nhận vector từ service.
-     *
-     * Giữ lại để không làm hỏng những service đang truyền:
-     * userVector + excludedIds.
-     */
     @Query(
             value = """
-                    SELECT id
-                    FROM comics
-                    WHERE deleted = false
-                      AND moderation_status = 'PUBLISHED'
-                      AND summary_vector IS NOT NULL
-                      AND (
-                          COALESCE(:excludedIds) IS NULL
-                          OR id NOT IN (:excludedIds)
-                      )
-                      AND (
-                          :cursorDistance IS NULL
-                          OR (
-                              summary_vector
-                              <=> CAST(:userVector AS vector)
-                          ) > :cursorDistance
-                          OR (
-                              (
-                                  summary_vector
-                                  <=> CAST(:userVector AS vector)
-                              ) = :cursorDistance
-                              AND id > :referenceId
-                          )
-                      )
-                    ORDER BY
-                        (
-                            summary_vector
-                            <=> CAST(:userVector AS vector)
-                        ) ASC,
-                        id ASC
-                    LIMIT :limit
-                    """,
+        SELECT id
+        FROM comics
+        WHERE deleted = false
+          AND moderation_status = 'PUBLISHED'
+          AND summary_vector IS NOT NULL
+          AND id NOT IN (:excludedIds)
+          AND (
+              :cursorDistance IS NULL
+              OR summary_vector <=> CAST(:userVector AS vector) > :cursorDistance
+              OR (
+                  summary_vector <=> CAST(:userVector AS vector) = :cursorDistance
+                  AND id > :referenceId
+              )
+          )
+        ORDER BY
+            summary_vector <=> CAST(:userVector AS vector) ASC,
+            id ASC
+        LIMIT :limit
+        """,
             nativeQuery = true
     )
     List<UUID> findRecommendedComicIdsForUserCursor(
-            @Param("userVector")
-            float[] userVector,
-
-            @Param("cursorDistance")
-            Double cursorDistance,
-
-            @Param("referenceId")
-            UUID referenceId,
-
-            @Param("excludedIds")
-            List<UUID> excludedIds,
-
-            @Param("limit")
-            int limit
+            @Param("userVector") float[] userVector,
+            @Param("cursorDistance") Double cursorDistance,
+            @Param("referenceId") UUID referenceId,
+            @Param("excludedIds") List<UUID> excludedIds,
+            @Param("limit") int limit
     );
 
     /*

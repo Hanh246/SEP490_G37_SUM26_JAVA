@@ -23,6 +23,9 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
     private final IUserRepository userRepository;
     private final com.sep.comiverse.repository.IChapterRepository chapterRepository;
     private final Map<UUID, String> moderatorNameCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<UUID, CachedAuthorName> authorNameCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private record CachedAuthorName(String name, long expireAt) {}
 
     private String resolveModeratorName(UUID moderatorId) {
         if (moderatorId == null) return null;
@@ -32,6 +35,30 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
                                 ? user.getFullName() : user.getUsername())
                         .orElse("Unknown Moderator")
         );
+    }
+
+    private String resolveAuthorName(UUID authorId) {
+        if (authorId == null) return "Unknown Author";
+        long now = System.currentTimeMillis();
+        CachedAuthorName cached = authorNameCache.get(authorId);
+        if (cached != null && now < cached.expireAt()) {
+            return cached.name();
+        }
+
+        String resolvedName = authorRepository.findByUserIdAndDeletedFalse(authorId)
+                .or(() -> authorRepository.findById(authorId)
+                        .filter(author -> !Boolean.TRUE.equals(author.getDeleted())))
+                .map(com.sep.comiverse.entity.AuthorEntity::getDisplayName)
+                .filter(name -> name != null && !name.isBlank())
+                .orElseGet(() -> userRepository.findById(authorId)
+                        .map(user -> user.getFullName() != null && !user.getFullName().isBlank()
+                                ? user.getFullName()
+                                : user.getUsername())
+                        .filter(name -> name != null && !name.isBlank())
+                        .orElse("Unknown Author"));
+
+        authorNameCache.put(authorId, new CachedAuthorName(resolvedName, now + 300_000L));
+        return resolvedName;
     }
 
     @Autowired
@@ -70,36 +97,12 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
             }
         }
 
-        // ComicEntity.authorId is the authenticated Author user's UUID in the
-        // current Author flow. Legacy rows may contain AuthorEntity.id, so support
-        // both forms. Do NOT cache this name in-process: AuthorEntity.displayName is
-        // editable profile data and Comic Detail must reflect the latest value.
-        if (model.getAuthorId() != null) {
-            UUID authorId = model.getAuthorId();
-            String resolvedName = authorRepository.findByUserIdAndDeletedFalse(authorId)
-                    .or(() -> authorRepository.findById(authorId)
-                            .filter(author -> !Boolean.TRUE.equals(author.getDeleted())))
-                    .map(author -> author.getDisplayName())
-                    .filter(name -> name != null && !name.isBlank())
-                    // Compatibility only for malformed/legacy rows that have no
-                    // AuthorEntity. Normal comics must resolve Author.displayName.
-                    .orElseGet(() -> userRepository.findById(authorId)
-                            .map(user -> user.getFullName() != null && !user.getFullName().isBlank()
-                                    ? user.getFullName()
-                                    : user.getUsername())
-                            .filter(name -> name != null && !name.isBlank())
-                            .orElse("Unknown Author"));
-
-            dto.setAuthorName(resolvedName);
-        } else {
-            dto.setAuthorName("Unknown Author");
-        }
-        
+        dto.setAuthorName(resolveAuthorName(model.getAuthorId()));
         dto.setApprovedBy(resolveModeratorName(model.getApprovedById()));
 
         if (model.getGenres() != null) {
             Set<GenreDTO> genreDtos = model.getGenres().stream()
-                    .map(genreEntity -> modelMapper.map(genreEntity, GenreDTO.class))
+                    .map(genreEntity -> new GenreDTO(genreEntity.getId(), genreEntity.getName(), genreEntity.getSlug()))
                     .collect(Collectors.toSet());
             dto.setGenres(genreDtos);
         } else {

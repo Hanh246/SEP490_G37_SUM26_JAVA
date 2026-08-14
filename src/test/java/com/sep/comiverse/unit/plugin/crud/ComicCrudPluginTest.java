@@ -80,15 +80,13 @@ public class ComicCrudPluginTest {
 
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(cacheKey)).thenReturn(cachedDto);
-        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
-        when(hashOperations.get(anyString(), anyString())).thenReturn(null);
 
         ComicDTO result = comicCrudPlugin.getComicDetail(comicId);
 
         assertNotNull(result);
         assertEquals("Cached Comic", result.getTitle());
         assertEquals(100L, result.getViewCount());
-        verify(comicRepository, never()).findById(any());
+        verify(comicRepository, never()).findByIdWithGenres(any());
     }
 
 
@@ -120,15 +118,13 @@ public class ComicCrudPluginTest {
 
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(cacheKey)).thenReturn(staleCachedDto);
-        when(comicRepository.findById(comicId)).thenReturn(Optional.of(comic));
+        when(comicRepository.findByIdWithGenres(comicId)).thenReturn(Optional.of(comic));
         when(mapperPlugin.toDto(comic)).thenReturn(refreshedDto);
-        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
-        when(hashOperations.get(anyString(), anyString())).thenReturn(null);
 
         ComicDTO result = comicCrudPlugin.getComicDetail(comicId);
 
         assertEquals("Public Pen Name", result.getAuthorName());
-        verify(comicRepository).findById(comicId);
+        verify(comicRepository).findByIdWithGenres(comicId);
         verify(valueOperations).set(eq(cacheKey), eq(refreshedDto), any(Duration.class));
     }
 
@@ -152,10 +148,8 @@ public class ComicCrudPluginTest {
 
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(cacheKey)).thenReturn(null);
-        when(comicRepository.findById(comicId)).thenReturn(Optional.of(comic));
+        when(comicRepository.findByIdWithGenres(comicId)).thenReturn(Optional.of(comic));
         when(mapperPlugin.toDto(comic)).thenReturn(loadedDto);
-        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
-        when(hashOperations.get(anyString(), anyString())).thenReturn(null);
 
         ComicDTO result = comicCrudPlugin.getComicDetail(comicId);
 

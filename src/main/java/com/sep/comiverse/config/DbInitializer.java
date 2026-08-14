@@ -1017,36 +1017,42 @@ public class DbInitializer implements CommandLineRunner {
     private void initVectorDatabaseIndexes() {
         try {
             jdbcTemplate.execute("""
-                    DO $$
-                    BEGIN
-                        -- 1. Create HNSW index on comics.summary_vector for cosine distance (<=>)
-                        IF to_regclass('public.comics') IS NOT NULL THEN
-                            IF NOT EXISTS (
-                                SELECT 1 FROM pg_indexes
-                                WHERE tablename = 'comics' AND indexname = 'idx_comics_summary_vector_hnsw'
-                            ) THEN
-                                CREATE INDEX idx_comics_summary_vector_hnsw
-                                ON public.comics USING hnsw (summary_vector vector_cosine_ops);
-                            END IF;
+                DO $$
+                BEGIN
+                    -- 1. Partial HNSW Index cho comics (chỉ index các truyện đã publish và chưa xóa)
+                    IF to_regclass('public.comics') IS NOT NULL THEN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_indexes
+                            WHERE tablename = 'comics' AND indexname = 'idx_comics_summary_vector_hnsw'
+                        ) THEN
+                            CREATE INDEX idx_comics_summary_vector_hnsw
+                            ON public.comics USING hnsw (summary_vector vector_cosine_ops)
+                            WITH (m = 16, ef_construction = 64)
+                            WHERE deleted = false 
+                              AND moderation_status = 'PUBLISHED' 
+                              AND summary_vector IS NOT NULL;
                         END IF;
+                    END IF;
 
-                        -- 2. Create HNSW index on users.user_vector for cosine distance (<=>)
-                        IF to_regclass('public.users') IS NOT NULL THEN
-                            IF NOT EXISTS (
-                                SELECT 1 FROM pg_indexes
-                                WHERE tablename = 'users' AND indexname = 'idx_users_user_vector_hnsw'
-                            ) THEN
-                                CREATE INDEX idx_users_user_vector_hnsw
-                                ON public.users USING hnsw (user_vector vector_cosine_ops);
-                            END IF;
+                    -- 2. Đảm bảo có index B-Tree cho các query thông thường
+                    IF to_regclass('public.comics') IS NOT NULL THEN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_indexes
+                            WHERE tablename = 'comics' AND indexname = 'idx_comics_view_count_desc'
+                        ) THEN
+                            CREATE INDEX idx_comics_view_count_desc
+                            ON public.comics (view_count DESC, id DESC)
+                            WHERE deleted = false AND moderation_status = 'PUBLISHED';
                         END IF;
-                    END $$;
-                    """);
-            System.out.println("✅ Pgvector HNSW indexes on comics and users verified in PostgreSQL.");
+                    END IF;
+                END $$;
+                """);
+
+            // Cần đảm bảo pgvector extension đã được kích hoạt
             jdbcTemplate.execute("ANALYZE comics");
-            jdbcTemplate.execute("ANALYZE users");
+            System.out.println("✅ Vector and filtered indexes verified successfully.");
         } catch (Exception e) {
-            System.out.println("⚠️ Could not create vector indexes on comics/users table: " + e.getMessage());
+            System.out.println("⚠️ Could not create vector indexes: " + e.getMessage());
         }
     }
 }
