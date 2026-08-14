@@ -212,7 +212,11 @@ public class ComicController {
             if (before != null) {
                 try {
                     dto.setIsModEdited(true);
-                    dto.setPreviousStateSnapshot(objectMapper.writeValueAsString(before));
+                    if (Boolean.TRUE.equals(before.getIsModEdited()) && before.getPreviousStateSnapshot() != null) {
+                        dto.setPreviousStateSnapshot(before.getPreviousStateSnapshot());
+                    } else {
+                        dto.setPreviousStateSnapshot(objectMapper.writeValueAsString(before));
+                    }
                 } catch (Exception e) {
                     // Ignore mapping error
                 }
