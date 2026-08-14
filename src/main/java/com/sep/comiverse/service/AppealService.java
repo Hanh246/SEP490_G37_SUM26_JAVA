@@ -48,6 +48,7 @@ public class AppealService {
     private final ModelMapper modelMapper;
     private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
+    private final org.springframework.data.redis.core.RedisTemplate<String, Object> redisTemplate;
 
     @Transactional
     public AppealTicketResponseDTO createAppeal(UUID authorId, AppealTicketRequestDTO requestDTO) {
@@ -109,6 +110,8 @@ public class AppealService {
         return mapToResponseDTO(savedEntity);
     }
 
+
+
     public Page<AppealTicketResponseDTO> getAppealsByAuthor(UUID authorId, Pageable pageable) {
         return appealTicketRepository.findAllByAuthorId(authorId, pageable)
                 .map(this::mapToResponseDTO);
@@ -155,6 +158,8 @@ public class AppealService {
         return mapToResponseDTO(entity);
     }
 
+
+
     @Transactional
     public AppealTicketResponseDTO resolveAppeal(UUID ticketId, UUID moderatorId, AppealResolveRequestDTO requestDTO) {
         AppealTicketEntity entity = appealTicketRepository.findById(ticketId)
@@ -185,19 +190,19 @@ public class AppealService {
                             JsonNode root = objectMapper.readTree(entity.getPreviousStateSnapshot());
                             
                             // Revert editable fields
-                            if (root.hasNonNull("title")) comic.setTitle(root.get("title").asText());
-                            if (root.hasNonNull("summary")) comic.setSummary(root.get("summary").asText());
-                            if (root.hasNonNull("cover")) comic.setCover(root.get("cover").asText());
-                            if (root.hasNonNull("language")) comic.setLanguage(root.get("language").asText());
-                            if (root.hasNonNull("minimumAge")) comic.setMinimumAge(root.get("minimumAge").asInt());
+                            if (root.has("title")) comic.setTitle(root.get("title").isNull() ? null : root.get("title").asText());
+                            if (root.has("summary")) comic.setSummary(root.get("summary").isNull() ? null : root.get("summary").asText());
+                            if (root.has("cover")) comic.setCover(root.get("cover").isNull() ? null : root.get("cover").asText());
+                            if (root.has("language")) comic.setLanguage(root.get("language").isNull() ? "Unknown" : root.get("language").asText());
+                            if (root.has("minimumAge")) comic.setMinimumAge(root.get("minimumAge").isNull() ? null : root.get("minimumAge").asInt());
                             
-                            if (root.hasNonNull("publicationStatus")) {
+                            if (root.has("publicationStatus")) {
                                 try {
-                                    comic.setPublicationStatus(ComicPublicationStatus.valueOf(root.get("publicationStatus").asText().toUpperCase()));
+                                    comic.setPublicationStatus(root.get("publicationStatus").isNull() ? null : ComicPublicationStatus.valueOf(root.get("publicationStatus").asText().toUpperCase()));
                                 } catch (Exception ignored) {}
-                            } else if (root.hasNonNull("publication_status")) {
+                            } else if (root.has("publication_status")) {
                                 try {
-                                    comic.setPublicationStatus(ComicPublicationStatus.valueOf(root.get("publication_status").asText().toUpperCase()));
+                                    comic.setPublicationStatus(root.get("publication_status").isNull() ? null : ComicPublicationStatus.valueOf(root.get("publication_status").asText().toUpperCase()));
                                 } catch (Exception ignored) {}
                             }
 
@@ -223,7 +228,9 @@ public class AppealService {
                                         } catch (Exception ignored) {}
                                     }
                                 }
-                                if (!targetGenreIds.isEmpty()) {
+                                if (targetGenreIds.isEmpty()) {
+                                    comic.setGenres(new HashSet<>());
+                                } else {
                                     List<GenreEntity> genreEntities = genreRepository.findAllById(targetGenreIds);
                                     comic.setGenres(new HashSet<>(genreEntities));
                                 }
@@ -241,6 +248,11 @@ public class AppealService {
                 }
                 
                 comicRepository.save(comic);
+                try {
+                    redisTemplate.delete("comic:detail:v2:" + comic.getId());
+                } catch (Exception e) {
+                    log.warn("Failed to evict comic cache after appeal resolution", e);
+                }
             });
         } else if (entity.getTargetType() == AppealTargetType.CHAPTER_SUSPEND && requestDTO.getStatus() == AppealStatus.APPROVED) {
             if (chapterRepository != null) {

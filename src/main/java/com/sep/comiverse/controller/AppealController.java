@@ -95,7 +95,6 @@ public class AppealController {
                         .build()
         );
     }
-
     @PutMapping("/{id}/resolve")
     @PreAuthorize("hasAnyAuthority('ADMIN', 'MODERATOR')")
     @Operation(summary = "Resolve a pending appeal ticket")
