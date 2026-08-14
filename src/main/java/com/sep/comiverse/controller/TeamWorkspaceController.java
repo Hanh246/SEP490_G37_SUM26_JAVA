@@ -657,9 +657,9 @@ public class TeamWorkspaceController {
     @GetMapping("/{teamId}/requests")
     public ResponseEntity<List<TeamJoinRequestEntity>> getRequests(@PathVariable UUID teamId) {
         List<TeamJoinRequestEntity> requests = joinRequestRepository.findByProjectTeamId(teamId);
-        // Only return PENDING requests to the leader's review queue
+        // Only return active PENDING requests to the leader's review queue (strictly exclude CANCELLED, REJECTED, APPROVED)
         List<TeamJoinRequestEntity> pendingRequests = requests.stream()
-                .filter(r -> r.getStatus() == null || "PENDING".equalsIgnoreCase(r.getStatus()))
+                .filter(r -> r.getStatus() != null && "PENDING".equalsIgnoreCase(r.getStatus()))
                 .collect(Collectors.toList());
         for (TeamJoinRequestEntity request : pendingRequests) {
             if (request.getRequesterId() != null) {
@@ -673,8 +673,17 @@ public class TeamWorkspaceController {
     }
 
     @GetMapping("/requests/by-name")
-    public ResponseEntity<List<TeamJoinRequestEntity>> getRequestsByName(@RequestParam String name) {
-        return ResponseEntity.ok(joinRequestRepository.findByName(name));
+    public ResponseEntity<List<TeamJoinRequestEntity>> getRequestsByName(
+            @RequestParam String name,
+            @RequestParam(required = false, defaultValue = "PENDING") String status
+    ) {
+        List<TeamJoinRequestEntity> requests = joinRequestRepository.findByName(name);
+        if (status != null && !status.isEmpty() && !"ALL".equalsIgnoreCase(status)) {
+            requests = requests.stream()
+                    .filter(r -> r.getStatus() != null && status.equalsIgnoreCase(r.getStatus()))
+                    .collect(Collectors.toList());
+        }
+        return ResponseEntity.ok(requests);
     }
 
     @PostMapping("/{teamId}/requests")
