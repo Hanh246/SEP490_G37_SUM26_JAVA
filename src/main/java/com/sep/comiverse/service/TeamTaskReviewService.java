@@ -45,7 +45,6 @@ public class TeamTaskReviewService {
     private final IChapterTranslationRepository chapterTranslationRepository;
     private final IReviewCommentRepository reviewCommentRepository;
     private final ChapterCrudPlugin chapterCrudPlugin;
-    private final TranslatorPaymentService translatorPaymentService;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -80,9 +79,7 @@ public class TeamTaskReviewService {
         pageTranslationRepository.saveAll(pages);
 
         publishChapterFromTask(task, pages, reviewerId);
-        TeamTaskEntity saved = taskRepository.save(task);
-        translatorPaymentService.settleApprovedTask(saved);
-        return saved;
+        return taskRepository.save(task);
     }
 
     private void publishChapterFromTask(TeamTaskEntity task, List<PageTranslationEntity> pages, UUID modId) {
