@@ -29,7 +29,7 @@ public class AppealController {
     private final AppealService appealService;
 
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('USER', 'AUTHOR')")
+    @PreAuthorize("hasAnyAuthority('AUTHOR')")
     @Operation(summary = "Submit a new appeal ticket (Author only)")
     public ResponseEntity<BaseResponse<AppealTicketResponseDTO>> createAppeal(
             @Valid @RequestBody AppealTicketRequestDTO requestDTO,
@@ -46,7 +46,7 @@ public class AppealController {
     }
 
     @GetMapping("/my-appeals")
-    @PreAuthorize("hasAnyAuthority('USER', 'AUTHOR')")
+    @PreAuthorize("hasAnyAuthority('AUTHOR')")
     @Operation(summary = "Get current user's appeal history")
     public ResponseEntity<BaseResponse<Page<AppealTicketResponseDTO>>> getMyAppeals(
             @RequestParam(defaultValue = "0") int page,
@@ -82,7 +82,7 @@ public class AppealController {
     }
 
     @GetMapping("/target/{targetId}")
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'MODERATOR', 'AUTHOR')")
     @Operation(summary = "Get pending appeal by target ID")
     public ResponseEntity<BaseResponse<AppealTicketResponseDTO>> getPendingAppealByTarget(
             @PathVariable UUID targetId

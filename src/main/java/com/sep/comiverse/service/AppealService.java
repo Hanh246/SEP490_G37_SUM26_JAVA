@@ -35,6 +35,7 @@ public class AppealService {
     private final IAppealTicketRepository appealTicketRepository;
     private final IUserRepository userRepository;
     private final IComicRepository comicRepository;
+    private final com.sep.comiverse.repository.IChapterRepository chapterRepository;
     private final ModelMapper modelMapper;
     private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
@@ -114,7 +115,10 @@ public class AppealService {
         AppealTicketEntity entity = appealTicketRepository.findByTargetIdAndStatusIn(
                 targetId, 
                 Arrays.asList(AppealStatus.PENDING)
-        ).orElseThrow(() -> new EntityNotFoundException("No pending appeal found for this item"));
+        ).orElse(null);
+        if (entity == null) {
+            return null;
+        }
         return mapToResponseDTO(entity);
     }
 
@@ -138,6 +142,11 @@ public class AppealService {
                 comic.setAppealReason(null);
                 
                 if (requestDTO.getStatus() == AppealStatus.APPROVED) {
+                    if (comic.getModerationStatus() == ComicModerationStatus.REJECTED || comic.getModerationStatus() == ComicModerationStatus.NEEDS_CHANGES) {
+                        comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+                    }
+                    comic.setRejectionReason(null);
+
                     if (entity.getPreviousStateSnapshot() != null && !entity.getPreviousStateSnapshot().isEmpty()) {
                         try {
                             ComicEntity snapshot = objectMapper.readValue(entity.getPreviousStateSnapshot(), ComicEntity.class);
@@ -161,8 +170,15 @@ public class AppealService {
                 comicRepository.save(comic);
             });
         } else if (entity.getTargetType() == AppealTargetType.CHAPTER_SUSPEND && requestDTO.getStatus() == AppealStatus.APPROVED) {
-            // TODO: Restore chapter from SUSPENDED
-            // chapterRepository.findById(entity.getTargetId()).ifPresent(...)
+            if (chapterRepository != null) {
+                chapterRepository.findById(entity.getTargetId()).ifPresent(chap -> {
+                    chap.setModerationStatus(com.sep.comiverse.entity.enums.ChapterStatus.PUBLISHED);
+                    chap.setApprovedById(moderatorId);
+                    chap.setApprovedAt(java.time.Instant.now());
+                    chap.setRejectionReason(null);
+                    chapterRepository.save(chap);
+                });
+            }
         }
         
         AppealTicketEntity savedEntity = appealTicketRepository.save(entity);
@@ -186,6 +202,17 @@ public class AppealService {
         if (entity.getResolvedByModId() != null) {
             userRepository.findById(entity.getResolvedByModId())
                     .ifPresent(mod -> dto.setResolvedByModName(mod.getFullName()));
+        }
+        
+        if (entity.getTargetId() != null) {
+            comicRepository.findById(entity.getTargetId())
+                    .ifPresent(comic -> dto.setTargetName(comic.getTitle()));
+            if (dto.getTargetName() == null && chapterRepository != null) {
+                chapterRepository.findById(entity.getTargetId())
+                        .ifPresent(chap -> dto.setTargetName(chap.getTitle() != null && !chap.getTitle().isBlank() 
+                                ? chap.getTitle() 
+                                : "Chapter " + chap.getChapterNumber()));
+            }
         }
         
         return dto;
