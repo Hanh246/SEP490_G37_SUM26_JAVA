@@ -86,20 +86,22 @@ public class ChapterCrudPlugin
                         HttpStatus.NOT_FOUND
                 ));
 
+        boolean isStaffOrPrivileged = false;
+        if (userId != null) {
+            isStaffOrPrivileged = (chapter.getComic() != null && userId.equals(chapter.getComic().getAuthorId()))
+                    || userRepository.findByIdWithRole(userId)
+                    .map(user -> {
+                        String role = user.getRole() == null || user.getRole().getRoleName() == null
+                                ? "READER"
+                                : user.getRole().getRoleName().trim().toUpperCase(Locale.ROOT);
+                        return PREMIUM_BYPASS_ROLES.contains(role);
+                    })
+                    .orElse(false);
+        }
+
         // If not published, restrict access to privileged roles
         if (chapter.getModerationStatus() != ChapterStatus.PUBLISHED) {
-            boolean canViewUnpublished = false;
-            if (userId != null) {
-                canViewUnpublished = userRepository.findByIdWithRole(userId)
-                        .map(user -> {
-                            String role = user.getRole() == null || user.getRole().getRoleName() == null
-                                    ? "READER"
-                                    : user.getRole().getRoleName().trim().toUpperCase(Locale.ROOT);
-                            return PREMIUM_BYPASS_ROLES.contains(role);
-                        })
-                        .orElse(false);
-            }
-            if (!canViewUnpublished) {
+            if (!isStaffOrPrivileged) {
                 throw new CustomException(
                         404,
                         "Chapter not found or not published",
@@ -167,7 +169,7 @@ public class ChapterCrudPlugin
 
         responseDto.setImages(hasContentAccess ? images : Collections.emptyList());
 
-        if (hasContentAccess) {
+        if (hasContentAccess && chapter.getModerationStatus() == ChapterStatus.PUBLISHED && !isStaffOrPrivileged) {
             try {
                 trackAndIncrementView(responseDto.getComicId(), chapterId, userId, clientIp);
             } catch (Exception ignored) {

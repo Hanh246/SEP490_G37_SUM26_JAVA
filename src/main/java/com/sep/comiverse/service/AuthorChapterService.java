@@ -674,6 +674,7 @@ public class AuthorChapterService {
                 .status(resolveChapterStatus(chapter))
                 .rejectionReason(chapter.getRejectionReason())
                 .pageCount(visiblePageCount)
+                .viewCount(chapter.getViewCount() == null ? 0L : chapter.getViewCount())
                 .createdAt(toDate(chapter.getCreatedAt()))
                 .updatedAt(toDate(chapter.getUpdatedAt()))
                 .pages(pageResponses)
