@@ -219,6 +219,8 @@ public class ChapterCrudPluginTest {
 
         when(chapterRepository.findChapterMetadataByComicId(comicId, ChapterStatus.PUBLISHED))
                 .thenReturn(List.of(liteDto));
+        when(chapterTranslationRepository.findLanguageCodesByChapterForComic(comicId))
+                .thenReturn(List.<Object[]>of(new Object[]{chapterId, "Vietnamese"}));
 
         // Redis mocks
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
@@ -234,5 +236,6 @@ public class ChapterCrudPluginTest {
         assertEquals("Ch 1", result.get(0).getTitle());
         assertEquals("1", result.get(0).getChapterNumber());
         assertFalse(result.get(0).getIsPremium());
+        assertEquals(List.of("vi"), result.get(0).getTranslatedLanguages());
     }
 }

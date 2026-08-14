@@ -175,6 +175,70 @@ class AuthorChapterServiceTest {
     }
 
     @Test
+    void previewChapter_rejectedChapterKeepsPagesAndReturnsFeedback() {
+        UUID comicId = UUID.randomUUID();
+        UUID chapterId = UUID.randomUUID();
+        UUID authorId = UUID.randomUUID();
+        ComicEntity comic = comic(comicId, authorId);
+        ChapterEntity chapter = ChapterEntity.builder()
+                .comic(comic)
+                .chapterNumber("2")
+                .title("Rejected chapter")
+                .moderationStatus(ChapterStatus.REJECTED)
+                .rejectionReason("Fix page 1 lettering")
+                .images(List.of("https://cdn.test/ch2-001.png", "https://cdn.test/ch2-002.png"))
+                .build();
+        chapter.setId(chapterId);
+
+        when(chapterRepository.findByIdAndComic_IdAndComic_AuthorIdAndDeletedFalse(chapterId, comicId, authorId))
+                .thenReturn(Optional.of(chapter));
+
+        var response = service.previewChapter(comicId, chapterId, authorId);
+
+        assertEquals(ChapterStatus.REJECTED, response.getStatus());
+        assertEquals("Fix page 1 lettering", response.getRejectionReason());
+        assertEquals(2, response.getPageCount());
+        assertEquals("https://cdn.test/ch2-001.png", response.getPages().get(0).getImageUrl());
+    }
+
+    @Test
+    void previewChapter_fallsBackToRejectedSubmissionEvidenceWhenLiveImageArrayWasLost() {
+        UUID comicId = UUID.randomUUID();
+        UUID chapterId = UUID.randomUUID();
+        UUID authorId = UUID.randomUUID();
+        ComicEntity comic = comic(comicId, authorId);
+        ChapterEntity chapter = ChapterEntity.builder()
+                .comic(comic)
+                .chapterNumber("9")
+                .moderationStatus(ChapterStatus.REJECTED)
+                .rejectionReason("Restore moderation evidence")
+                .images(List.of())
+                .pageCount(2)
+                .build();
+        chapter.setId(chapterId);
+
+        SubmissionEntity evidence = SubmissionEntity.builder()
+                .chapterId(chapterId)
+                .queueType("author")
+                .status("rejected")
+                .chapterImages(List.of("https://cdn.test/9-001.png", "https://cdn.test/9-002.png"))
+                .pageCount(2)
+                .build();
+
+        when(chapterRepository.findByIdAndComic_IdAndComic_AuthorIdAndDeletedFalse(chapterId, comicId, authorId))
+                .thenReturn(Optional.of(chapter));
+        when(submissionRepository.findTopByChapterIdAndQueueTypeIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(chapterId, "author"))
+                .thenReturn(Optional.of(evidence));
+
+        var response = service.previewChapter(comicId, chapterId, authorId);
+
+        assertEquals(2, response.getPageCount());
+        assertEquals(2, response.getPages().size());
+        assertEquals("https://cdn.test/9-001.png", response.getPages().get(0).getImageUrl());
+        assertEquals("Restore moderation evidence", response.getRejectionReason());
+    }
+
+    @Test
     void previewChapter_rejectsInvalidIdsAndMissingOwnership() {
         assertEquals(400, assertThrows(CustomException.class,
                 () -> service.previewChapter(null, UUID.randomUUID(), UUID.randomUUID())).getCode());
@@ -231,7 +295,10 @@ class AuthorChapterServiceTest {
 
         assertEquals(ChapterStatus.SUBMITTED_FOR_REVIEW, chapter.getModerationStatus());
         assertEquals(ChapterStatus.SUBMITTED_FOR_REVIEW, response.getStatus());
-        verify(submissionRepository).save(argThat(s -> "pending".equalsIgnoreCase(s.getStatus())));
+        verify(submissionRepository).save(argThat(s ->
+                "pending".equalsIgnoreCase(s.getStatus())
+                        && s.getPageCount() == 2
+                        && s.getChapterImages().equals(List.of("a", "b"))));
         verify(notificationService).notifyModeratorsWithLanguage(
                 eq(comic.getLanguage()), contains("review"), contains("Chapter 2"), eq("UPDATE"), any());
     }

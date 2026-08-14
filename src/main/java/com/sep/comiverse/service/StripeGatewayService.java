@@ -548,4 +548,29 @@ public class StripeGatewayService {
         while (trimmed.endsWith("/")) trimmed = trimmed.substring(0, trimmed.length() - 1);
         return trimmed;
     }
+    public JsonNode requestTransfersCapability(String accountId) {
+        requireSecretKey();
+
+        if (accountId == null
+                || !accountId.matches("^acct_[A-Za-z0-9]+$")) {
+            throw new CustomException(
+                    400,
+                    "Invalid Stripe connected account ID",
+                    HttpStatus.BAD_REQUEST
+            );
+        }
+
+        MultiValueMap<String, String> form =
+                new LinkedMultiValueMap<>();
+
+        form.add("requested", "true");
+
+        return postForm(
+                "/v1/accounts/"
+                        + accountId
+                        + "/capabilities/transfers",
+                form,
+                "request-transfers-" + accountId
+        );
+    }
 }

@@ -10,6 +10,7 @@ import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.plugin.crud.ChapterCrudPlugin;
 import com.sep.comiverse.plugin.crud.ComicCrudPlugin;
 import com.sep.comiverse.repository.*;
+import com.sep.comiverse.util.LanguageCodes;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
 import lombok.RequiredArgsConstructor;
@@ -38,9 +39,13 @@ public class ReportService {
     private final IChapterRepository chapterRepository;
     private final IChapterTranslationRepository chapterTranslationRepository;
     private final IProjectTeamRepository projectTeamRepository;
+    private final ITeamMessageRepository teamMessageRepository;
+    private final ITeamTaskRepository teamTaskRepository;
+    private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
     private final ComicCrudPlugin comicCrudPlugin;
     private final ChapterCrudPlugin chapterCrudPlugin;
     private final NotificationService notificationService;
+
 
 
     @Transactional
@@ -49,23 +54,6 @@ public class ReportService {
             throw new CustomException(401, "User is not authenticated", HttpStatus.UNAUTHORIZED);
         }
 
-        // 1. Validate active report unique constraint (status-based lock)
-        boolean hasActiveReport = reportRepository.existsByReporter_IdAndTargetTypeAndTargetIdAndStatusInAndDeletedFalse(
-                reporterId,
-                request.getTargetType(),
-                request.getTargetId(),
-                List.of(ReportStatus.PENDING, ReportStatus.IN_PROGRESS)
-        );
-
-        if (hasActiveReport) {
-            throw new CustomException(
-                    400,
-                    "You already have a pending report for this item. Please wait for it to be processed.",
-                    HttpStatus.BAD_REQUEST
-            );
-        }
-
-        // 2. Validate category_id exists and is_active == true
         ReportCategoryEntity category = reportCategoryRepository.findByIdAndDeletedFalse(request.getCategoryId())
                 .orElseThrow(() -> new CustomException(400, "Report category does not exist or is inactive", HttpStatus.BAD_REQUEST));
 
@@ -77,8 +65,22 @@ public class ReportService {
             throw new CustomException(400, "Report category '" + category.getName() + "' does not apply to " + request.getTargetType(), HttpStatus.BAD_REQUEST);
         }
 
-        // 3. Validate target_id exists in DB according to target_type
-        String targetTitle = validateAndGetTargetTitle(request.getTargetType(), request.getTargetId());
+        ResolvedTarget resolved = resolveReportTarget(request.getTargetType(), request.getTargetId(), request.getLanguageCode());
+
+        boolean hasActiveReport = reportRepository.existsByReporter_IdAndTargetTypeAndTargetIdAndStatusInAndDeletedFalse(
+                reporterId,
+                request.getTargetType(),
+                resolved.targetId(),
+                List.of(ReportStatus.PENDING, ReportStatus.IN_PROGRESS)
+        );
+
+        if (hasActiveReport) {
+            throw new CustomException(
+                    400,
+                    "You already have a pending report for this item. Please wait for it to be processed.",
+                    HttpStatus.BAD_REQUEST
+            );
+        }
 
         UserEntity reporter = userRepository.findById(reporterId)
                 .orElseThrow(() -> new CustomException(404, "User account not found", HttpStatus.NOT_FOUND));
@@ -87,7 +89,7 @@ public class ReportService {
         ReportEntity report = ReportEntity.builder()
                 .reporter(reporter)
                 .targetType(request.getTargetType())
-                .targetId(request.getTargetId())
+                .targetId(resolved.targetId())
                 .category(category)
                 .descriptionText(request.getDescriptionText() != null ? request.getDescriptionText().trim() : null)
                 .status(ReportStatus.PENDING)
@@ -95,7 +97,7 @@ public class ReportService {
 
         ReportEntity saved = reportRepository.save(report);
         log.info("New report created: id={}, reporterId={}, targetType={}, targetId={}, categoryId={}",
-                saved.getId(), reporterId, request.getTargetType(), request.getTargetId(), category.getId());
+                saved.getId(), reporterId, request.getTargetType(), resolved.targetId(), category.getId());
 
         // Notify Moderators or Project Leaders according to category.assignedRole
         try {
@@ -103,7 +105,7 @@ public class ReportService {
             notificationService.notifyRoles(
                     List.of(assignedRoleName, "ADMIN"),
                     "New Issue Report",
-                    "A new report was submitted for " + targetTitle + " (" + category.getName() + ")",
+                    "A new report was submitted for " + resolved.title() + " (" + category.getName() + ")",
                     "REPORT_SUBMITTED",
                     NotificationPreferenceKey.REVIEW_QUEUE
             );
@@ -111,7 +113,7 @@ public class ReportService {
             log.warn("Failed to send workflow notification for report creation: {}", e.getMessage());
         }
 
-        return toResponse(saved, targetTitle);
+        return toResponse(saved, resolved.title());
     }
 
     @Transactional(readOnly = true)
@@ -120,21 +122,25 @@ public class ReportService {
 
         boolean isProjectLeader = currentUser != null && currentUser.getRole() != null
                 && "PROJECT_LEADER".equalsIgnoreCase(currentUser.getRole().getRoleName());
+        boolean isTranslator = currentUser != null && currentUser.getRole() != null
+                && "TRANSLATOR".equalsIgnoreCase(currentUser.getRole().getRoleName());
         boolean isModerator = currentUser != null && currentUser.getRole() != null
                 && "MODERATOR".equalsIgnoreCase(currentUser.getRole().getRoleName());
+
+        boolean isTeamMemberOrLeader = isProjectLeader || isTranslator;
 
         // Determine effective assigned role filter based on user role
         ReportAssignedRole effectiveAssignedRole = safeFilter.getAssignedRole();
         if (isModerator && effectiveAssignedRole == null) {
             effectiveAssignedRole = ReportAssignedRole.MODERATOR;
-        } else if (isProjectLeader && effectiveAssignedRole == null) {
+        } else if (isTeamMemberOrLeader && effectiveAssignedRole == null) {
             effectiveAssignedRole = ReportAssignedRole.PROJECT_LEADER;
         }
 
         ReportAssignedRole finalAssignedRole = effectiveAssignedRole;
 
-        List<UUID> leaderTranslationIds = (isProjectLeader && currentUser.getId() != null)
-                ? chapterTranslationRepository.findTranslationIdsByLeaderId(currentUser.getId())
+        List<UUID> teamTranslationIds = (isTeamMemberOrLeader && currentUser.getId() != null)
+                ? chapterTranslationRepository.findTranslationIdsByUserId(currentUser.getId())
                 : null;
 
         Specification<ReportEntity> spec = (root, query, cb) -> {
@@ -167,12 +173,12 @@ public class ReportService {
                 predicate = cb.and(predicate, cb.equal(categoryJoin.get("assignedRole"), finalAssignedRole));
             }
 
-            if (isProjectLeader) {
+            if (isTeamMemberOrLeader) {
                 var targetTypePredicate = cb.equal(root.get("targetType"), ReportTargetType.CHAPTER_TRANSLATIONS);
-                if (leaderTranslationIds == null || leaderTranslationIds.isEmpty()) {
+                if (teamTranslationIds == null || teamTranslationIds.isEmpty()) {
                     predicate = cb.and(predicate, cb.disjunction());
                 } else {
-                    predicate = cb.and(predicate, targetTypePredicate, root.get("targetId").in(leaderTranslationIds));
+                    predicate = cb.and(predicate, targetTypePredicate, root.get("targetId").in(teamTranslationIds));
                 }
             }
 
@@ -210,7 +216,8 @@ public class ReportService {
             String roleName = currentUser.getRole().getRoleName();
             boolean isStaff = "ADMIN".equalsIgnoreCase(roleName)
                     || "MODERATOR".equalsIgnoreCase(roleName)
-                    || "PROJECT_LEADER".equalsIgnoreCase(roleName);
+                    || "PROJECT_LEADER".equalsIgnoreCase(roleName)
+                    || "TRANSLATOR".equalsIgnoreCase(roleName);
 
             boolean isReporter = report.getReporter() != null && report.getReporter().getId().equals(currentUser.getId());
 
@@ -218,20 +225,21 @@ public class ReportService {
                 throw new CustomException(403, "You do not have permission to view this report", HttpStatus.FORBIDDEN);
             }
 
-            if ("PROJECT_LEADER".equalsIgnoreCase(roleName) && !isReporter) {
+            if (("PROJECT_LEADER".equalsIgnoreCase(roleName) || "TRANSLATOR".equalsIgnoreCase(roleName)) && !isReporter) {
                 if (report.getTargetType() == ReportTargetType.CHAPTER_TRANSLATIONS) {
-                    boolean isLeader = chapterTranslationRepository.isUserLeaderOfTranslation(report.getTargetId(), currentUser.getId());
-                    if (!isLeader) {
+                    boolean isTeamMember = chapterTranslationRepository.isUserMemberOrLeaderOfTranslation(report.getTargetId(), currentUser.getId());
+                    if (!isTeamMember) {
                         throw new CustomException(403, "You do not have permission to view reports for this translation", HttpStatus.FORBIDDEN);
                     }
                 } else {
-                    throw new CustomException(403, "Project Leaders can only view translation reports", HttpStatus.FORBIDDEN);
+                    throw new CustomException(403, "Project team members can only view translation reports", HttpStatus.FORBIDDEN);
                 }
             }
         }
 
         return toResponse(report);
     }
+
 
     @Transactional
     public ReportResponse processReport(UUID reportId, UserEntity handler, ProcessReportRequest request) {
@@ -273,6 +281,11 @@ public class ReportService {
         String resolutionNote = request.getResolutionNote() != null ? request.getResolutionNote().trim() : null;
 
         if (request.getAction() == ReportAction.ACCEPT) {
+            if (report.getTargetType() == ReportTargetType.CHAPTER_TRANSLATIONS
+                    && (resolutionNote == null || resolutionNote.isEmpty())) {
+                throw new CustomException(400, "Resolution note is required when accepting a translation report", HttpStatus.BAD_REQUEST);
+            }
+
             report.setStatus(ReportStatus.ACCEPTED);
             report.setHandler(handler);
             report.setResolvedAt(Instant.now());
@@ -425,50 +438,146 @@ public class ReportService {
                 chapterTranslationRepository.findById(report.getTargetId())
                         .filter(t -> !Boolean.TRUE.equals(t.getDeleted()))
                         .ifPresent(translation -> {
-                            translation.setStatus(ChapterTranslationStatus.UNPUBLISHED);
-                            chapterTranslationRepository.save(translation);
+                            // Keep the live translation published. A later revision task updates it in place.
 
-                            UUID comicId = (translation.getChapter() != null && translation.getChapter().getComic() != null)
-                                    ? translation.getChapter().getComic().getId()
-                                    : null;
-                            try {
-                                if (chapterCrudPlugin != null && comicId != null) {
-                                    chapterCrudPlugin.evictChaptersCache(comicId);
+                            UUID chapterId = translation.getChapter() != null ? translation.getChapter().getId() : null;
+                            if (chapterId != null) {
+                                List<TeamTaskEntity> relatedTasks = teamTaskRepository.findByChapter_Id(chapterId).stream()
+                                        .filter(task -> translation.getProjectTeamId() == null
+                                                || translation.getProjectTeamId().equals(task.getProjectTeamId()))
+                                        .toList();
+                                for (TeamTaskEntity relatedTask : relatedTasks) {
+                                    relatedTask.setRejectionReason(reason);
                                 }
-                            } catch (Exception ex) {
-                                log.warn("Failed to evict translation chapter cache: {}", ex.getMessage());
+                                if (!relatedTasks.isEmpty()) {
+                                    teamTaskRepository.saveAll(relatedTasks);
+                                }
                             }
 
                             if (translation.getProjectTeamId() != null) {
                                 projectTeamRepository.findById(translation.getProjectTeamId())
                                         .filter(pt -> !Boolean.TRUE.equals(pt.getDeleted()))
                                         .ifPresent(team -> {
-                                            if (team.getLeaderId() != null) {
+                                            Set<UUID> memberUserIds = new HashSet<>();
+                                            if (team.getLeaderId() != null) memberUserIds.add(team.getLeaderId());
+                                            if (team.getMembers() != null) {
+                                                for (ProjectTeamMemberEntity mem : team.getMembers()) {
+                                                    if (mem.getUser() != null && mem.getUser().getId() != null) {
+                                                        memberUserIds.add(mem.getUser().getId());
+                                                    }
+                                                }
+                                            }
+
+                                            String chapterNum = translation.getChapter() != null ? translation.getChapter().getChapterNumber() : "";
+                                            String comicTitle = (translation.getChapter() != null && translation.getChapter().getComic() != null)
+                                                    ? translation.getChapter().getComic().getTitle()
+                                                    : "Comic";
+                                            String reportReason = report.getDescriptionText() != null ? report.getDescriptionText() : "Translation issue reported";
+                                            String notifMsg = "Translation (" + translation.getLanguageCode() + ") for Chapter " + chapterNum + " of \"" + comicTitle + "\" received an accepted reader report: \"" + reportReason + "\". Readers can still read the current translation. Create a revision task to fix it. Resolution note: \"" + reason + "\"";
+
+                                            for (UUID recipientId : memberUserIds) {
                                                 try {
-                                                    String chapterNum = translation.getChapter() != null ? translation.getChapter().getChapterNumber() : "";
-                                                    String comicTitle = (translation.getChapter() != null && translation.getChapter().getComic() != null)
-                                                            ? translation.getChapter().getComic().getTitle()
-                                                            : "Comic";
                                                     notificationService.notifyUser(
-                                                            team.getLeaderId(),
-                                                            "Translation Unpublished",
-                                                            "Translation (" + translation.getLanguageCode() + ") for Chapter " + chapterNum + " of \"" + comicTitle + "\" has been unpublished due to an accepted issue report. Reason: " + reason,
-                                                            "TRANSLATION_UNPUBLISHED",
+                                                            recipientId,
+                                                            "⚠️ Translation Report Accepted",
+                                                            notifMsg,
+                                                            "TRANSLATION_REVISION_REQUESTED",
                                                             NotificationPreferenceKey.REVIEW_QUEUE
                                                     );
                                                 } catch (Exception ex) {
-                                                    log.warn("Failed to notify project team leader for translation unpublish: {}", ex.getMessage());
+                                                    log.warn("Failed to notify user {} for translation revision request: {}", recipientId, ex.getMessage());
                                                 }
                                             }
+
+                                            // Send WebSocket group chat warning message to team
+                                            try {
+                                                TeamMessageEntity warningMsg = TeamMessageEntity.builder()
+                                                        .projectTeamId(team.getId())
+                                                        .sender("SYSTEM")
+                                                        .avatar("🚨")
+                                                        .text("🚨 [TRANSLATION REPORT] Chapter " + chapterNum + " needs a revision task. The current translation stays available to readers until the new task is published. Reader report reason: \"" + reportReason + "\". Resolution plan: \"" + reason + "\"")
+                                                        .time(java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")))
+                                                        .build();
+                                                TeamMessageEntity savedMsg = teamMessageRepository.save(warningMsg);
+                                                messagingTemplate.convertAndSend("/topic/team-workspace/" + team.getId(), savedMsg);
+                                            } catch (Exception ex) {
+                                                log.warn("Failed to post system warning message to group chat: {}", ex.getMessage());
+                                            }
+
                                         });
                             }
-                            log.info("Revoked/Unpublished translation id={} due to accepted report id={}", translation.getId(), report.getId());
+
+                            log.info("Translation report accepted without unpublishing: translationId={}, reportId={}. Team can create a revision task.",
+                                    translation.getId(), report.getId());
                         });
             }
             default -> log.warn("No revocation handler for report target type: {}", report.getTargetType());
         }
     }
 
+
+    private record ResolvedTarget(UUID targetId, String title) {}
+
+    private ResolvedTarget resolveReportTarget(ReportTargetType targetType, UUID targetId, String languageCode) {
+        if (targetType == ReportTargetType.CHAPTER_TRANSLATIONS) {
+            ChapterTranslationEntity translation = resolveTranslationTarget(targetId, languageCode);
+            return new ResolvedTarget(translation.getId(), translationTitle(translation));
+        }
+        return new ResolvedTarget(targetId, validateAndGetTargetTitle(targetType, targetId));
+    }
+
+    private ChapterTranslationEntity resolveTranslationTarget(UUID targetId, String languageCode) {
+        if (targetId == null) {
+            throw new CustomException(400, "Target type and target ID must not be null", HttpStatus.BAD_REQUEST);
+        }
+
+        Optional<ChapterTranslationEntity> byId = chapterTranslationRepository.findById(targetId)
+                .filter(t -> !Boolean.TRUE.equals(t.getDeleted()));
+        if (byId.isPresent()) {
+            return byId.get();
+        }
+
+        List<ChapterTranslationEntity> byChapter = chapterTranslationRepository.findByChapter_Id(targetId).stream()
+                .filter(t -> !Boolean.TRUE.equals(t.getDeleted()))
+                .toList();
+        if (byChapter.isEmpty()) {
+            throw new CustomException(404, "Reported chapter translation not found in the system", HttpStatus.NOT_FOUND);
+        }
+
+        List<ChapterTranslationEntity> candidates = byChapter;
+        if (languageCode != null && !languageCode.isBlank()) {
+            String wanted = LanguageCodes.normalize(languageCode);
+            candidates = byChapter.stream()
+                    .filter(t -> wanted.equals(LanguageCodes.normalize(t.getLanguageCode())))
+                    .toList();
+            if (candidates.isEmpty()) {
+                throw new CustomException(404, "Reported chapter translation not found in the system", HttpStatus.NOT_FOUND);
+            }
+        }
+
+        Optional<ChapterTranslationEntity> published = candidates.stream()
+                .filter(t -> t.getStatus() == null || t.getStatus() == ChapterTranslationStatus.PUBLISHED)
+                .findFirst();
+        if (published.isPresent()) {
+            return published.get();
+        }
+        if (candidates.size() == 1 || (languageCode != null && !languageCode.isBlank())) {
+            return candidates.get(0);
+        }
+        throw new CustomException(400, "Multiple translations exist for this chapter. Report a specific language.", HttpStatus.BAD_REQUEST);
+    }
+
+    private String translationTitle(ChapterTranslationEntity translation) {
+        String comicTitle = "Comic";
+        String chapterNumber = "";
+        if (translation.getChapter() != null) {
+            chapterNumber = translation.getChapter().getChapterNumber();
+            if (translation.getChapter().getComic() != null && translation.getChapter().getComic().getTitle() != null) {
+                comicTitle = translation.getChapter().getComic().getTitle();
+            }
+        }
+        return comicTitle + " - Chapter " + chapterNumber + " (Translation: " + translation.getLanguageCode() + ")";
+    }
 
     private String validateAndGetTargetTitle(ReportTargetType targetType, UUID targetId) {
         if (targetType == null || targetId == null) {
@@ -491,18 +600,8 @@ public class ReportService {
                 return comicTitle + " - Chapter " + chapter.getChapterNumber() + (chapter.getTitle() != null && !chapter.getTitle().isBlank() ? ": " + chapter.getTitle() : "");
             }
             case CHAPTER_TRANSLATIONS -> {
-                ChapterTranslationEntity translation = chapterTranslationRepository.findById(targetId)
-                        .filter(t -> !Boolean.TRUE.equals(t.getDeleted()))
-                        .orElseThrow(() -> new CustomException(404, "Reported chapter translation not found in the system", HttpStatus.NOT_FOUND));
-                String comicTitle = "Comic";
-                String chapterNumber = "";
-                if (translation.getChapter() != null) {
-                    chapterNumber = translation.getChapter().getChapterNumber();
-                    if (translation.getChapter().getComic() != null && translation.getChapter().getComic().getTitle() != null) {
-                        comicTitle = translation.getChapter().getComic().getTitle();
-                    }
-                }
-                return comicTitle + " - Chapter " + chapterNumber + " (Translation: " + translation.getLanguageCode() + ")";
+                ChapterTranslationEntity translation = resolveTranslationTarget(targetId, null);
+                return translationTitle(translation);
             }
             default -> throw new CustomException(400, "Unsupported report target type: " + targetType, HttpStatus.BAD_REQUEST);
         }

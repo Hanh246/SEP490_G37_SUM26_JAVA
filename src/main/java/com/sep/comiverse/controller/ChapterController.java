@@ -190,6 +190,8 @@ public class ChapterController {
             chapter.setModerationStatus(ChapterStatus.PUBLISHED);
             chapter.setApprovedById(modId);
             chapter.setApprovedAt(java.time.Instant.now());
+            chapter.setRejectionReason(null);
+            chapter.setRejectedById(null);
 
             ChapterEntity savedChapter = chapterRepository.save(chapter);
 
@@ -203,7 +205,9 @@ public class ChapterController {
                         submissionRepository.findAllByChapterIdAndDeletedFalse(id);
                 UUID moderatorId = principal != null ? principal.getId() : null;
                 for (com.sep.comiverse.entity.SubmissionEntity sub : pendingSubmissions) {
-                    if (!"approved".equalsIgnoreCase(sub.getStatus())) {
+                    // Preserve moderation history: only the currently pending review
+                    // may become approved. Historical REJECTED/CANCELLED rows stay immutable.
+                    if ("pending".equalsIgnoreCase(sub.getStatus())) {
                         sub.setStatus("approved");
                         if (moderatorId != null) {
                             sub.setModeratorId(moderatorId);

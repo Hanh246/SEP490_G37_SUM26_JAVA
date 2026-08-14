@@ -42,4 +42,9 @@ public class CreateReportRequest {
     @JsonAlias({"descriptionText", "description_text", "description"})
     @Schema(description = "Detailed user description or reason for this report", example = "The pages in chapter 5 are blurred and broken.")
     private String descriptionText;
+
+    @JsonProperty("language_code")
+    @JsonAlias({"languageCode", "language_code", "lang"})
+    @Schema(description = "Optional reading language when reporting a chapter translation by chapter ID", example = "vi")
+    private String languageCode;
 }

@@ -13,7 +13,8 @@ import java.util.UUID;
 
 @Repository
 public interface ITeamTaskRepository extends JpaRepository<TeamTaskEntity, UUID> {
-    List<TeamTaskEntity> findByProjectTeamId(UUID projectTeamId);
+    @Query("SELECT t FROM TeamTaskEntity t LEFT JOIN FETCH t.chapter WHERE t.projectTeamId = :projectTeamId")
+    List<TeamTaskEntity> findByProjectTeamId(@Param("projectTeamId") UUID projectTeamId);
     @Query("SELECT t FROM TeamTaskEntity t LEFT JOIN FETCH t.chapter WHERE t.id = :id")
     Optional<TeamTaskEntity> findByIdWithChapter(@Param("id") UUID id);
 
@@ -30,7 +31,7 @@ public interface ITeamTaskRepository extends JpaRepository<TeamTaskEntity, UUID>
     @Query("DELETE FROM TeamTaskEntity t WHERE t.chapter.id = :chapterId")
     void hardDeleteAllByChapterId(@Param("chapterId") UUID chapterId);
 
-    @Query("SELECT COUNT(t) FROM TeamTaskEntity t WHERE t.assigneeId = :assigneeId AND LOWER(t.status) IN ('todo', 'in_progress', 'pending_review')")
+    @Query("SELECT COUNT(t) FROM TeamTaskEntity t WHERE t.assigneeId = :assigneeId AND LOWER(t.status) IN ('todo', 'in_progress', 'pending_review', 'under_review')")
     long countActiveTasksByAssigneeId(@Param("assigneeId") UUID assigneeId);
 
     List<TeamTaskEntity> findByChapter_Id(UUID chapterId);

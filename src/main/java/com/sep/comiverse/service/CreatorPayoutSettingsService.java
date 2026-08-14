@@ -196,48 +196,13 @@ public class CreatorPayoutSettingsService {
     }
 
     private CreatorPayoutSettingEntity getOrCreateSettings() {
-        CreatorPayoutSettingEntity defaults = defaultSettingsDetached();
-
-        jdbcTemplate.update("""
-                INSERT INTO creator_payout_settings (
-                    id,
-                    config_key,
-                    minimum_payout_vnd,
-                    translator_task_rate_vnd,
-                    translator_monthly_limit_vnd,
-                    author_views_per_unit,
-                    author_view_unit_rate_vnd,
-                    author_follows_per_unit,
-                    author_follow_unit_rate_vnd,
-                    author_monthly_limit_vnd,
-                    currency,
-                    deleted,
-                    create_at,
-                    update_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, false,
-                          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                ON CONFLICT (config_key) DO UPDATE
-                SET deleted = false,
-                    currency = 'USD',
-                    update_at = CURRENT_TIMESTAMP
-                """,
-                UUID.randomUUID(),
-                DEFAULT_KEY,
-                defaults.getMinimumPayoutUsd(),
-                defaults.getTranslatorTaskRateUsd(),
-                defaults.getTranslatorMonthlyLimitUsd(),
-                defaults.getAuthorViewsPerUnit(),
-                defaults.getAuthorViewUnitRateUsd(),
-                defaults.getAuthorFollowsPerUnit(),
-                defaults.getAuthorFollowUnitRateUsd(),
-                defaults.getAuthorMonthlyLimitUsd(),
-                ACCOUNTING_CURRENCY
-        );
-
         return settingRepository.findByConfigKey(DEFAULT_KEY)
-                .orElseThrow(() -> new IllegalStateException(
-                        "Could not create or load creator payout settings"
-                ));
+                .map(existing -> {
+                    existing.setDeleted(false);
+                    existing.setCurrency(ACCOUNTING_CURRENCY);
+                    return settingRepository.save(existing);
+                })
+                .orElseGet(() -> settingRepository.save(defaultSettingsDetached()));
     }
 
     private void ensureDefaultCurrencies() {
@@ -263,39 +228,24 @@ public class CreatorPayoutSettingsService {
                 ? BigDecimal.ONE.setScale(6)
                 : normalizeRate(defaultRate);
 
-        jdbcTemplate.update("""
-                INSERT INTO creator_payout_currencies (
-                    id,
-                    currency_code,
-                    display_name,
-                    symbol,
-                    units_per_usd,
-                    active,
-                    deleted,
-                    create_at,
-                    update_at
-                ) VALUES (?, ?, ?, ?, ?, true, false,
-                          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                ON CONFLICT (currency_code) DO UPDATE
-                SET display_name = EXCLUDED.display_name,
-                    symbol = EXCLUDED.symbol,
-                    units_per_usd = CASE
-                        WHEN EXCLUDED.currency_code = 'USD' THEN 1
-                        ELSE creator_payout_currencies.units_per_usd
-                    END,
-                    active = CASE
-                        WHEN EXCLUDED.currency_code = 'USD' THEN true
-                        ELSE creator_payout_currencies.active
-                    END,
-                    deleted = false,
-                    update_at = CURRENT_TIMESTAMP
-                """,
-                UUID.randomUUID(),
-                currency.getCode(),
-                currency.getDisplayName(),
-                currency.getSymbol(),
-                rate
-        );
+        CreatorPayoutCurrencyEntity entity = currencyRateRepository
+                .findByCurrencyCode(currency.getCode())
+                .orElseGet(() -> CreatorPayoutCurrencyEntity.builder()
+                        .currencyCode(currency.getCode())
+                        .displayName(currency.getDisplayName())
+                        .symbol(currency.getSymbol())
+                        .unitsPerUsd(rate)
+                        .active(true)
+                        .build());
+
+        entity.setDisplayName(currency.getDisplayName());
+        entity.setSymbol(currency.getSymbol());
+        if (currency == CreatorPayoutCurrency.USD) {
+            entity.setUnitsPerUsd(BigDecimal.ONE.setScale(6, RoundingMode.UNNECESSARY));
+            entity.setActive(true);
+        }
+        entity.setDeleted(false);
+        currencyRateRepository.save(entity);
     }
 
     private CreatorPayoutSettingEntity defaultSettingsDetached() {

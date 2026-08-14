@@ -47,8 +47,19 @@ public interface IChapterTranslationRepository extends JpaRepository<ChapterTran
             ") AND (ct.deleted = false OR ct.deleted IS NULL)")
     List<UUID> findTranslationIdsByLeaderId(@Param("leaderId") UUID leaderId);
 
+    @Query("SELECT ct.id FROM ChapterTranslationEntity ct WHERE ct.projectTeamId IN (" +
+            "SELECT pt.id FROM ProjectTeamEntity pt LEFT JOIN pt.members m WHERE (pt.leaderId = :userId OR m.user.id = :userId) AND (pt.deleted = false OR pt.deleted IS NULL)" +
+            ") AND (ct.deleted = false OR ct.deleted IS NULL)")
+    List<UUID> findTranslationIdsByUserId(@Param("userId") UUID userId);
+
     @Query("SELECT CASE WHEN COUNT(ct) > 0 THEN true ELSE false END FROM ChapterTranslationEntity ct, ProjectTeamEntity pt " +
             "WHERE ct.id = :translationId AND ct.projectTeamId = pt.id AND pt.leaderId = :userId " +
             "AND (ct.deleted = false OR ct.deleted IS NULL) AND (pt.deleted = false OR pt.deleted IS NULL)")
     boolean isUserLeaderOfTranslation(@Param("translationId") UUID translationId, @Param("userId") UUID userId);
-}
+
+    @Query("SELECT CASE WHEN COUNT(ct) > 0 THEN true ELSE false END FROM ChapterTranslationEntity ct JOIN ProjectTeamEntity pt ON ct.projectTeamId = pt.id LEFT JOIN pt.members m " +
+            "WHERE ct.id = :translationId AND (pt.leaderId = :userId OR m.user.id = :userId) " +
+            "AND (ct.deleted = false OR ct.deleted IS NULL) AND (pt.deleted = false OR pt.deleted IS NULL)")
+    boolean isUserMemberOrLeaderOfTranslation(@Param("translationId") UUID translationId, @Param("userId") UUID userId);
+}
+

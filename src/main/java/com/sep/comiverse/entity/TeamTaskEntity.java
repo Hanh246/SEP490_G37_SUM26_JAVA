@@ -46,6 +46,10 @@ public class TeamTaskEntity {
     @Column(name = "assignee_id")
     private UUID assigneeId;
 
+    @Builder.Default
+    @Column(name = "task_type", length = 50)
+    private String taskType = "REGULAR";
+
     @Column(name = "due_date")
     private String dueDate;
 

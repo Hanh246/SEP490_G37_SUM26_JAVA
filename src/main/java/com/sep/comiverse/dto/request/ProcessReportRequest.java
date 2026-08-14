@@ -23,6 +23,6 @@ public class ProcessReportRequest {
 
     @JsonProperty("resolution_note")
     @JsonAlias({"resolutionNote", "resolution_note", "note"})
-    @Schema(description = "Moderator / Leader resolution note (required when action is REJECT)", example = "Confirmed issue and replaced broken chapter images.")
+    @Schema(description = "Moderator / Leader resolution note (required when rejecting any report, and when accepting a translation report)", example = "Confirmed issue and replaced broken chapter images.")
     private String resolutionNote;
 }

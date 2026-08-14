@@ -3,7 +3,10 @@ package com.sep.comiverse.controller;
 import com.sep.comiverse.dto.ChapterPageDTO;
 import com.sep.comiverse.entity.PageTranslationEntity;
 import com.sep.comiverse.entity.ProjectTeamEntity;
+import com.sep.comiverse.entity.TeamTaskEntity;
+import com.sep.comiverse.entity.enums.ChapterTranslationStatus;
 import com.sep.comiverse.entity.enums.PageStatus;
+import com.sep.comiverse.repository.IChapterTranslationRepository;
 import com.sep.comiverse.repository.IPageTranslationRepository;
 import com.sep.comiverse.repository.IProjectTeamRepository;
 import com.sep.comiverse.security.UserPrincipal;
@@ -25,6 +28,7 @@ import java.util.UUID;
 public class PageController {
     private final IPageTranslationRepository pageTranslationRepository;
     private final IProjectTeamRepository projectTeamRepository;
+    private final IChapterTranslationRepository chapterTranslationRepository;
     private final TranslatorPaymentService translatorPaymentService;
 
     @GetMapping("/translate-workspace/{taskId}")
@@ -45,7 +49,7 @@ public class PageController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("success", false, "message", "You are not assigned to this page"));
         }
-        if (page.getTaskId() != null && isLockedForReview(page.getTaskId().getStatus())) {
+        if (isLockedForReview(page.getTaskId())) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(Map.of("success", false, "message", "Pages cannot be edited while the task is under review or completed"));
         }
@@ -67,7 +71,7 @@ public class PageController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("success", false, "message", "You are not assigned to this page"));
         }
-        if (page.getTaskId() != null && isLockedForReview(page.getTaskId().getStatus())) {
+        if (isLockedForReview(page.getTaskId())) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(Map.of("success", false, "message", "Page status cannot be changed while the task is under review or completed"));
         }
@@ -104,11 +108,28 @@ public class PageController {
         return team != null && principal.getId().equals(team.getLeaderId());
     }
 
-    private boolean isLockedForReview(String status) {
+    private boolean isLockedForReview(TeamTaskEntity task) {
+        if (task == null) return false;
+        String status = task.getStatus();
         if (status == null) return false;
         String normalized = status.trim().toLowerCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
-        return normalized.equals("under_review")
+        boolean lockedStatus = normalized.equals("under_review")
                 || normalized.equals("completed")
                 || normalized.equals("published");
+        if (!lockedStatus) {
+            return false;
+        }
+        return !hasUnpublishedTranslation(task);
+    }
+
+    private boolean hasUnpublishedTranslation(TeamTaskEntity task) {
+        if (task.getChapter() == null || task.getProjectTeamId() == null) {
+            return false;
+        }
+        return chapterTranslationRepository.findByChapter_Id(task.getChapter().getId()).stream()
+                .filter(t -> !Boolean.TRUE.equals(t.getDeleted()))
+                .filter(t -> task.getProjectTeamId().equals(t.getProjectTeamId())
+                        || t.getStatus() == ChapterTranslationStatus.UNPUBLISHED)
+                .anyMatch(t -> t.getStatus() == ChapterTranslationStatus.UNPUBLISHED);
     }
 }

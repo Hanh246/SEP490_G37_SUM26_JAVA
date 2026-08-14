@@ -157,6 +157,12 @@ public class ChapterCrudPlugin
                 .viewCount(cacheDto.getViewCount())
                 .isPremium(premiumRequired)
                 .createdAt(cacheDto.getCreatedAt())
+                .moderationStatus(chapter.getModerationStatus())
+                .rejectionReason(chapter.getRejectionReason())
+                .approvedAt(chapter.getApprovedAt())
+                .approvedBy(resolveModeratorName(chapter.getApprovedById()))
+                .rejectedBy(resolveModeratorName(chapter.getRejectedById()))
+                .pageCount(chapter.getPageCount() != null ? chapter.getPageCount() : images.size())
                 .build();
 
         responseDto.setImages(hasContentAccess ? images : Collections.emptyList());
@@ -268,8 +274,11 @@ public class ChapterCrudPlugin
                     .isPremium(chapterPremiumPolicyService.isPremiumChapter(c.getChapterNumber()))
                     .createdAt(c.getCreatedAt())
                     .moderationStatus(c.getModerationStatus())
+                    .rejectionReason(c.getRejectionReason())
+                    .rejectedById(c.getRejectedById())
                     .approvedById(c.getApprovedById())
                     .approvedAt(c.getApprovedAt())
+                    .pageCount(c.getPageCount() != null ? c.getPageCount() : (c.getImages() == null ? 0 : c.getImages().size()))
                     .build()
             ).sorted((a, b) -> toChapterSortNumber(a.getChapterNumber()).compareTo(toChapterSortNumber(b.getChapterNumber()))).toList();
         }
@@ -291,29 +300,18 @@ public class ChapterCrudPlugin
         if (cachedResults == null) {
             cachedResults = chapterRepository.findChapterMetadataByComicId(comicId, ChapterStatus.PUBLISHED);
 
-            if (cachedResults != null && !cachedResults.isEmpty()) {
-                // Populate translated languages
-                java.util.List<Object[]> langMapping = chapterTranslationRepository.findLanguageCodesByChapterForComic(comicId);
-                java.util.Map<UUID, java.util.List<String>> chapterLangs = new java.util.HashMap<>();
-                for (Object[] row : langMapping) {
-                    UUID chapId = (UUID) row[0];
-                    String langCode = (String) row[1];
-                    chapterLangs.computeIfAbsent(chapId, k -> new java.util.ArrayList<>()).add(langCode);
-                }
-                for (ChapterLiteDTO dto : cachedResults) {
-                    dto.setTranslatedLanguages(chapterLangs.getOrDefault(dto.getId(), new java.util.ArrayList<>()));
-                }
-
-                List<ChapterLiteDTO> listToCache = new java.util.ArrayList<>(cachedResults);
-                try {
-                    redisTemplate.opsForValue().set(cacheKey, listToCache, Duration.ofHours(3));
-                } catch (Exception e) {
-                    // Ignore Redis set errors
-                }
-            } else {
+            if (cachedResults == null || cachedResults.isEmpty()) {
                 return Collections.emptyList();
             }
+
+            List<ChapterLiteDTO> listToCache = new java.util.ArrayList<>(cachedResults);
+            try {
+                redisTemplate.opsForValue().set(cacheKey, listToCache, Duration.ofHours(3));
+            } catch (Exception e) {
+                // Ignore Redis set errors
+            }
         }
+        applyLiveTranslatedLanguages(comicId, cachedResults);
         return cachedResults.stream().map(dto -> {
             ChapterLiteDTO copy = ChapterLiteDTO.builder()
                     .id(dto.getId())
@@ -324,8 +322,11 @@ public class ChapterCrudPlugin
                     .isPremium(chapterPremiumPolicyService.isPremiumChapter(dto.getChapterNumber()))
                     .createdAt(dto.getCreatedAt())
                     .moderationStatus(dto.getModerationStatus())
+                    .rejectionReason(dto.getRejectionReason())
+                    .rejectedById(dto.getRejectedById())
                     .approvedById(dto.getApprovedById())
                     .approvedAt(dto.getApprovedAt())
+                    .pageCount(dto.getPageCount())
                     .translatedLanguages(dto.getTranslatedLanguages())
                     .build();
 
@@ -370,6 +371,31 @@ public class ChapterCrudPlugin
         if (chapter != null && chapter.getComic() != null) {
             evictChaptersCache(chapter.getComic().getId());
             evictChapterDetailCache(id);
+        }
+    }
+
+    private void applyLiveTranslatedLanguages(UUID comicId, List<ChapterLiteDTO> chapters) {
+        if (chapters == null || chapters.isEmpty()) {
+            return;
+        }
+        java.util.List<Object[]> langMapping = chapterTranslationRepository.findLanguageCodesByChapterForComic(comicId);
+        if (langMapping == null) {
+            langMapping = java.util.Collections.emptyList();
+        }
+        java.util.Map<UUID, java.util.List<String>> chapterLangs = new java.util.HashMap<>();
+        for (Object[] row : langMapping) {
+            if (row == null || row.length < 2 || row[0] == null || row[1] == null) {
+                continue;
+            }
+            UUID chapId = (UUID) row[0];
+            String langCode = com.sep.comiverse.util.LanguageCodes.normalize(String.valueOf(row[1]));
+            java.util.List<String> langs = chapterLangs.computeIfAbsent(chapId, k -> new java.util.ArrayList<>());
+            if (!langs.contains(langCode)) {
+                langs.add(langCode);
+            }
+        }
+        for (ChapterLiteDTO dto : chapters) {
+            dto.setTranslatedLanguages(chapterLangs.getOrDefault(dto.getId(), new java.util.ArrayList<>()));
         }
     }
 

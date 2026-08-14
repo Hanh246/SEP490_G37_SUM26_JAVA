@@ -6,8 +6,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.crypto.Cipher;
+import javax.crypto.AEADBadTagException;
+import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.OAEPParameterSpec;
 import javax.crypto.spec.PSource;
+import javax.crypto.spec.SecretKeySpec;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
@@ -17,9 +20,41 @@ import java.util.Base64;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OfflineDownloadCryptoServiceTest {
+
+    @Test
+    void encryptsPagesWithAes256GcmAndRejectsTampering() throws Exception {
+        OfflineDownloadCryptoService service = initializedCrypto();
+        byte[] contentKey = service.generateContentKey();
+        byte[] nonce = service.randomBytes(12);
+        byte[] aad = service.utf8("CVPK1|package|user|chapter|device|revision|1|hash");
+        byte[] plaintext = "private comic page".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        byte[] ciphertext = service.encryptPage(plaintext, contentKey, nonce, aad);
+        Cipher decrypt = Cipher.getInstance("AES/GCM/NoPadding");
+        decrypt.init(
+                Cipher.DECRYPT_MODE,
+                new SecretKeySpec(contentKey, "AES"),
+                new GCMParameterSpec(128, nonce)
+        );
+        decrypt.updateAAD(aad);
+
+        assertEquals(32, contentKey.length);
+        assertArrayEquals(plaintext, decrypt.doFinal(ciphertext));
+
+        ciphertext[0] ^= 1;
+        Cipher tamperedDecrypt = Cipher.getInstance("AES/GCM/NoPadding");
+        tamperedDecrypt.init(
+                Cipher.DECRYPT_MODE,
+                new SecretKeySpec(contentKey, "AES"),
+                new GCMParameterSpec(128, nonce)
+        );
+        tamperedDecrypt.updateAAD(aad);
+        assertThrows(AEADBadTagException.class, () -> tamperedDecrypt.doFinal(ciphertext));
+    }
 
     @Test
     void wrapsContentKeyWithAndroidApi24CompatibleOaepParameters() throws Exception {
