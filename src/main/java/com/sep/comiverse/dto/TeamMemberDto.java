@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -20,4 +21,11 @@ public class TeamMemberDto {
     private Boolean online;
     private Instant lastSeenAt;
     private Instant joinDate;
+    private String cvUrl;
+    private String bio;
+    private Integer experienceYears;
+    private Integer joinedProjectCount;
+    private String phoneNumber;
+    private String facebookUrl;
+    private List<String> specializations;
 }

@@ -348,7 +348,7 @@ public class PageControllerIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.pageId", is(firstPage.getId().toString())))
                 .andExpect(jsonPath("$.pageNumber", is(1)))
                 .andExpect(jsonPath("$.bubbles", is(SAMPLE_BUBBLES)))
-                .andExpect(jsonPath("$.status", is("TODO")));
+                .andExpect(jsonPath("$.status", is("DONE")));
 
         assertThat(pageTranslationRepository.findById(firstPage.getId()).orElseThrow().getBubbles())
                 .isEqualTo(SAMPLE_BUBBLES);
@@ -373,8 +373,9 @@ public class PageControllerIT extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(bubblesBody(SAMPLE_BUBBLES)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.assignedTranslatorId", nullValue()))
-                .andExpect(jsonPath("$.bubbles", is(SAMPLE_BUBBLES)));
+                .andExpect(jsonPath("$.assignedTranslatorId", is(leaderUser.getId().toString())))
+                .andExpect(jsonPath("$.bubbles", is(SAMPLE_BUBBLES)))
+                .andExpect(jsonPath("$.status", is("DONE")));
     }
 
     @Test
@@ -385,7 +386,8 @@ public class PageControllerIT extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(bubblesBody(null)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.bubbles", is("[]")));
+                .andExpect(jsonPath("$.bubbles", is("[]")))
+                .andExpect(jsonPath("$.status", is("TODO")));
 
         assertThat(pageTranslationRepository.findById(firstPage.getId()).orElseThrow().getBubbles())
                 .isEqualTo("[]");

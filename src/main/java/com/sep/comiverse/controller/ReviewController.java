@@ -1,30 +1,21 @@
 package com.sep.comiverse.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sep.comiverse.dto.ChapterPageDTO;
 import com.sep.comiverse.dto.ReviewCommentDTO;
-import com.sep.comiverse.entity.ChapterEntity;
-import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.PageTranslationEntity;
 import com.sep.comiverse.entity.ProjectTeamEntity;
 import com.sep.comiverse.entity.ReviewCommentEntity;
 import com.sep.comiverse.entity.TeamTaskEntity;
 import com.sep.comiverse.entity.UserEntity;
-import com.sep.comiverse.entity.enums.ChapterStatus;
-import com.sep.comiverse.entity.enums.ChapterTranslationStatus;
-import com.sep.comiverse.entity.ChapterTranslationEntity;
-import com.sep.comiverse.repository.IChapterRepository;
-import com.sep.comiverse.repository.IChapterTranslationRepository;
 import com.sep.comiverse.repository.IPageTranslationRepository;
 import com.sep.comiverse.repository.IProjectTeamRepository;
 import com.sep.comiverse.repository.IReviewCommentRepository;
 import com.sep.comiverse.repository.ITeamTaskRepository;
 import com.sep.comiverse.repository.IUserRepository;
-import com.sep.comiverse.plugin.crud.ChapterCrudPlugin;
 import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.service.NotificationService;
-import com.sep.comiverse.service.TranslatorPaymentService;
-import com.sep.comiverse.util.LanguageCodes;
+import com.sep.comiverse.service.TeamTaskReviewService;
+import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,9 +28,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -57,14 +45,8 @@ public class ReviewController {
     private final IUserRepository userRepository;
     private final ITeamTaskRepository taskRepository;
     private final IProjectTeamRepository projectTeamRepository;
-    private final IChapterRepository chapterRepository;
-    private final com.sep.comiverse.repository.IComicRepository comicRepository;
-    private final IChapterTranslationRepository chapterTranslationRepository;
-    private final ChapterCrudPlugin chapterCrudPlugin;
     private final NotificationService notificationService;
-    private final TranslatorPaymentService translatorPaymentService;
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final TeamTaskReviewService teamTaskReviewService;
 
     @GetMapping("/{taskId}")
     public ResponseEntity<List<ChapterPageDTO>> getPagesForReview(@PathVariable UUID taskId) {
@@ -237,107 +219,20 @@ public class ReviewController {
         }
 
         if ("approved".equals(decision)) {
-            translatorPaymentService.validateReadyForReview(taskId);
-            task.setStatus("completed");
-            task.setCompletedAt(Instant.now());
-            task.setRejectionReason(null);
-
-            List<PageTranslationEntity> pages = pageTranslationRepository.findByTaskId_IdOrderByPageNumberAsc(taskId);
-            log.info("[submitDecision] found {} PageTranslationEntity rows for taskId={}", pages.size(), taskId);
-            for (PageTranslationEntity page : pages) {
-                page.setReviewBaselineBubbles(page.getBubbles());
+            try {
+                teamTaskReviewService.approveAndPublish(task, principal.getId());
+            } catch (CustomException ex) {
+                return ResponseEntity.status(ex.getHttpStatus())
+                        .body(Map.of("success", false, "message", ex.getMessage()));
             }
-            pageTranslationRepository.saveAll(pages);
-
-            UUID modId = principal != null ? principal.getId() : null;
-            publishChapterFromTask(task, pages, modId);
-            taskRepository.save(task);
-            translatorPaymentService.settleApprovedTask(task);
         } else if ("changes_requested".equals(decision)) {
-            task.setStatus("under_review");
-            task.setCompletedAt(null);
+            teamTaskReviewService.returnToInProgress(task);
         } else {
             return ResponseEntity.badRequest()
                     .body(Map.of("success", false, "message", "Invalid decision: " + decision));
         }
 
-        taskRepository.save(task);
         return ResponseEntity.ok(Map.of("success", true));
-    }
-
-    private void publishChapterFromTask(TeamTaskEntity task, List<PageTranslationEntity> pages, UUID modId) {
-        ChapterEntity chapter = task.getChapter();
-        if (chapter == null) {
-            log.warn("[publishChapterFromTask] task {} has no chapter linked, skipping publish", task.getId());
-            return;
-        }
-
-        chapter.setModerationStatus(ChapterStatus.PUBLISHED);
-        chapter.setApprovedById(modId);
-        chapter.setApprovedAt(Instant.now());
-        ChapterEntity savedChapter = chapterRepository.save(chapter);
-
-        ProjectTeamEntity team = projectTeamRepository.findById(task.getProjectTeamId()).orElse(null);
-        if (team != null) {
-            team.setChaptersCount(team.getChaptersCount() == null ? 1 : team.getChaptersCount() + 1);
-            projectTeamRepository.save(team);
-        }
-
-        ComicEntity comic = savedChapter.getComic();
-        if (comic != null) {
-            comic.setLatestChapterNumber(savedChapter.getChapterNumber());
-            comic.setLastChapterUpdatedAt(Instant.now());
-            long publishedCount = chapterRepository.countByComic_IdAndModerationStatusAndDeletedFalse(
-                    comic.getId(), ChapterStatus.PUBLISHED);
-            comic.setChapterCount(publishedCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) publishedCount);
-            comicRepository.save(comic);
-        }
-
-        // ── Publish bản dịch vào chapter_translations ──────────────────────
-        String languageCode = LanguageCodes.normalize(team != null ? team.getTargetLang() : null);
-        String pagesBubblesJson = buildPagesBubblesJson(pages);
-        UUID teamId = task.getProjectTeamId();
-
-        // Upsert: revision tasks update the existing published translation in place so readers keep
-        // seeing the old version until this save replaces pages_bubbles.
-        ChapterTranslationEntity translation = chapterTranslationRepository.findByChapter_Id(savedChapter.getId())
-                .stream()
-                .filter(existing -> languageCode.equals(LanguageCodes.normalize(existing.getLanguageCode())))
-                .findFirst()
-                .orElseGet(ChapterTranslationEntity::new);
-
-        translation.setChapter(savedChapter);
-        translation.setLanguageCode(languageCode);
-        translation.setPagesBubbles(pagesBubblesJson);
-        translation.setProjectTeamId(teamId);
-        translation.setStatus(ChapterTranslationStatus.PUBLISHED);
-        translation.setDeleted(false);
-        chapterTranslationRepository.save(translation);
-        log.info("[publishChapterFromTask] Saved ChapterTranslationEntity for chapterId={} languageCode={} teamId={}",
-                savedChapter.getId(), languageCode, teamId);
-
-        if (comic != null) {
-            chapterCrudPlugin.evictChaptersCache(comic.getId());
-        }
-        chapterCrudPlugin.evictChapterDetailCache(savedChapter.getId());
-    }
-
-    private String buildPagesBubblesJson(List<PageTranslationEntity> pages) {
-        try {
-            List<Map<String, Object>> pagePayload = new ArrayList<>();
-            for (PageTranslationEntity page : pages) {
-                Map<String, Object> pageMap = new HashMap<>();
-                pageMap.put("pageId", page.getId());
-                pageMap.put("pageNumber", page.getPageNumber());
-                pageMap.put("imageUrl", page.getImageUrl());
-                pageMap.put("bubbles", page.getBubbles());
-                pagePayload.add(pageMap);
-            }
-            return objectMapper.writeValueAsString(pagePayload);
-        } catch (Exception ex) {
-            log.error("[buildPagesBubblesJson] Failed to serialize pages", ex);
-            return "[]";
-        }
     }
 
     private ReviewCommentDTO toDto(ReviewCommentEntity c) {

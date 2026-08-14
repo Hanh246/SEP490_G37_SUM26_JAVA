@@ -19,6 +19,7 @@ import com.sep.comiverse.entity.TeamMessageEntity;
 import com.sep.comiverse.entity.TeamPostCommentEntity;
 import com.sep.comiverse.entity.TeamTaskEntity;
 import com.sep.comiverse.entity.TranslatorCooldownEntity;
+import com.sep.comiverse.entity.TranslatorEntity;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
 import com.sep.comiverse.entity.enums.ChapterTranslationStatus;
@@ -45,6 +46,7 @@ import com.sep.comiverse.repository.ITeamMessageRepository;
 import com.sep.comiverse.repository.ITeamPostCommentRepository;
 import com.sep.comiverse.repository.ITeamTaskRepository;
 import com.sep.comiverse.repository.ITranslatorCooldownRepository;
+import com.sep.comiverse.repository.ITranslatorRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.security.JwtTokenUtil;
 import com.sep.comiverse.service.TranslatorPaymentService;
@@ -124,6 +126,9 @@ public class TeamWorkspaceControllerIT extends AbstractIntegrationTest {
 
     @Autowired
     private ITranslatorCooldownRepository cooldownRepository;
+
+    @Autowired
+    private ITranslatorRepository translatorRepository;
 
     @Autowired
     private INotificationRepository notificationRepository;
@@ -1346,6 +1351,19 @@ public class TeamWorkspaceControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("TC-INT-TeamWorkspaceController-071B: POST /team-workspace/{teamId}/tasks - Project Leader can be assigned even if not in members table")
+    void createTaskAssignedToProjectLeader() throws Exception {
+        ChapterEntity leaderChapter = persistChapter("13", "Chapter Thirteen", ChapterStatus.PUBLISHED, 2);
+
+        mockMvc.perform(post(BASE_URL + "/{teamId}/tasks", team.getId())
+                        .header("Authorization", "Bearer " + leaderToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createTaskBody(leaderChapter.getId(), leaderUser.getId()))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.assigneeId", is(leaderUser.getId().toString())));
+    }
+
+    @Test
     @DisplayName("TC-INT-TeamWorkspaceController-072: POST /team-workspace/{teamId}/tasks - Member without the TRANSLATOR role should return 400 Bad Request")
     void createTaskWithNonTranslatorAssignee() throws Exception {
         mockMvc.perform(post(BASE_URL + "/{teamId}/tasks", team.getId())
@@ -1439,6 +1457,25 @@ public class TeamWorkspaceControllerIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$[?(@.id=='" + translatorUser.getId() + "')].role", contains("Member")))
                 .andExpect(jsonPath("$[?(@.id=='" + translatorUser.getId() + "')].online", contains(false)))
                 .andExpect(jsonPath("$[?(@.id=='" + translatorUser.getId() + "')].avatar", contains("WT")));
+    }
+
+    @Test
+    @DisplayName("TC-INT-TeamWorkspaceController-079b: GET /team-workspace/{teamId}/members - Includes translator CV url")
+    void getTeamMembersIncludesCvUrl() throws Exception {
+        translatorRepository.save(TranslatorEntity.builder()
+                .user(translatorUser)
+                .specializations(new ArrayList<>(List.of("EN-VI")))
+                .experienceYears(2)
+                .cvUrl("https://cdn.example.com/workspace-translator-cv.pdf")
+                .joinedProjectCount(1)
+                .build());
+
+        mockMvc.perform(get(BASE_URL + "/{teamId}/members", team.getId())
+                        .header("Authorization", "Bearer " + leaderToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id=='" + translatorUser.getId() + "')].cvUrl",
+                        contains("https://cdn.example.com/workspace-translator-cv.pdf")))
+                .andExpect(jsonPath("$[?(@.id=='" + translatorUser.getId() + "')].experienceYears", contains(2)));
     }
 
     @Test
@@ -2246,6 +2283,73 @@ public class TeamWorkspaceControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("TC-INT-TeamWorkspaceController-149c: PUT /team-workspace/tasks/{taskId} - Assigned translator can move a backlog task to in_progress")
+    void assignedTranslatorPromotesBacklogTaskToInProgress() throws Exception {
+        TeamTaskEntity backlogTask = persistTask(backlogChapter, translatorUser.getId(), "backlog");
+
+        ObjectNode body = json();
+        body.put("status", "in_progress");
+
+        mockMvc.perform(put(BASE_URL + "/tasks/{taskId}", backlogTask.getId())
+                        .header("Authorization", "Bearer " + translatorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("in_progress")));
+    }
+
+    @Test
+    @DisplayName("TC-INT-TeamWorkspaceController-149d: PUT /team-workspace/tasks/{taskId} - Another translator cannot move a backlog task to in_progress")
+    void otherTranslatorCannotPromoteBacklogTask() throws Exception {
+        TeamTaskEntity backlogTask = persistTask(backlogChapter, translatorUser.getId(), "backlog");
+
+        ObjectNode body = json();
+        body.put("status", "in_progress");
+
+        mockMvc.perform(put(BASE_URL + "/tasks/{taskId}", backlogTask.getId())
+                        .header("Authorization", "Bearer " + secondTranslatorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message", is("Only this team's Project Leader can edit tasks")));
+    }
+
+    @Test
+    @DisplayName("TC-INT-TeamWorkspaceController-149e: PUT /team-workspace/tasks/{taskId} - Request Changes moves an under_review task to in_progress")
+    void requestChangesMovesUnderReviewTaskToInProgress() throws Exception {
+        TeamTaskEntity reviewTask = persistTask(backlogChapter, translatorUser.getId(), "under_review");
+
+        ObjectNode body = json();
+        body.put("status", "in_progress");
+
+        mockMvc.perform(put(BASE_URL + "/tasks/{taskId}", reviewTask.getId())
+                        .header("Authorization", "Bearer " + leaderToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("in_progress")))
+                .andExpect(jsonPath("$.completedAt", nullValue()));
+    }
+
+    @Test
+    @DisplayName("TC-INT-TeamWorkspaceController-149f: PUT /team-workspace/tasks/{taskId} - Accept completes an under_review task when every page is DONE")
+    void acceptCompletesUnderReviewTask() throws Exception {
+        TeamTaskEntity reviewTask = persistTask(backlogChapter, translatorUser.getId(), "under_review");
+        persistPages(reviewTask, translatorUser.getId(), 2, PageStatus.DONE);
+
+        ObjectNode body = json();
+        body.put("status", "completed");
+
+        mockMvc.perform(put(BASE_URL + "/tasks/{taskId}", reviewTask.getId())
+                        .header("Authorization", "Bearer " + leaderToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("completed")))
+                .andExpect(jsonPath("$.completedAt", notNullValue()));
+    }
+
+    @Test
     @DisplayName("TC-INT-TeamWorkspaceController-149: PUT /team-workspace/tasks/{taskId} - Status change to an open state clears the completion time and returns 200 OK")
     void updateTaskStatus() throws Exception {
         ObjectNode body = json();
@@ -2261,7 +2365,7 @@ public class TeamWorkspaceControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-150: PUT /team-workspace/tasks/{taskId} - Marking a task completed directly should return 409 Conflict")
+    @DisplayName("TC-INT-TeamWorkspaceController-150: PUT /team-workspace/tasks/{taskId} - Completing a task does not require every page to be DONE")
     void updateTaskToCompleted() throws Exception {
         ObjectNode body = json();
         body.put("status", "completed");
@@ -2270,8 +2374,8 @@ public class TeamWorkspaceControllerIT extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + leaderToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message", is("Use the review approval flow to complete a task after every page is DONE")));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("completed")));
     }
 
     @Test
