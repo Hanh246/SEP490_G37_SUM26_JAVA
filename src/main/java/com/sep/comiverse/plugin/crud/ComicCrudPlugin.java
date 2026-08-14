@@ -200,13 +200,13 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         // Redis can survive an application redeploy, so a cache hit may still carry
         // null/"Unknown Author" even though the current mapper is correct. Rebuild
         // those entries from DB instead of returning stale creator metadata.
-        boolean creatorMetadataMissing = dto != null
-                && dto.getAuthorId() != null
-                && (dto.getAuthorName() == null
-                    || dto.getAuthorName().isBlank()
-                    || "Unknown Author".equalsIgnoreCase(dto.getAuthorName().trim()));
+//        boolean creatorMetadataMissing = dto != null
+//                && dto.getAuthorId() != null
+//                && (dto.getAuthorName() == null
+//                    || dto.getAuthorName().isBlank()
+//                    || "Unknown Author".equalsIgnoreCase(dto.getAuthorName().trim()));
 
-        if (dto == null || creatorMetadataMissing) {
+        if (dto == null) {
             ComicEntity entity = comicRepository.findByIdWithGenres(comicId)
                     .orElseThrow(() -> new com.sep.comiverse.exception.CustomException(404, "Comic not found", org.springframework.http.HttpStatus.NOT_FOUND));
 

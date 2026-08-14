@@ -22,23 +22,15 @@ public class ComicDTO {
     private String language;
     private Integer minimumAge;
     private UUID authorId;
-
-    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private String authorName;
     private ComicPublicationStatus publicationStatus;
     private ComicModerationStatus moderationStatus;
     private Boolean isAppealed;
     private Boolean isModEdited;
-    
-    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private String previousStateSnapshot;
-    
     private String appealReason;
-
     private String rejectionReason;
     private String cover;
-
-    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Set<GenreDTO> genres;
 
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
@@ -50,11 +42,7 @@ public class ComicDTO {
     private Double ratingAverage;
     private Integer ratingCount;
     private String latestChapterNumber;
-
-    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Instant createdAt;
-
-    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Instant updatedAt;
     private Integer chapterCount;
     private Integer rejectedChapterCount;
