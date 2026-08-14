@@ -105,7 +105,31 @@ public class AppealService {
                 .map(this::mapToResponseDTO);
     }
 
+    @Transactional
+    public void processSlaExpiredAppeals() {
+        java.time.Instant cutoff = java.time.Instant.now().minus(3, java.time.temporal.ChronoUnit.DAYS);
+        Page<AppealTicketEntity> pendingPage = appealTicketRepository.findAllByStatus(AppealStatus.PENDING, Pageable.unpaged());
+        for (AppealTicketEntity entity : pendingPage.getContent()) {
+            if (entity.getCreatedAt() != null && entity.getCreatedAt().isBefore(cutoff)) {
+                try {
+                    AppealResolveRequestDTO autoReq = new AppealResolveRequestDTO();
+                    autoReq.setStatus(AppealStatus.APPROVED);
+                    autoReq.setResolvedReason("Auto-approved by 3-Day SLA Author Protection Policy. Original content restored.");
+                    resolveAppeal(entity.getId(), null, autoReq);
+                    log.info("Auto-approved expired appeal ticket {}", entity.getId());
+                } catch (Exception e) {
+                    log.error("Failed to auto-resolve SLA expired appeal ticket {}", entity.getId(), e);
+                }
+            }
+        }
+    }
+
     public Page<AppealTicketResponseDTO> getPendingAppeals(Pageable pageable) {
+        try {
+            processSlaExpiredAppeals();
+        } catch (Exception e) {
+            log.warn("SLA check execution encountered an issue:", e);
+        }
         return appealTicketRepository.findAllByStatus(AppealStatus.PENDING, pageable)
                 .map(this::mapToResponseDTO);
     }
