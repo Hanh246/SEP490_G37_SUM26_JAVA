@@ -63,7 +63,7 @@ public class CreatorPayoutService {
 
     private static final int MAX_ADMIN_PAGE_SIZE = 100;
 
-    @Value("${payout.allow-current-month:false}")
+    @Value("${payout.allow-current-month:true}")
     private boolean allowCurrentMonth;
 
     @Value("${payout.time-zone:Asia/Ho_Chi_Minh}")

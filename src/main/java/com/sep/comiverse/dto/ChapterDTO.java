@@ -39,6 +39,8 @@ public class ChapterDTO {
     @JsonProperty(access = JsonProperty.Access.AUTO)
     private List<String> images;
 
+    private Integer pageCount;
+
     @JsonProperty(access = JsonProperty.Access.AUTO)
     private List<String> rejectedImagesSnapshot;
 

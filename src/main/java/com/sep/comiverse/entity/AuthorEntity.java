@@ -65,7 +65,8 @@ public class AuthorEntity extends BaseEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "license_status", length = 40)
-    private AuthorLicenseStatus licenseStatus;
+    @Builder.Default
+    private AuthorLicenseStatus licenseStatus = AuthorLicenseStatus.PENDING_LICENSE;
 
     @Column(name = "license_url", length = 1000)
     private String licenseUrl;

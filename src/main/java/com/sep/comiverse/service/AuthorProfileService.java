@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -75,9 +76,10 @@ public class AuthorProfileService {
                 .legalName(user.getFullName())
                 .avatarUrl(user.getAvatarUrl())
                 .contactEmail(user.getEmail())
-                // Compatibility: pre-existing/legacy Author profiles remain usable.
-                // Admin-created AUTHOR accounts are initialized separately as PENDING_LICENSE.
-                .licenseStatus(AuthorLicenseStatus.ACTIVE)
+                // Fail closed: an AUTHOR profile created through any path must complete
+                // license verification before publishing or receiving Author payout.
+                .licenseStatus(AuthorLicenseStatus.PENDING_LICENSE)
+                .licenseDeadlineAt(Instant.now().plus(Duration.ofDays(AuthorLicenseService.DEFAULT_LICENSE_DEADLINE_DAYS)))
                 .build();
         return authorRepository.save(author);
     }

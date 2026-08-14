@@ -22,7 +22,6 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
     private final IAuthorRepository authorRepository;
     private final IUserRepository userRepository;
     private final com.sep.comiverse.repository.IChapterRepository chapterRepository;
-    private final Map<UUID, String> authorNameCache = new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<UUID, String> moderatorNameCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     private String resolveModeratorName(UUID moderatorId) {
@@ -71,30 +70,27 @@ public class ComicMapperPlugin extends AbstractMapperPlugin<ComicEntity, ComicDT
             }
         }
 
-        // ComicEntity.authorId currently stores the author user's UUID. Some legacy
-        // records may store AuthorEntity.id, so resolve both forms. Public search also
-        // uses AuthorEntity.displayName; returning the same value keeps Library,
-        // Moderator and search results consistent.
+        // ComicEntity.authorId is the authenticated Author user's UUID in the
+        // current Author flow. Legacy rows may contain AuthorEntity.id, so support
+        // both forms. Do NOT cache this name in-process: AuthorEntity.displayName is
+        // editable profile data and Comic Detail must reflect the latest value.
         if (model.getAuthorId() != null) {
             UUID authorId = model.getAuthorId();
-            String cachedName = authorNameCache.get(authorId);
-            if (cachedName != null) {
-                dto.setAuthorName(cachedName);
-            } else {
-                String resolvedName = authorRepository.findById(authorId)
-                        .or(() -> authorRepository.findByUserIdAndDeletedFalse(authorId))
-                        .map(author -> author.getDisplayName())
-                        .filter(name -> name != null && !name.isBlank())
-                        .orElseGet(() -> userRepository.findById(authorId)
-                                .map(user -> user.getFullName() != null && !user.getFullName().isBlank()
-                                        ? user.getFullName()
-                                        : user.getUsername())
-                                .filter(name -> name != null && !name.isBlank())
-                                .orElse("Unknown Author"));
+            String resolvedName = authorRepository.findByUserIdAndDeletedFalse(authorId)
+                    .or(() -> authorRepository.findById(authorId)
+                            .filter(author -> !Boolean.TRUE.equals(author.getDeleted())))
+                    .map(author -> author.getDisplayName())
+                    .filter(name -> name != null && !name.isBlank())
+                    // Compatibility only for malformed/legacy rows that have no
+                    // AuthorEntity. Normal comics must resolve Author.displayName.
+                    .orElseGet(() -> userRepository.findById(authorId)
+                            .map(user -> user.getFullName() != null && !user.getFullName().isBlank()
+                                    ? user.getFullName()
+                                    : user.getUsername())
+                            .filter(name -> name != null && !name.isBlank())
+                            .orElse("Unknown Author"));
 
-                authorNameCache.put(authorId, resolvedName);
-                dto.setAuthorName(resolvedName);
-            }
+            dto.setAuthorName(resolvedName);
         } else {
             dto.setAuthorName("Unknown Author");
         }

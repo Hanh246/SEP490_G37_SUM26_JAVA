@@ -35,8 +35,9 @@ public class ReportCategoryEntity extends BaseEntity {
     private ReportAssignedRole assignedRole;
 
     @Builder.Default
+    @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.ARRAY)
-    @Column(name = "target_types", nullable = false)
+    @Column(name = "target_types", columnDefinition = "text[]", nullable = false)
     private List<ReportTargetType> targetTypes = new ArrayList<>();
 
     @Builder.Default

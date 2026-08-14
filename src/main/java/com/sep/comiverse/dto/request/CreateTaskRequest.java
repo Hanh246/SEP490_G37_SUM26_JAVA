@@ -15,4 +15,5 @@ public class CreateTaskRequest {
     private String dueDate;
     /** Optional total chapter remuneration. Server derives it from page count when omitted. */
     private BigDecimal chapterRewardUsd;
+    private String taskType;
 }

@@ -20,9 +20,11 @@ import com.sep.comiverse.repository.IProjectTeamRepository;
 import com.sep.comiverse.repository.IReviewCommentRepository;
 import com.sep.comiverse.repository.ITeamTaskRepository;
 import com.sep.comiverse.repository.IUserRepository;
+import com.sep.comiverse.plugin.crud.ChapterCrudPlugin;
 import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.service.NotificationService;
 import com.sep.comiverse.service.TranslatorPaymentService;
+import com.sep.comiverse.util.LanguageCodes;
 import com.sep.comiverse.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -58,6 +60,7 @@ public class ReviewController {
     private final IChapterRepository chapterRepository;
     private final com.sep.comiverse.repository.IComicRepository comicRepository;
     private final IChapterTranslationRepository chapterTranslationRepository;
+    private final ChapterCrudPlugin chapterCrudPlugin;
     private final NotificationService notificationService;
     private final TranslatorPaymentService translatorPaymentService;
 
@@ -291,15 +294,16 @@ public class ReviewController {
         }
 
         // ── Publish bản dịch vào chapter_translations ──────────────────────
-        String languageCode = (team != null && team.getTargetLang() != null)
-                ? team.getTargetLang()
-                : "vi"; // fallback mặc định
+        String languageCode = LanguageCodes.normalize(team != null ? team.getTargetLang() : null);
         String pagesBubblesJson = buildPagesBubblesJson(pages);
         UUID teamId = task.getProjectTeamId();
 
-        // Upsert: nếu đã tồn tại bản ghi cùng chapter + languageCode thì update, ngược lại tạo mới
-        ChapterTranslationEntity translation = chapterTranslationRepository
-                .findByChapter_IdAndLanguageCode(savedChapter.getId(), languageCode)
+        // Upsert: revision tasks update the existing published translation in place so readers keep
+        // seeing the old version until this save replaces pages_bubbles.
+        ChapterTranslationEntity translation = chapterTranslationRepository.findByChapter_Id(savedChapter.getId())
+                .stream()
+                .filter(existing -> languageCode.equals(LanguageCodes.normalize(existing.getLanguageCode())))
+                .findFirst()
                 .orElseGet(ChapterTranslationEntity::new);
 
         translation.setChapter(savedChapter);
@@ -311,6 +315,11 @@ public class ReviewController {
         chapterTranslationRepository.save(translation);
         log.info("[publishChapterFromTask] Saved ChapterTranslationEntity for chapterId={} languageCode={} teamId={}",
                 savedChapter.getId(), languageCode, teamId);
+
+        if (comic != null) {
+            chapterCrudPlugin.evictChaptersCache(comic.getId());
+        }
+        chapterCrudPlugin.evictChapterDetailCache(savedChapter.getId());
     }
 
     private String buildPagesBubblesJson(List<PageTranslationEntity> pages) {

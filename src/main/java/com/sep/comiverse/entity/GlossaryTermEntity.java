@@ -20,6 +20,9 @@ import java.util.UUID;
 @Builder
 public class GlossaryTermEntity extends BaseEntity {
 
+    @Column(name = "project_id")
+    private UUID projectId;
+
     @Column(name = "comic_id")
     private UUID comicId;
 

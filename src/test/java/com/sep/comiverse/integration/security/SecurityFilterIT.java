@@ -1,9 +1,8 @@
 package com.sep.comiverse.integration.security;
 
-import com.sep.comiverse.ComiverseApplication;
 import com.sep.comiverse.entity.RoleEntity;
 import com.sep.comiverse.entity.UserEntity;
-import com.sep.comiverse.integration.support.ComiverseIntegrationTest;
+import com.sep.comiverse.integration.support.AbstractIntegrationTest;
 import com.sep.comiverse.repository.IRoleRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.security.JwtTokenUtil;
@@ -11,15 +10,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.annotation.Transactional;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-import com.sep.comiverse.integration.support.AbstractIntegrationTest;
 
 public class SecurityFilterIT extends AbstractIntegrationTest {
 
@@ -77,4 +72,12 @@ public class SecurityFilterIT extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer malformed.invalid.token"))
                 .andExpect(status().isUnauthorized());
     }
+    @Test
+    @DisplayName("TC-SEC-004: Generic upload endpoint requires authentication")
+    void tc_sec_004_unauthenticatedUploadIsRejected() throws Exception {
+        mockMvc.perform(multipart("/upload/image")
+                        .file("file", "image-bytes".getBytes()))
+                .andExpect(status().isUnauthorized());
+    }
+
 }
