@@ -29,6 +29,7 @@ import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -213,7 +214,7 @@ class SubmissionControllerNotificationTest {
                 .build();
 
         when(chapterRepository.findById(chapterId)).thenReturn(Optional.of(chapter));
-        when(chapterRepository.findAllByComic_IdAndDeletedFalse(comicId)).thenReturn(List.of(chapter));
+        lenient().when(chapterRepository.findAllByComic_IdAndDeletedFalse(comicId)).thenReturn(List.of(chapter));
         when(chapterRepository.save(any(ChapterEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         ReflectionTestUtils.invokeMethod(controller, "handleSubmissionRejected", submission, moderatorId);

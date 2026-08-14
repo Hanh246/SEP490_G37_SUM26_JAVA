@@ -207,7 +207,7 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
                     || "Unknown Author".equalsIgnoreCase(dto.getAuthorName().trim()));
 
         if (dto == null || creatorMetadataMissing) {
-            ComicEntity entity = comicRepository.findById(comicId)
+            ComicEntity entity = comicRepository.findByIdWithGenres(comicId)
                     .orElseThrow(() -> new com.sep.comiverse.exception.CustomException(404, "Comic not found", org.springframework.http.HttpStatus.NOT_FOUND));
 
             dto = plugin.toDto(entity);
@@ -219,59 +219,58 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
             }
         }
 
-        //increase view
+        // Pipelined Redis hash fetches for real-time delta stats (1 single round-trip for all 5 metrics)
         try {
-            Number rawViews = (Number) redisTemplate.opsForHash().get(ViewSyncScheduler.COMIC_VIEW_HASH, comicIdStr);
-            if (rawViews != null) {
-                dto.setViewCount(dto.getViewCount() + rawViews.intValue());
+            List<Object> rawDeltas = redisTemplate.executePipelined(new org.springframework.data.redis.core.SessionCallback<Object>() {
+                @Override
+                public <K, V> Object execute(org.springframework.data.redis.core.RedisOperations<K, V> operations) {
+                    @SuppressWarnings("unchecked")
+                    RedisTemplate<String, Object> ops = (RedisTemplate<String, Object>) operations;
+                    ops.opsForHash().get(ViewSyncScheduler.COMIC_VIEW_HASH, comicIdStr);
+                    ops.opsForHash().get(UserInteractionSyncScheduler.COMIC_LIKE_HASH, comicIdStr);
+                    ops.opsForHash().get(UserInteractionSyncScheduler.COMIC_SAVE_HASH, comicIdStr);
+                    ops.opsForHash().get(UserInteractionSyncScheduler.COMIC_RATING_COUNT_HASH, comicIdStr);
+                    ops.opsForHash().get(UserInteractionSyncScheduler.COMIC_RATING_SUM_HASH, comicIdStr);
+                    return null;
+                }
+            });
+
+            if (rawDeltas != null && rawDeltas.size() >= 5) {
+                Number rawViews = (rawDeltas.get(0) instanceof Number num) ? num : null;
+                Number rawLikes = (rawDeltas.get(1) instanceof Number num) ? num : null;
+                Number rawSaves = (rawDeltas.get(2) instanceof Number num) ? num : null;
+                Number rawRatingCount = (rawDeltas.get(3) instanceof Number num) ? num : null;
+                Number rawRatingSum = (rawDeltas.get(4) instanceof Number num) ? num : null;
+
+                if (rawViews != null) {
+                    dto.setViewCount(dto.getViewCount() + rawViews.intValue());
+                }
+                if (rawLikes != null) {
+                    dto.setLikeCount(dto.getLikeCount() + rawLikes.intValue());
+                }
+                if (rawSaves != null) {
+                    dto.setSaveCount(dto.getSaveCount() + rawSaves.intValue());
+                }
+
+                int deltaCount = (rawRatingCount != null) ? rawRatingCount.intValue() : 0;
+                double deltaSum = (rawRatingSum != null) ? rawRatingSum.doubleValue() : 0.0;
+
+                if (deltaCount != 0 || deltaSum != 0.0) {
+                    int baseCount = (dto.getRatingCount() != null) ? dto.getRatingCount() : 0;
+                    double baseAvg = (dto.getRatingAverage() != null) ? dto.getRatingAverage() : 0.0;
+                    double baseSum = baseAvg * baseCount;
+
+                    int effectiveCount = Math.max(0, baseCount + deltaCount);
+                    double effectiveSum = Math.max(0.0, baseSum + deltaSum);
+                    double calculatedAvg = (effectiveCount > 0) ? Math.round((effectiveSum / effectiveCount) * 10.0) / 10.0 : 0.0;
+                    double effectiveAvg = Math.min(5.0, Math.max(0.0, calculatedAvg));
+
+                    dto.setRatingCount(effectiveCount);
+                    dto.setRatingAverage(effectiveAvg);
+                }
             }
         } catch (Exception e) {
-            // Ignore Redis hash errors
-        }
-
-        //increase like
-        try {
-            Number rawLikes = (Number) redisTemplate.opsForHash().get(UserInteractionSyncScheduler.COMIC_LIKE_HASH, comicIdStr);
-            if (rawLikes != null) {
-                dto.setLikeCount(dto.getLikeCount() + rawLikes.intValue());
-            }
-        } catch (Exception e) {
-            // Ignore Redis hash errors
-        }
-
-        //increase save
-        try {
-            Number rawSaves = (Number) redisTemplate.opsForHash().get(UserInteractionSyncScheduler.COMIC_SAVE_HASH, comicIdStr);
-            if (rawSaves != null) {
-                dto.setSaveCount(dto.getSaveCount() + rawSaves.intValue());
-            }
-        } catch (Exception e) {
-            // Ignore Redis hash errors
-        }
-
-        //adjust rating stats from Redis deltas
-        try {
-            Number rawRatingCount = (Number) redisTemplate.opsForHash().get(UserInteractionSyncScheduler.COMIC_RATING_COUNT_HASH, comicIdStr);
-            Number rawRatingSum = (Number) redisTemplate.opsForHash().get(UserInteractionSyncScheduler.COMIC_RATING_SUM_HASH, comicIdStr);
-
-            int deltaCount = (rawRatingCount != null) ? rawRatingCount.intValue() : 0;
-            double deltaSum = (rawRatingSum != null) ? rawRatingSum.doubleValue() : 0.0;
-
-            if (deltaCount != 0 || deltaSum != 0.0) {
-                int baseCount = (dto.getRatingCount() != null) ? dto.getRatingCount() : 0;
-                double baseAvg = (dto.getRatingAverage() != null) ? dto.getRatingAverage() : 0.0;
-                double baseSum = baseAvg * baseCount;
-
-                int effectiveCount = Math.max(0, baseCount + deltaCount);
-                double effectiveSum = Math.max(0.0, baseSum + deltaSum);
-                double calculatedAvg = (effectiveCount > 0) ? Math.round((effectiveSum / effectiveCount) * 10.0) / 10.0 : 0.0;
-                double effectiveAvg = Math.min(5.0, Math.max(0.0, calculatedAvg));
-
-                dto.setRatingCount(effectiveCount);
-                dto.setRatingAverage(effectiveAvg);
-            }
-        } catch (Exception e) {
-            // Ignore Redis hash errors
+            // Ignore Redis pipeline errors gracefully
         }
 
         return dto;
