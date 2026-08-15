@@ -44,8 +44,10 @@ public class ProjectTeamController extends BaseController<ProjectTeamEntity, Pro
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         UserPrincipal principal = (UserPrincipal) auth.getPrincipal();
         UUID userId = principal.getId();
+        String fullName = principal.getFullName() != null ? principal.getFullName().trim() : "";
+        String username = principal.getUsername() != null ? principal.getUsername().trim() : "";
 
-        List<ProjectTeamEntity> teams = iProjectTeamRepository.findByMemberId(userId);
+        List<ProjectTeamEntity> teams = iProjectTeamRepository.findMyTeams(userId, fullName, username);
         List<ProjectTeamDTO> result = teams.stream().map(this::toDto).collect(Collectors.toList());
 
         return ResponseEntity.ok(result);
@@ -60,11 +62,15 @@ public class ProjectTeamController extends BaseController<ProjectTeamEntity, Pro
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         UserPrincipal principal = (UserPrincipal) auth.getPrincipal();
         UUID userId = principal.getId();
+        String fullName = principal.getFullName() != null ? principal.getFullName().trim() : "";
+        String username = principal.getUsername() != null ? principal.getUsername().trim() : "";
 
         String searchQuery = (search != null && !search.trim().isEmpty()) ? search.trim() : "";
 
         org.springframework.data.domain.Page<ProjectTeamEntity> teams = iProjectTeamRepository.findMyTeamsPaginated(
                 userId,
+                fullName,
+                username,
                 searchQuery,
                 org.springframework.data.domain.PageRequest.of(page - 1, size)
         );
@@ -84,6 +90,7 @@ public class ProjectTeamController extends BaseController<ProjectTeamEntity, Pro
         dto.setChaptersCount(e.getChaptersCount());
         dto.setProgress(e.getProgress());
         dto.setLeaderName(e.getLeaderName());
+        dto.setLeaderId(e.getLeaderId());
         dto.setLeaderInitials(e.getLeaderInitials());
         dto.setDeadline(e.getDeadline());
         dto.setSourceLang(e.getSourceLang());
@@ -92,6 +99,8 @@ public class ProjectTeamController extends BaseController<ProjectTeamEntity, Pro
         dto.setCover(e.getCover());
         dto.setDescription(e.getDescription());
         dto.setNotes(e.getNotes());
+        dto.setIsRecruiting(e.getIsRecruiting());
+        dto.setMaxMembers(e.getMaxMembers());
         return dto;
     }
 }
