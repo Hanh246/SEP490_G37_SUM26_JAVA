@@ -44,6 +44,7 @@ class AppealServiceTest {
     @Mock private com.sep.comiverse.repository.IGenreRepository genreRepository;
     @Mock private ModelMapper modelMapper;
     @Mock private NotificationService notificationService;
+    @Mock private org.springframework.data.redis.core.RedisTemplate<String, Object> redisTemplate;
 
     private AppealService service;
 
@@ -57,7 +58,9 @@ class AppealServiceTest {
                 genreRepository,
                 modelMapper,
                 new ObjectMapper(),
-                notificationService
+                notificationService,
+                redisTemplate
+
         );
         lenient().when(modelMapper.map(any(AppealTicketEntity.class), eq(AppealTicketResponseDTO.class)))
                 .thenAnswer(invocation -> {
