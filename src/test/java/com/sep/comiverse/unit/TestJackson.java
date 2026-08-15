@@ -1,1 +1,24 @@
-package com.sep.comiverse.unit; import com.fasterxml.jackson.databind.ObjectMapper; import com.sep.comiverse.dto.ComicDTO; import com.sep.comiverse.dto.GenreDTO; import java.util.Set; import java.util.UUID; public class TestJackson { public static void main(String[] args) throws Exception { ObjectMapper mapper = new ObjectMapper(); ComicDTO dto = new ComicDTO(); dto.setId(UUID.randomUUID()); dto.setTitle(" Test Comic\); GenreDTO g = new GenreDTO(); g.setId(UUID.randomUUID()); g.setName(\Action\); dto.setGenres(Set.of(g)); System.out.println(mapper.writeValueAsString(dto)); } }
+package com.sep.comiverse.unit;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sep.comiverse.dto.ComicDTO;
+import com.sep.comiverse.dto.GenreDTO;
+
+import java.util.Set;
+import java.util.UUID;
+
+public class TestJackson {
+    public static void main(String[] args) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ComicDTO dto = new ComicDTO();
+        dto.setId(UUID.randomUUID());
+        dto.setTitle("Test Comic");
+        
+        GenreDTO g = new GenreDTO();
+        g.setId(UUID.randomUUID());
+        g.setName("Action");
+        dto.setGenres(Set.of(g));
+        
+        System.out.println(mapper.writeValueAsString(dto));
+    }
+}
