@@ -61,7 +61,7 @@ public class ProjectTeamController extends BaseController<ProjectTeamEntity, Pro
         UserPrincipal principal = (UserPrincipal) auth.getPrincipal();
         UUID userId = principal.getId();
 
-        String searchQuery = (search != null && !search.trim().isEmpty()) ? search.trim() : null;
+        String searchQuery = (search != null && !search.trim().isEmpty()) ? search.trim() : "";
 
         org.springframework.data.domain.Page<ProjectTeamEntity> teams = iProjectTeamRepository.findMyTeamsPaginated(
                 userId,
