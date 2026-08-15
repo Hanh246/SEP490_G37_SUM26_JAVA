@@ -61,6 +61,16 @@ public class ReportFilterDTO {
     @Schema(description = "Filter by handler/moderator UUID")
     private UUID handlerId;
 
+    @JsonProperty("start_date")
+    @JsonAlias({"startDate", "start_date"})
+    @Schema(description = "Filter by start date (YYYY-MM-DD)", example = "2026-08-01")
+    private String startDate;
+
+    @JsonProperty("end_date")
+    @JsonAlias({"endDate", "end_date"})
+    @Schema(description = "Filter by end date (YYYY-MM-DD)", example = "2026-08-31")
+    private String endDate;
+
     @Builder.Default
     @JsonProperty("sort_by")
     @JsonAlias({"sortBy", "sort_by"})
