@@ -51,6 +51,29 @@ public class ProjectTeamController extends BaseController<ProjectTeamEntity, Pro
         return ResponseEntity.ok(result);
     }
 
+    @GetMapping("/myprojects/page")
+    public ResponseEntity<BaseResponse<org.springframework.data.domain.Page<ProjectTeamDTO>>> listMyProjectsPage(
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "1") int page,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "4") int size,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String search
+    ) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        UserPrincipal principal = (UserPrincipal) auth.getPrincipal();
+        UUID userId = principal.getId();
+
+        String searchQuery = (search != null && !search.trim().isEmpty()) ? search.trim() : null;
+
+        org.springframework.data.domain.Page<ProjectTeamEntity> teams = iProjectTeamRepository.findMyTeamsPaginated(
+                userId,
+                searchQuery,
+                org.springframework.data.domain.PageRequest.of(page - 1, size)
+        );
+        return ResponseEntity.ok(BaseResponse.<org.springframework.data.domain.Page<ProjectTeamDTO>>builder()
+                .success(true)
+                .data(teams.map(this::toDto))
+                .build());
+    }
+
     private ProjectTeamDTO toDto(ProjectTeamEntity e) {
         ProjectTeamDTO dto = new ProjectTeamDTO();
         dto.setId(e.getId());
