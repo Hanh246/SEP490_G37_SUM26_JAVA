@@ -47,6 +47,14 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
     @Override
     @org.springframework.transaction.annotation.Transactional
     public ProjectTeamDTO create(ProjectTeamDTO dto) throws RuntimeException {
+        if (dto.getLeaderId() == null || dto.getLeaderName() == null) {
+            org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof com.sep.comiverse.security.UserPrincipal) {
+                com.sep.comiverse.security.UserPrincipal principal = (com.sep.comiverse.security.UserPrincipal) auth.getPrincipal();
+                if (dto.getLeaderId() == null) dto.setLeaderId(principal.getId());
+                if (dto.getLeaderName() == null) dto.setLeaderName(principal.getFullName() != null ? principal.getFullName() : principal.getUsername());
+            }
+        }
         ProjectTeamDTO created = super.create(dto);
         auditLogService.log("PROJECT_TEAMS", "Created project team: " + created.getTitle() + " for comic: " + created.getComicName());
         notifyLeaderAboutAssignment(created, "You were assigned as project leader");
