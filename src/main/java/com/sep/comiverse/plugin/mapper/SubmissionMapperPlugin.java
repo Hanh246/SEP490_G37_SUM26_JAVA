@@ -73,6 +73,23 @@ public class SubmissionMapperPlugin extends AbstractMapperPlugin<SubmissionEntit
                 resolveAndCacheModerator(dto.getModeratorId(), dto);
             }
         }
+        // Resolve reviewer name (claim ticket mechanism)
+        if (dto != null && dto.getReviewerId() != null) {
+            String revIdStr = dto.getReviewerId().toString();
+            UserInfo cachedInfo = userCache.get(revIdStr);
+            if (cachedInfo != null) {
+                dto.setReviewerName(cachedInfo.displayName);
+            } else {
+                var reviewer = userRepository.findById(dto.getReviewerId()).orElse(null);
+                if (reviewer != null) {
+                    String displayName = reviewer.getFullName() != null && !reviewer.getFullName().trim().isEmpty()
+                        ? reviewer.getFullName()
+                        : reviewer.getUsername();
+                    userCache.put(revIdStr, new UserInfo(displayName, reviewer.getEmail()));
+                    dto.setReviewerName(displayName);
+                }
+            }
+        }
         return dto;
     }
 

@@ -38,4 +38,7 @@ public class SubmissionDTO {
     private String publicationStatus;
     private String summary;
     private Boolean comicAutoRejected;
+    private UUID reviewerId;
+    private String reviewerName;
+    private java.time.Instant reviewStartedAt;
 }

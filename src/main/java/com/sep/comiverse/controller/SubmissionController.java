@@ -112,6 +112,110 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                 .build());
     }
 
+    // ── CLAIM TICKET MECHANISM ─────────────────────────────────────────
+
+    /** How long a claim stays valid before it auto-expires (30 minutes). */
+    private static final long CLAIM_EXPIRY_MINUTES = 30;
+
+    /**
+     * Claim a submission for review (IN_REVIEW).
+     * Uses PESSIMISTIC_WRITE lock to prevent two moderators from claiming simultaneously.
+     */
+    @PutMapping("/{id}/claim")
+    @PreAuthorize("hasAnyAuthority('MODERATOR', 'ADMIN')")
+    @Transactional
+    public ResponseEntity<BaseResponse<SubmissionDTO>> claim(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        SubmissionEntity submission = submissionRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Submission " + id + " not found"));
+
+        // Only pending submissions can be claimed
+        if (!"pending".equalsIgnoreCase(submission.getStatus())) {
+            return ResponseEntity.ok(BaseResponse.<SubmissionDTO>builder()
+                    .success(true)
+                    .message("Submission is already " + submission.getStatus())
+                    .data(crudPlugin.getPlugin().toDto(submission))
+                    .build());
+        }
+
+        UUID currentUserId = principal != null ? principal.getId() : null;
+
+        // Check if already claimed by someone else (and not expired)
+        if (submission.getReviewerId() != null
+                && !submission.getReviewerId().equals(currentUserId)
+                && submission.getReviewStartedAt() != null
+                && java.time.Duration.between(submission.getReviewStartedAt(), java.time.Instant.now()).toMinutes() < CLAIM_EXPIRY_MINUTES) {
+
+            // Resolve the reviewer name for the error message
+            String reviewerName = "another moderator";
+            if (submission.getReviewerId() != null) {
+                var reviewer = userRepository.findById(submission.getReviewerId()).orElse(null);
+                if (reviewer != null) {
+                    reviewerName = reviewer.getFullName() != null ? reviewer.getFullName() : reviewer.getUsername();
+                }
+            }
+
+            return ResponseEntity.status(409).body(BaseResponse.<SubmissionDTO>builder()
+                    .success(false)
+                    .message("This submission is currently being reviewed by " + reviewerName)
+                    .data(crudPlugin.getPlugin().toDto(submission))
+                    .build());
+        }
+
+        // Claim it
+        submission.setReviewerId(currentUserId);
+        submission.setReviewStartedAt(java.time.Instant.now());
+        submissionRepository.save(submission);
+
+        auditLogService.log("REVIEW_QUEUE", "Claimed submission: " + submission.getTitle());
+
+        return ResponseEntity.ok(BaseResponse.<SubmissionDTO>builder()
+                .success(true)
+                .message("Submission claimed for review")
+                .data(crudPlugin.getPlugin().toDto(submission))
+                .build());
+    }
+
+    /**
+     * Release a claimed submission (back to PENDING, no reviewer).
+     */
+    @PutMapping("/{id}/release")
+    @PreAuthorize("hasAnyAuthority('MODERATOR', 'ADMIN')")
+    @Transactional
+    public ResponseEntity<BaseResponse<SubmissionDTO>> release(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        SubmissionEntity submission = submissionRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Submission " + id + " not found"));
+
+        UUID currentUserId = principal != null ? principal.getId() : null;
+
+        // Only the claimer (or admin) can release
+        if (submission.getReviewerId() != null
+                && !submission.getReviewerId().equals(currentUserId)
+                && (principal == null || !principal.user().getRole().getRoleName().equalsIgnoreCase("ADMIN"))) {
+            return ResponseEntity.status(403).body(BaseResponse.<SubmissionDTO>builder()
+                    .success(false)
+                    .message("Only the claiming moderator or an admin can release this submission")
+                    .build());
+        }
+
+        submission.setReviewerId(null);
+        submission.setReviewStartedAt(null);
+        submissionRepository.save(submission);
+
+        return ResponseEntity.ok(BaseResponse.<SubmissionDTO>builder()
+                .success(true)
+                .message("Submission released")
+                .data(crudPlugin.getPlugin().toDto(submission))
+                .build());
+    }
+
+    // ── APPROVE / REJECT (with Pessimistic Lock) ───────────────────────
+
     @PutMapping("/{id}/approve")
     @PreAuthorize("hasAnyAuthority('MODERATOR', 'ADMIN')")
     @Transactional
@@ -119,11 +223,28 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             @PathVariable UUID id,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
-        SubmissionEntity submission = submissionRepository.findById(id)
+        // Use pessimistic lock to prevent concurrent approve
+        SubmissionEntity submission = submissionRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Submission with id " + id + " not found"));
+
+        // Guard: if someone else has claimed it and claim is still valid, reject the action
+        UUID currentUserId = principal != null ? principal.getId() : null;
+        if (submission.getReviewerId() != null
+                && !submission.getReviewerId().equals(currentUserId)
+                && submission.getReviewStartedAt() != null
+                && java.time.Duration.between(submission.getReviewStartedAt(), java.time.Instant.now()).toMinutes() < CLAIM_EXPIRY_MINUTES) {
+            return ResponseEntity.status(409).body(BaseResponse.<SubmissionDTO>builder()
+                    .success(false)
+                    .message("This submission is being reviewed by another moderator. Please wait or choose a different submission.")
+                    .data(crudPlugin.getPlugin().toDto(submission))
+                    .build());
+        }
 
         boolean alreadyApproved = "approved".equalsIgnoreCase(submission.getStatus());
         submission.setStatus("approved");
+        // Clear claim after action
+        submission.setReviewerId(null);
+        submission.setReviewStartedAt(null);
         UUID modId = null;
         if (principal != null) {
             submission.setModeratorId(principal.getId());
@@ -453,13 +574,30 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             @RequestBody Map<String, String> body,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
-        SubmissionEntity submission = submissionRepository.findById(id)
+        // Use pessimistic lock to prevent concurrent reject
+        SubmissionEntity submission = submissionRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Submission with id " + id + " not found"));
+
+        // Guard: if someone else has claimed it and claim is still valid, reject the action
+        UUID currentUserId = principal != null ? principal.getId() : null;
+        if (submission.getReviewerId() != null
+                && !submission.getReviewerId().equals(currentUserId)
+                && submission.getReviewStartedAt() != null
+                && java.time.Duration.between(submission.getReviewStartedAt(), java.time.Instant.now()).toMinutes() < CLAIM_EXPIRY_MINUTES) {
+            return ResponseEntity.status(409).body(BaseResponse.<SubmissionDTO>builder()
+                    .success(false)
+                    .message("This submission is being reviewed by another moderator.")
+                    .data(crudPlugin.getPlugin().toDto(submission))
+                    .build());
+        }
 
         String reason = body != null ? body.getOrDefault("reason", "No reason provided.") : "No reason provided.";
         boolean alreadyRejected = "rejected".equalsIgnoreCase(submission.getStatus());
         submission.setStatus("rejected");
         submission.setRejectionReason(reason);
+        // Clear claim after action
+        submission.setReviewerId(null);
+        submission.setReviewStartedAt(null);
         if (principal != null) {
             submission.setModeratorId(principal.getId());
         }
