@@ -30,7 +30,8 @@ public interface IProjectTeamRepository extends AbstractCrudRepository<ProjectTe
 
     org.springframework.data.domain.Page<ProjectTeamEntity> findByStatusAndDeletedFalse(String status, org.springframework.data.domain.Pageable pageable);
 
-    @Query("SELECT DISTINCT pt FROM ProjectTeamEntity pt LEFT JOIN pt.members m WHERE pt.deleted = false AND (m.user.id = :userId OR pt.leaderId = :userId) AND (:search IS NULL OR LOWER(pt.title) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(pt.comicName) LIKE LOWER(CONCAT('%', :search, '%'))) ORDER BY pt.createdAt DESC")
+    @Query(value = "SELECT DISTINCT pt FROM ProjectTeamEntity pt LEFT JOIN pt.members m WHERE pt.deleted = false AND (m.user.id = :userId OR pt.leaderId = :userId) AND (:search = '' OR LOWER(pt.title) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(pt.comicName) LIKE LOWER(CONCAT('%', :search, '%'))) ORDER BY pt.createdAt DESC",
+           countQuery = "SELECT COUNT(DISTINCT pt) FROM ProjectTeamEntity pt LEFT JOIN pt.members m WHERE pt.deleted = false AND (m.user.id = :userId OR pt.leaderId = :userId) AND (:search = '' OR LOWER(pt.title) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(pt.comicName) LIKE LOWER(CONCAT('%', :search, '%')))")
     org.springframework.data.domain.Page<ProjectTeamEntity> findMyTeamsPaginated(@Param("userId") UUID userId, @Param("search") String search, org.springframework.data.domain.Pageable pageable);
 
 
