@@ -12,6 +12,12 @@ import java.util.UUID;
 
 @Repository
 public interface ISubmissionRepository extends AbstractCrudRepository<SubmissionEntity, UUID> {
+
+    /** Pessimistic lock: locks the row in the DB to prevent concurrent claim/approve/reject. */
+    @jakarta.persistence.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM SubmissionEntity s WHERE s.id = :id")
+    Optional<SubmissionEntity> findByIdForUpdate(@Param("id") UUID id);
+
     Optional<SubmissionEntity> findTopByComicIdAndAuthorIdAndQueueTypeIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(
             UUID comicId,
             UUID authorId,

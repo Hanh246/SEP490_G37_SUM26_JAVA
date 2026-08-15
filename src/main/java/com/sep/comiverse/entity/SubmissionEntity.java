@@ -86,4 +86,12 @@ public class SubmissionEntity extends BaseEntity {
 
     @Column(name = "moderator_id")
     private UUID moderatorId;
+
+    /** Tracks which moderator has claimed this submission for review (IN_REVIEW state). */
+    @Column(name = "reviewer_id")
+    private UUID reviewerId;
+
+    /** Timestamp when the reviewer claimed this submission. Used for auto-expiry of stale claims. */
+    @Column(name = "review_started_at")
+    private java.time.Instant reviewStartedAt;
 }
