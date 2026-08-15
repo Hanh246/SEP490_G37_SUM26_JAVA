@@ -173,6 +173,25 @@ public class ReportService {
                 predicate = cb.and(predicate, cb.equal(categoryJoin.get("assignedRole"), finalAssignedRole));
             }
 
+            if (safeFilter.getStartDate() != null && !safeFilter.getStartDate().isBlank()) {
+                try {
+                    java.time.LocalDate start = java.time.LocalDate.parse(safeFilter.getStartDate());
+                    predicate = cb.and(predicate, cb.greaterThanOrEqualTo(root.get("createdAt"), start.atStartOfDay(java.time.ZoneOffset.UTC).toInstant()));
+                } catch (Exception e) {
+                    // Ignore invalid date
+                }
+            }
+
+            if (safeFilter.getEndDate() != null && !safeFilter.getEndDate().isBlank()) {
+                try {
+                    java.time.LocalDate end = java.time.LocalDate.parse(safeFilter.getEndDate());
+                    // End of the day
+                    predicate = cb.and(predicate, cb.lessThanOrEqualTo(root.get("createdAt"), end.plusDays(1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().minusMillis(1)));
+                } catch (Exception e) {
+                    // Ignore invalid date
+                }
+            }
+
             if (isTeamMemberOrLeader) {
                 var targetTypePredicate = cb.equal(root.get("targetType"), ReportTargetType.CHAPTER_TRANSLATIONS);
                 if (teamTranslationIds == null || teamTranslationIds.isEmpty()) {
