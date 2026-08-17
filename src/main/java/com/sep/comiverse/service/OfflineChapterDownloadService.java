@@ -55,16 +55,33 @@ public class OfflineChapterDownloadService {
     }
 
     public ProtectedChapterPackage createPackage(UUID userId, UUID chapterId, UUID deviceKeyId) {
+        return createPackage(userId, chapterId, deviceKeyId, false);
+    }
+
+    public ProtectedChapterPackage createPackage(
+            UUID userId,
+            UUID chapterId,
+            UUID deviceKeyId,
+            boolean includeTranslations
+    ) {
         Instant serverTime = Instant.now();
         requireEligiblePremiumReader(userId);
         ChapterEntity chapter = requirePublishedChapter(chapterId);
         OfflineDeviceEntity device = deviceService.requireActiveDevice(userId, deviceKeyId);
 
-        OfflineChapterPackageService.PreparedPackage prepared = packageService.create(chapter, device, serverTime);
+        OfflineChapterPackageService.PreparedPackage prepared = packageService.create(
+                chapter,
+                device,
+                serverTime,
+                includeTranslations
+        );
         try {
             requireEligiblePremiumReader(userId);
             ChapterEntity currentChapter = requirePublishedChapter(chapterId);
-            if (!prepared.record().getSourceDescriptorSha256().equals(packageService.sourceDescriptor(currentChapter))) {
+            String currentSourceDescriptor = includeTranslations
+                    ? packageService.sourceDescriptor(currentChapter, true)
+                    : packageService.sourceDescriptor(currentChapter);
+            if (!prepared.record().getSourceDescriptorSha256().equals(currentSourceDescriptor)) {
                 throw new OfflineDownloadException(
                         "CONTENT_CHANGED_RETRY",
                         "Chapter content changed while the offline package was being created. Please retry",
@@ -119,7 +136,10 @@ public class OfflineChapterDownloadService {
         }
 
         ChapterEntity chapter = requirePublishedChapter(offlinePackage.getChapterId());
-        String currentSourceDescriptor = packageService.sourceDescriptor(chapter);
+        String currentSourceDescriptor = offlinePackage.getFormatVersion() != null
+                && offlinePackage.getFormatVersion() >= OfflineChapterPackageService.TRANSLATED_FORMAT_VERSION
+                ? packageService.sourceDescriptor(chapter, true)
+                : packageService.sourceDescriptor(chapter);
         if (!currentSourceDescriptor.equals(offlinePackage.getSourceDescriptorSha256())) {
             offlinePackage.setRevoked(true);
             packageRepository.save(offlinePackage);

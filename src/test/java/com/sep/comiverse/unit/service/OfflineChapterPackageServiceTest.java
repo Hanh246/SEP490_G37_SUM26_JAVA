@@ -4,8 +4,10 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sep.comiverse.config.OfflineDownloadProperties;
 import com.sep.comiverse.entity.ChapterEntity;
+import com.sep.comiverse.entity.ChapterTranslationEntity;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.OfflineDeviceEntity;
+import com.sep.comiverse.repository.IChapterTranslationRepository;
 import com.sep.comiverse.repository.IOfflinePackageRepository;
 import com.sep.comiverse.service.OfflineChapterPackageService;
 import com.sep.comiverse.service.OfflineDownloadCryptoService;
@@ -26,6 +28,7 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.spec.MGF1ParameterSpec;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +49,7 @@ class OfflineChapterPackageServiceTest {
         ReflectionTestUtils.invokeMethod(crypto, "initialize");
         OfflineSourceImageService source = mock(OfflineSourceImageService.class);
         IOfflinePackageRepository repository = mock(IOfflinePackageRepository.class);
+        IChapterTranslationRepository translations = mock(IChapterTranslationRepository.class);
         ObjectMapper objectMapper = new ObjectMapper();
         byte[] pageBytes = new byte[]{(byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4};
         when(source.download("https://res.cloudinary.com/demo/page.png"))
@@ -58,6 +62,7 @@ class OfflineChapterPackageServiceTest {
                 crypto,
                 source,
                 repository,
+                translations,
                 objectMapper
         );
         UUID userId = UUID.randomUUID();
@@ -126,6 +131,124 @@ class OfflineChapterPackageServiceTest {
             assertEquals(1, ((Number) manifest.get("version")).intValue());
             assertEquals(0L, ((Number) page.get("offset")).longValue());
             assertEquals(ciphertext.length, ((Number) page.get("length")).intValue());
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void encryptsPublishedTranslationsInVersionTwoPackage() throws Exception {
+        OfflineDownloadProperties properties = OfflineDownloadCryptoServiceTest.enabledProperties();
+        OfflineDownloadCryptoService crypto = new OfflineDownloadCryptoService(properties);
+        ReflectionTestUtils.invokeMethod(crypto, "initialize");
+        OfflineSourceImageService source = mock(OfflineSourceImageService.class);
+        IOfflinePackageRepository repository = mock(IOfflinePackageRepository.class);
+        IChapterTranslationRepository translations = mock(IChapterTranslationRepository.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        byte[] pageBytes = new byte[]{(byte) 0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4};
+        when(source.download("https://res.cloudinary.com/demo/page.png"))
+                .thenAnswer(invocation -> new OfflineSourceImageService.DownloadedPage(pageBytes.clone(), "image/png"));
+        when(repository.countByUserIdAndCreatedAtAfterAndDeletedFalse(any(), any())).thenReturn(0L);
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UUID userId = UUID.randomUUID();
+        UUID chapterId = UUID.randomUUID();
+        UUID comicId = UUID.randomUUID();
+        UUID deviceKeyId = UUID.randomUUID();
+        KeyPairGenerator rsa = KeyPairGenerator.getInstance("RSA");
+        rsa.initialize(2048);
+        KeyPair deviceKeys = rsa.generateKeyPair();
+        OfflineDeviceEntity device = OfflineDeviceEntity.builder()
+                .userId(userId)
+                .deviceIdHash("1".repeat(64))
+                .publicKeySha256(crypto.sha256Hex(deviceKeys.getPublic().getEncoded()))
+                .publicKeyBase64(Base64.getEncoder().encodeToString(deviceKeys.getPublic().getEncoded()))
+                .lastSeenAt(Instant.now())
+                .build();
+        device.setId(deviceKeyId);
+        ComicEntity comic = ComicEntity.builder().title("Test").build();
+        comic.setId(comicId);
+        ChapterEntity chapter = ChapterEntity.builder()
+                .comic(comic)
+                .images(List.of("https://res.cloudinary.com/demo/page.png"))
+                .build();
+        chapter.setId(chapterId);
+        String pagesBubbles = "[{\"pageNumber\":1,\"imageUrl\":\"page.png\",\"bubbles\":\"[]\"}]";
+        ChapterTranslationEntity vietnamese = ChapterTranslationEntity.builder()
+                .chapter(chapter)
+                .languageCode("vi")
+                .pagesBubbles(pagesBubbles)
+                .build();
+        vietnamese.setId(UUID.randomUUID());
+        when(translations.findPublishedByChapterId(chapterId)).thenReturn(List.of(vietnamese));
+
+        OfflineChapterPackageService service = new OfflineChapterPackageService(
+                properties,
+                crypto,
+                source,
+                repository,
+                translations,
+                objectMapper
+        );
+        OfflineChapterPackageService.PreparedPackage prepared = service.create(
+                chapter,
+                device,
+                Instant.now(),
+                true
+        );
+
+        try (var artifact = prepared.artifact()) {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            artifact.copyTo(bytes);
+            byte[] packageBytes = bytes.toByteArray();
+            assertEquals(-1, indexOf(packageBytes, pagesBubbles.getBytes(StandardCharsets.UTF_8)));
+
+            DataInputStream input = new DataInputStream(new ByteArrayInputStream(packageBytes));
+            assertArrayEquals(OfflineChapterPackageService.MAGIC, input.readNBytes(5));
+            int manifestLength = input.readInt();
+            Map<String, Object> manifest = objectMapper.readValue(
+                    input.readNBytes(manifestLength),
+                    new TypeReference<>() { }
+            );
+            byte[] payload = input.readAllBytes();
+            assertEquals(OfflineChapterPackageService.TRANSLATED_FORMAT_VERSION,
+                    ((Number) manifest.get("version")).intValue());
+            assertEquals(1, ((Number) manifest.get("translationCount")).intValue());
+
+            Map<String, Object> translation = ((List<Map<String, Object>>) manifest.get("translations")).getFirst();
+            int offset = ((Number) translation.get("offset")).intValue();
+            int length = ((Number) translation.get("length")).intValue();
+            byte[] ciphertext = Arrays.copyOfRange(payload, offset, offset + length);
+
+            Cipher unwrap = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
+            unwrap.init(Cipher.DECRYPT_MODE, deviceKeys.getPrivate(), new OAEPParameterSpec(
+                    "SHA-256", "MGF1", MGF1ParameterSpec.SHA1, PSource.PSpecified.DEFAULT
+            ));
+            byte[] contentKey = unwrap.doFinal(crypto.decodeFlexible(prepared.record().getWrappedContentKey()));
+            String aad = String.join("|",
+                    "CVPK2",
+                    prepared.record().getPackageId().toString(),
+                    userId.toString(),
+                    chapterId.toString(),
+                    device.getPublicKeySha256(),
+                    prepared.record().getContentRevision(),
+                    "translation",
+                    "vi",
+                    translation.get("translationSha256").toString()
+            );
+            Cipher decrypt = Cipher.getInstance("AES/GCM/NoPadding");
+            decrypt.init(
+                    Cipher.DECRYPT_MODE,
+                    new SecretKeySpec(contentKey, "AES"),
+                    new GCMParameterSpec(128, Base64.getUrlDecoder().decode(translation.get("nonce").toString()))
+            );
+            decrypt.updateAAD(aad.getBytes(StandardCharsets.UTF_8));
+            Map<String, Object> decoded = objectMapper.readValue(
+                    decrypt.doFinal(ciphertext),
+                    new TypeReference<>() { }
+            );
+
+            assertEquals("vi", decoded.get("languageCode"));
+            assertEquals(pagesBubbles, decoded.get("pagesBubbles"));
         }
     }
 

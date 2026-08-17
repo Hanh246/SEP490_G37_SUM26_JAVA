@@ -128,7 +128,8 @@ public class OfflineDownloadController {
         OfflineChapterDownloadService.ProtectedChapterPackage protectedPackage = downloadService.createPackage(
                 principal.getId(),
                 chapterId,
-                request.getDeviceKeyId()
+                request.getDeviceKeyId(),
+                request.isIncludeTranslations()
         );
         OfflinePackageEntity record = protectedPackage.record();
         OfflineLicenseResponse metadata = protectedPackage.metadata();
