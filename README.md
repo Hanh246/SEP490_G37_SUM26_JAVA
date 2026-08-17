@@ -24,33 +24,33 @@ This repository contains the backend core of **ComiVerse**, a premium global com
 ## 🌟 Core System Workflows
 
 ### 🔐 1. Authentication & RBAC (Role-Based Access Control)
-**Luồng chính:** Đăng nhập -> Verify JWT -> Phân quyền truy cập.
-- Hệ thống bảo mật 6 cấp độ quyền (Reader, Author, Translator, Project Leader, Moderator, Admin).
-- OAuth2 integration cho phép đăng nhập nhanh qua Google/Facebook.
-- Token-based authentication với cơ chế Refresh Token bảo mật.
+**Main Workflow:** Login -> Verify JWT -> Enforce Access Control.
+- 6-level hierarchical security system (Reader, Author, Translator, Project Leader, Moderator, Admin).
+- OAuth2 integration enables quick social login via Google/Facebook.
+- Token-based authentication equipped with a secure Refresh Token mechanism.
 
 ### 💰 2. Financial Ledger & Monetization Engine
-**Luồng chính:** Người dùng đọc truyện / Trả phí -> Tính toán Revenue (View-unit) -> Lưu Ledger -> Request Payout qua Stripe.
-- **Micro-transaction Tracking**: Theo dõi chi tiết từng lượt đọc của người dùng để chia nhỏ doanh thu (revenue split) cho Author dựa trên View-unit rate.
-- **Translator Payout System**: Tự động tính tiền công cho Translator dựa trên **số trang truyện đã dịch** và **hệ số trách nhiệm (Responsibility factor)**.
-- **Stripe Integration**: Cho phép Creator/Translator yêu cầu rút tiền (Withdrawal) và chuyển thẳng tiền thật về tài khoản ngân hàng thông qua Stripe Connect.
+**Main Workflow:** User reads/purchases -> Calculate Revenue (View-unit) -> Store in Ledger -> Stripe Payout Request.
+- **Micro-transaction Tracking**: Detailed tracking of user reads to calculate and split revenue for Authors based on a dynamic View-unit rate.
+- **Translator Payout System**: Automated compensation calculation for Translators based on the **number of translated pages** and an assigned **Responsibility factor**.
+- **Stripe Integration**: Creators and Translators can request direct bank withdrawals via Stripe Connect.
 
 ### 📚 3. Content Delivery & Cloudinary Storage
-**Luồng chính:** Author upload -> BE process -> Upload Cloudinary -> Phân phối Frontend.
-- Chuyển đổi và nén hàng loạt ảnh tự động trước khi đẩy lên Cloudinary CDN.
-- Quản lý trạng thái xuất bản (Draft, Pending Review, Ongoing, Completed, Hiatus).
-- API phản hồi cực nhanh với cơ chế Caching (Redis) để phục vụ cho tính năng Zero-latency preloading của Frontend.
+**Main Workflow:** Author uploads -> BE processes -> Uploads to Cloudinary -> Distributes to Frontend.
+- Automated batch image conversion and compression before pushing to the Cloudinary CDN.
+- Manages publication lifecycles (Draft, Pending Review, Ongoing, Completed, Hiatus).
+- Extremely fast API response times utilizing Redis Caching to power the Frontend's zero-latency preloading feature.
 
 ### ⚖️ 4. Moderation & Strike System
-**Luồng chính:** Nhận Report -> Lưu Database -> Xử lý bằng chứng -> Ban/Mute/Takedown.
-- Hệ thống bắt và phân loại các báo cáo (Bạo lực, Bản quyền) đưa vào Review Queue.
-- Cơ chế "Cảnh cáo" (Strikes). Tự động khóa mõm (Mute) chat hoặc cấm truy cập (Ban) nếu User đạt ngưỡng cảnh cáo.
-- Gửi Email cảnh báo tự động thông qua JavaMailSender / Resend.
+**Main Workflow:** Receive Report -> Store in Database -> Process Evidence -> Ban/Mute/Takedown.
+- Intercepts and categorizes user reports (e.g., Violence, Copyright Violations) into a dedicated Review Queue.
+- "Strike" warning system. Automatically mutes or bans accounts that reach the strike threshold.
+- Automated warning and penalty emails sent via JavaMailSender / Resend.
 
 ### 🌐 5. Translation Workspace (Kanban Logic)
-**Luồng chính:** Giao việc -> Cập nhật trạng thái Kanban -> Split-screen Translation -> Merge.
-- Cung cấp các API RESTful đặc thù cho bảng Kanban (Kéo thả Task từ To Do sang In Progress).
-- Xử lý lock row database để tránh việc 2 Translator cùng chỉnh sửa 1 trang truyện đồng thời (Concurrency control).
+**Main Workflow:** Task Delegation -> Update Kanban Status -> Split-screen Translation -> Merge.
+- Provides specific RESTful APIs to power the Kanban board (Drag-and-drop tasks from To Do to In Progress).
+- Implements database row-locking and concurrency control to prevent multiple Translators from editing the same comic page simultaneously.
 
 ---
 
