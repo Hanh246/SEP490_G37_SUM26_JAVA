@@ -476,6 +476,12 @@ public class TeamWorkspaceController {
                     .body(Map.of("success", false, "message", "Only this team's Project Leader can create or assign tasks"));
         }
 
+        ProjectTeamEntity team = projectTeamRepository.findById(teamId).orElse(null);
+        if (team != null && "paused".equalsIgnoreCase(team.getStatus())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "message", "Cannot create tasks while the team is paused."));
+        }
+
         ChapterEntity chapter = null;
         if (request.getChapterId() != null) {
             chapter = chapterRepository.findById(request.getChapterId()).orElse(null);
@@ -510,7 +516,6 @@ public class TeamWorkspaceController {
         List<TeamTaskEntity> currentTeamChapterTasks = existingTeamChapterTasks.stream()
                 .filter(t -> !isSupersededStatus(t.getStatus()))
                 .toList();
-        ProjectTeamEntity team = projectTeamRepository.findById(teamId).orElse(null);
         boolean canRevise = canCreateRevisionTask(chapter.getId(), team, currentTeamChapterTasks);
         if (!currentTeamChapterTasks.isEmpty() && !canRevise) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
