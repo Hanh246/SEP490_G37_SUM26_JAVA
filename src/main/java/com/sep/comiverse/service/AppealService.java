@@ -180,26 +180,47 @@ public class AppealService {
                 comic.setAppealReason(null);
                 
                 if (requestDTO.getStatus() == AppealStatus.APPROVED) {
+                    log.info("[APPEAL RESTORE] Starting restore for comic {} from ticket {}", comic.getId(), entity.getId());
+                    
                     if (comic.getModerationStatus() == ComicModerationStatus.REJECTED || comic.getModerationStatus() == ComicModerationStatus.NEEDS_CHANGES) {
                         comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
                     }
                     comic.setRejectionReason(null);
 
-                    if (entity.getPreviousStateSnapshot() != null && !entity.getPreviousStateSnapshot().isEmpty()) {
+                    String snapshotJson = entity.getPreviousStateSnapshot();
+                    log.info("[APPEAL RESTORE] Snapshot JSON (first 500 chars): {}", 
+                        snapshotJson != null ? snapshotJson.substring(0, Math.min(500, snapshotJson.length())) : "NULL");
+
+                    if (snapshotJson != null && !snapshotJson.isEmpty()) {
                         try {
-                            JsonNode root = objectMapper.readTree(entity.getPreviousStateSnapshot());
+                            JsonNode root = objectMapper.readTree(snapshotJson);
                             
                             // Revert editable fields
-                            if (root.has("title")) comic.setTitle(root.get("title").isNull() ? null : root.get("title").asText());
+                            if (root.has("title")) {
+                                String oldTitle = comic.getTitle();
+                                String newTitle = root.get("title").isNull() ? null : root.get("title").asText();
+                                comic.setTitle(newTitle);
+                                log.info("[APPEAL RESTORE] Title: '{}' -> '{}'", oldTitle, newTitle);
+                            }
                             if (root.has("summary")) comic.setSummary(root.get("summary").isNull() ? null : root.get("summary").asText());
                             if (root.has("cover")) comic.setCover(root.get("cover").isNull() ? null : root.get("cover").asText());
-                            if (root.has("language")) comic.setLanguage(root.get("language").isNull() ? "Unknown" : root.get("language").asText());
+                            if (root.has("language")) {
+                                String oldLang = comic.getLanguage();
+                                String newLang = root.get("language").isNull() ? "Unknown" : root.get("language").asText();
+                                comic.setLanguage(newLang);
+                                log.info("[APPEAL RESTORE] Language: '{}' -> '{}'", oldLang, newLang);
+                            }
                             if (root.has("minimumAge")) comic.setMinimumAge(root.get("minimumAge").isNull() ? null : root.get("minimumAge").asInt());
                             
                             if (root.has("publicationStatus")) {
                                 try {
-                                    comic.setPublicationStatus(root.get("publicationStatus").isNull() ? null : ComicPublicationStatus.valueOf(root.get("publicationStatus").asText().toUpperCase()));
-                                } catch (Exception ignored) {}
+                                    String oldStatus = comic.getPublicationStatus() != null ? comic.getPublicationStatus().name() : "null";
+                                    String newStatus = root.get("publicationStatus").isNull() ? null : root.get("publicationStatus").asText().toUpperCase();
+                                    comic.setPublicationStatus(newStatus == null ? null : ComicPublicationStatus.valueOf(newStatus));
+                                    log.info("[APPEAL RESTORE] PublicationStatus: '{}' -> '{}'", oldStatus, newStatus);
+                                } catch (Exception e) {
+                                    log.warn("[APPEAL RESTORE] Failed to parse publicationStatus", e);
+                                }
                             } else if (root.has("publication_status")) {
                                 try {
                                     comic.setPublicationStatus(root.get("publication_status").isNull() ? null : ComicPublicationStatus.valueOf(root.get("publication_status").asText().toUpperCase()));
@@ -210,36 +231,53 @@ public class AppealService {
                             if (genreRepository != null) {
                                 Set<UUID> targetGenreIds = new HashSet<>();
                                 if (root.has("genres") && root.get("genres").isArray()) {
+                                    log.info("[APPEAL RESTORE] Found 'genres' array with {} elements", root.get("genres").size());
                                     for (JsonNode gNode : root.get("genres")) {
+                                        log.info("[APPEAL RESTORE] Genre node: {}", gNode.toString());
                                         if (gNode.isObject() && gNode.hasNonNull("id")) {
                                             try {
                                                 targetGenreIds.add(UUID.fromString(gNode.get("id").asText()));
-                                            } catch (Exception ignored) {}
+                                            } catch (Exception e) {
+                                                log.warn("[APPEAL RESTORE] Failed to parse genre id from object: {}", gNode, e);
+                                            }
                                         } else if (gNode.isTextual()) {
                                             try {
                                                 targetGenreIds.add(UUID.fromString(gNode.asText()));
-                                            } catch (Exception ignored) {}
+                                            } catch (Exception e) {
+                                                log.warn("[APPEAL RESTORE] Failed to parse genre id from text: {}", gNode.asText(), e);
+                                            }
                                         }
                                     }
                                 } else if (root.has("genreIds") && root.get("genreIds").isArray()) {
+                                    log.info("[APPEAL RESTORE] Found 'genreIds' array with {} elements", root.get("genreIds").size());
                                     for (JsonNode gNode : root.get("genreIds")) {
                                         try {
                                             targetGenreIds.add(UUID.fromString(gNode.asText()));
-                                        } catch (Exception ignored) {}
+                                        } catch (Exception e) {
+                                            log.warn("[APPEAL RESTORE] Failed to parse genreId: {}", gNode.asText(), e);
+                                        }
                                     }
+                                } else {
+                                    log.warn("[APPEAL RESTORE] No 'genres' or 'genreIds' array found in snapshot. Keys: {}", root.fieldNames());
                                 }
+                                
+                                log.info("[APPEAL RESTORE] Resolved {} genre UUIDs to restore: {}", targetGenreIds.size(), targetGenreIds);
+                                
                                 if (targetGenreIds.isEmpty()) {
                                     comic.setGenres(new HashSet<>());
                                 } else {
                                     List<GenreEntity> genreEntities = genreRepository.findAllById(targetGenreIds);
+                                    log.info("[APPEAL RESTORE] Found {} genre entities from DB for {} IDs", genreEntities.size(), targetGenreIds.size());
                                     comic.setGenres(new HashSet<>(genreEntities));
                                 }
                             }
                             
-                            log.info("Successfully reverted comic {} from appeal ticket {}", comic.getId(), entity.getId());
+                            log.info("[APPEAL RESTORE] Successfully prepared revert for comic {} from appeal ticket {}", comic.getId(), entity.getId());
                         } catch (Exception e) {
-                            log.error("Failed to deserialize or revert comic state from appeal snapshot", e);
+                            log.error("[APPEAL RESTORE] Failed to deserialize or revert comic state from appeal snapshot", e);
                         }
+                    } else {
+                        log.warn("[APPEAL RESTORE] No snapshot found on appeal ticket {} for comic {}", entity.getId(), comic.getId());
                     }
 
                     // Reset Mod Edit flags so comic is restored cleanly
@@ -247,7 +285,10 @@ public class AppealService {
                     comic.setPreviousStateSnapshot(null);
                 }
                 
-                comicRepository.save(comic);
+                ComicEntity saved = comicRepository.save(comic);
+                log.info("[APPEAL RESTORE] Saved comic. Language='{}', PublicationStatus='{}', Genres={}", 
+                    saved.getLanguage(), saved.getPublicationStatus(), 
+                    saved.getGenres() != null ? saved.getGenres().size() + " genres" : "null");
                 try {
                     redisTemplate.delete("comic:detail:v2:" + comic.getId());
                 } catch (Exception e) {
