@@ -7,6 +7,7 @@ import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.dto.request.AuthRequest;
 import com.sep.comiverse.dto.request.ForgotPasswordRequest;
 import com.sep.comiverse.dto.request.ResetPasswordRequest;
+import com.sep.comiverse.dto.request.RefreshTokenRequest;
 import com.sep.comiverse.dto.request.ChangePasswordRequest;
 import com.sep.comiverse.dto.request.UpdateProfileRequest;
 import com.sep.comiverse.dto.request.VerifyEmailRequest;
@@ -59,6 +60,31 @@ public class AuthController {
         String refreshToken = jwtTokenUtil.generateRefreshToken(user, decision.deviceId());
 
         return ResponseEntity.ok(new AuthResponse(token, refreshToken));
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<AuthResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
+        String refreshToken = request.getRefreshToken().trim();
+        try {
+            if (!jwtTokenUtil.validateJwtToken(refreshToken) || !jwtTokenUtil.isRefreshToken(refreshToken)) {
+                throw new IllegalArgumentException("Invalid refresh token");
+            }
+            UUID userId = UUID.fromString(jwtTokenUtil.getSubjectFromJwtToken(refreshToken));
+            UserEntity user = userRepository.findByIdWithRole(userId).orElseThrow();
+            if (!"ACTIVE".equalsIgnoreCase(user.getStatus())) {
+                throw new IllegalStateException("Account is not active");
+            }
+            UUID loginDeviceId = jwtTokenUtil.getLoginDeviceIdFromToken(refreshToken);
+            if (loginDeviceId != null && !loginDeviceService.isActive(userId, loginDeviceId)) {
+                throw new IllegalStateException("Login device is no longer active");
+            }
+            return ResponseEntity.ok(new AuthResponse(
+                    jwtTokenUtil.generateToken(user, loginDeviceId),
+                    jwtTokenUtil.generateRefreshToken(user, loginDeviceId)
+            ));
+        } catch (Exception exception) {
+            throw new CustomException(401, "Invalid or expired refresh token", HttpStatus.UNAUTHORIZED);
+        }
     }
 
     @PostMapping("/devices/replace")
