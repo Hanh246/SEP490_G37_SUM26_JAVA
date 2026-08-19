@@ -3,10 +3,13 @@ package com.sep.comiverse.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sep.comiverse.config.OfflineDownloadProperties;
 import com.sep.comiverse.entity.ChapterEntity;
+import com.sep.comiverse.entity.ChapterTranslationEntity;
 import com.sep.comiverse.entity.OfflineDeviceEntity;
 import com.sep.comiverse.entity.OfflinePackageEntity;
 import com.sep.comiverse.exception.OfflineDownloadException;
+import com.sep.comiverse.repository.IChapterTranslationRepository;
 import com.sep.comiverse.repository.IOfflinePackageRepository;
+import com.sep.comiverse.util.LanguageCodes;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -24,21 +27,32 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
 public class OfflineChapterPackageService {
 
     public static final int FORMAT_VERSION = 1;
+    public static final int TRANSLATED_FORMAT_VERSION = 2;
     public static final byte[] MAGIC = "CVPK1".getBytes(StandardCharsets.US_ASCII);
+    private static final int MAX_TRANSLATIONS = 32;
+    private static final int MAX_TRANSLATION_BYTES = 4 * 1024 * 1024;
+    private static final String PAGE_AAD_FORMAT =
+            "CVPK1|packageId|userId|chapterId|deviceKeySha256|contentRevision|pageNumber|pageSha256";
+    private static final String TRANSLATION_AAD_FORMAT =
+            "CVPK2|packageId|userId|chapterId|deviceKeySha256|contentRevision|translation|languageCode|translationSha256";
 
     private final OfflineDownloadProperties properties;
     private final OfflineDownloadCryptoService cryptoService;
     private final OfflineSourceImageService sourceImageService;
     private final IOfflinePackageRepository packageRepository;
+    private final IChapterTranslationRepository translationRepository;
     private final ObjectMapper objectMapper;
 
     public OfflineChapterPackageService(
@@ -46,22 +60,37 @@ public class OfflineChapterPackageService {
             OfflineDownloadCryptoService cryptoService,
             OfflineSourceImageService sourceImageService,
             IOfflinePackageRepository packageRepository,
+            IChapterTranslationRepository translationRepository,
             ObjectMapper objectMapper
     ) {
         this.properties = properties;
         this.cryptoService = cryptoService;
         this.sourceImageService = sourceImageService;
         this.packageRepository = packageRepository;
+        this.translationRepository = translationRepository;
         this.objectMapper = objectMapper;
     }
 
     public PreparedPackage create(ChapterEntity chapter, OfflineDeviceEntity device, Instant serverTime) {
+        return create(chapter, device, serverTime, false);
+    }
+
+    public PreparedPackage create(
+            ChapterEntity chapter,
+            OfflineDeviceEntity device,
+            Instant serverTime,
+            boolean includeTranslations
+    ) {
         cryptoService.requireAvailable();
         validateLimits(chapter, serverTime, device.getUserId());
 
+        int formatVersion = includeTranslations ? TRANSLATED_FORMAT_VERSION : FORMAT_VERSION;
         List<PageFingerprint> fingerprints = fingerprintPages(chapter.getImages());
-        String contentRevision = contentRevision(chapter, fingerprints);
-        String sourceDescriptor = sourceDescriptor(chapter);
+        List<TranslationSource> translations = includeTranslations
+                ? loadPublishedTranslations(chapter)
+                : List.of();
+        String contentRevision = contentRevision(chapter, fingerprints, translations, formatVersion);
+        String sourceDescriptor = sourceDescriptor(chapter, translations, formatVersion);
         UUID packageId = UUID.randomUUID();
         byte[] contentKey = cryptoService.generateContentKey();
         Path encryptedPayload = null;
@@ -69,12 +98,13 @@ public class OfflineChapterPackageService {
 
         try {
             encryptedPayload = Files.createTempFile("comiverse-cvpack-payload-", ".bin");
-            List<PageManifestEntry> entries = encryptPages(
+            EncryptedPayload entries = encryptPayloads(
                     chapter,
                     device,
                     packageId,
                     contentRevision,
                     fingerprints,
+                    translations,
                     contentKey,
                     encryptedPayload
             );
@@ -84,7 +114,8 @@ public class OfflineChapterPackageService {
                     device,
                     packageId,
                     contentRevision,
-                    entries
+                    entries,
+                    formatVersion
             );
             byte[] manifestBytes = objectMapper.writeValueAsBytes(manifest);
             String manifestSha256 = cryptoService.sha256Hex(manifestBytes);
@@ -123,7 +154,7 @@ public class OfflineChapterPackageService {
                     .packageSize(packageSize)
                     .wrappedContentKey(wrappedContentKey)
                     .keyAlgorithm(OfflineDownloadCryptoService.KEY_WRAP_ALGORITHM)
-                    .formatVersion(FORMAT_VERSION)
+                    .formatVersion(formatVersion)
                     .revoked(false)
                     .build();
             OfflinePackageEntity saved = packageRepository.save(record);
@@ -140,14 +171,38 @@ public class OfflineChapterPackageService {
             );
         } finally {
             Arrays.fill(contentKey, (byte) 0);
+            clearTranslationSources(translations);
             deleteQuietly(encryptedPayload);
             deleteQuietly(finalPackage);
         }
     }
 
     public String sourceDescriptor(ChapterEntity chapter) {
+        return sourceDescriptor(chapter, false);
+    }
+
+    public String sourceDescriptor(ChapterEntity chapter, boolean includeTranslations) {
+        List<TranslationSource> translations = includeTranslations
+                ? loadPublishedTranslations(chapter)
+                : List.of();
+        try {
+            return sourceDescriptor(
+                    chapter,
+                    translations,
+                    includeTranslations ? TRANSLATED_FORMAT_VERSION : FORMAT_VERSION
+            );
+        } finally {
+            clearTranslationSources(translations);
+        }
+    }
+
+    private String sourceDescriptor(
+            ChapterEntity chapter,
+            List<TranslationSource> translations,
+            int formatVersion
+    ) {
         StringBuilder canonical = new StringBuilder();
-        canonical.append("CV-SOURCE-V1\n")
+        canonical.append(formatVersion >= TRANSLATED_FORMAT_VERSION ? "CV-SOURCE-V2\n" : "CV-SOURCE-V1\n")
                 .append(chapter.getId()).append('\n')
                 .append(chapter.getComic() == null ? "" : chapter.getComic().getId()).append('\n');
         String storedContentHash = chapter.getContentHash() == null ? "" : chapter.getContentHash().trim();
@@ -159,6 +214,14 @@ public class OfflineChapterPackageService {
             canonical.append(index + 1).append(':')
                     .append(image.getBytes(StandardCharsets.UTF_8).length).append(':')
                     .append(image).append('\n');
+        }
+        if (formatVersion >= TRANSLATED_FORMAT_VERSION) {
+            canonical.append(translations.size()).append('\n');
+            for (TranslationSource translation : translations) {
+                canonical.append(translation.languageCode()).append(':')
+                        .append(translation.plaintext().length).append(':')
+                        .append(translation.plaintextSha256()).append('\n');
+            }
         }
         return cryptoService.sha256Hex(canonical.toString().getBytes(StandardCharsets.UTF_8));
     }
@@ -187,16 +250,18 @@ public class OfflineChapterPackageService {
         return result;
     }
 
-    private List<PageManifestEntry> encryptPages(
+    private EncryptedPayload encryptPayloads(
             ChapterEntity chapter,
             OfflineDeviceEntity device,
             UUID packageId,
             String contentRevision,
             List<PageFingerprint> fingerprints,
+            List<TranslationSource> translations,
             byte[] contentKey,
             Path encryptedPayload
     ) throws Exception {
-        List<PageManifestEntry> entries = new ArrayList<>();
+        List<PageManifestEntry> pageEntries = new ArrayList<>();
+        List<TranslationManifestEntry> translationEntries = new ArrayList<>();
         long offset = 0L;
         try (OutputStream output = new BufferedOutputStream(Files.newOutputStream(encryptedPayload))) {
             for (int index = 0; index < chapter.getImages().size(); index++) {
@@ -228,7 +293,7 @@ public class OfflineChapterPackageService {
                     );
                     ciphertext = cryptoService.encryptPage(plaintext, contentKey, nonce, aad);
                     output.write(ciphertext);
-                    entries.add(new PageManifestEntry(
+                    pageEntries.add(new PageManifestEntry(
                             expected.pageNumber(),
                             offset,
                             ciphertext.length,
@@ -248,8 +313,49 @@ public class OfflineChapterPackageService {
                     if (ciphertext != null) Arrays.fill(ciphertext, (byte) 0);
                 }
             }
+
+            for (TranslationSource translation : translations) {
+                byte[] nonce = null;
+                byte[] ciphertext = null;
+                try {
+                    nonce = cryptoService.randomBytes(12);
+                    byte[] aad = translationAad(
+                            packageId,
+                            device.getUserId(),
+                            chapter.getId(),
+                            device.getPublicKeySha256(),
+                            contentRevision,
+                            translation.languageCode(),
+                            translation.plaintextSha256()
+                    );
+                    ciphertext = cryptoService.encryptPage(
+                            translation.plaintext(),
+                            contentKey,
+                            nonce,
+                            aad
+                    );
+                    output.write(ciphertext);
+                    translationEntries.add(new TranslationManifestEntry(
+                            translation.languageCode(),
+                            offset,
+                            ciphertext.length,
+                            cryptoService.encodeUrl(nonce),
+                            "application/json",
+                            translation.plaintext().length,
+                            translation.plaintextSha256(),
+                            cryptoService.sha256Hex(ciphertext)
+                    ));
+                    offset += ciphertext.length;
+                    if (offset > properties.getMaxPackageBytes()) {
+                        throw chapterTooLarge();
+                    }
+                } finally {
+                    if (nonce != null) Arrays.fill(nonce, (byte) 0);
+                    if (ciphertext != null) Arrays.fill(ciphertext, (byte) 0);
+                }
+            }
         }
-        return entries;
+        return new EncryptedPayload(pageEntries, translationEntries);
     }
 
     private Map<String, Object> buildManifest(
@@ -257,10 +363,11 @@ public class OfflineChapterPackageService {
             OfflineDeviceEntity device,
             UUID packageId,
             String contentRevision,
-            List<PageManifestEntry> entries
+            EncryptedPayload entries,
+            int formatVersion
     ) {
         Map<String, Object> manifest = new LinkedHashMap<>();
-        manifest.put("version", FORMAT_VERSION);
+        manifest.put("version", formatVersion);
         manifest.put("packageId", packageId.toString());
         manifest.put("userId", device.getUserId().toString());
         manifest.put("chapterId", chapter.getId().toString());
@@ -269,18 +376,28 @@ public class OfflineChapterPackageService {
         manifest.put("deviceIdHash", device.getDeviceIdHash());
         manifest.put("deviceKeySha256", device.getPublicKeySha256());
         manifest.put("contentRevision", contentRevision);
-        manifest.put("pageCount", entries.size());
+        manifest.put("pageCount", entries.pages().size());
         manifest.put("offsetBase", "PAYLOAD");
         manifest.put("cipher", "AES-256-GCM");
         manifest.put("tagLengthBits", 128);
-        manifest.put("aadFormat", "CVPK1|packageId|userId|chapterId|deviceKeySha256|contentRevision|pageNumber|pageSha256");
-        manifest.put("pages", entries);
+        manifest.put("aadFormat", PAGE_AAD_FORMAT);
+        manifest.put("pages", entries.pages());
+        if (formatVersion >= TRANSLATED_FORMAT_VERSION) {
+            manifest.put("translationCount", entries.translations().size());
+            manifest.put("translationAadFormat", TRANSLATION_AAD_FORMAT);
+            manifest.put("translations", entries.translations());
+        }
         return manifest;
     }
 
-    private String contentRevision(ChapterEntity chapter, List<PageFingerprint> fingerprints) {
+    private String contentRevision(
+            ChapterEntity chapter,
+            List<PageFingerprint> fingerprints,
+            List<TranslationSource> translations,
+            int formatVersion
+    ) {
         StringBuilder canonical = new StringBuilder();
-        canonical.append("CV-CONTENT-V1\n")
+        canonical.append(formatVersion >= TRANSLATED_FORMAT_VERSION ? "CV-CONTENT-V2\n" : "CV-CONTENT-V1\n")
                 .append(chapter.getId()).append('\n')
                 .append(chapter.getComic().getId()).append('\n')
                 .append(fingerprints.size()).append('\n');
@@ -290,7 +407,86 @@ public class OfflineChapterPackageService {
                     .append(page.contentType()).append(':')
                     .append(page.plaintextSha256()).append('\n');
         }
+        if (formatVersion >= TRANSLATED_FORMAT_VERSION) {
+            canonical.append(translations.size()).append('\n');
+            for (TranslationSource translation : translations) {
+                canonical.append(translation.languageCode()).append(':')
+                        .append(translation.plaintext().length).append(':')
+                        .append(translation.plaintextSha256()).append('\n');
+            }
+        }
         return cryptoService.sha256Hex(canonical.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private List<TranslationSource> loadPublishedTranslations(ChapterEntity chapter) {
+        if (chapter.getId() == null) {
+            return List.of();
+        }
+        List<ChapterTranslationEntity> published = new ArrayList<>(
+                translationRepository.findPublishedByChapterId(chapter.getId())
+        );
+        if (published.size() > MAX_TRANSLATIONS) {
+            throw new OfflineDownloadException(
+                    "TOO_MANY_TRANSLATIONS",
+                    "This chapter has too many translations for an offline package",
+                    HttpStatus.PAYLOAD_TOO_LARGE
+            );
+        }
+        published.sort(Comparator.comparing(
+                translation -> translation.getId() == null ? "" : translation.getId().toString()
+        ));
+        List<TranslationSource> result = new ArrayList<>();
+        Set<String> seenLanguages = new HashSet<>();
+        try {
+            for (ChapterTranslationEntity translation : published) {
+                String rawLanguage = translation.getLanguageCode();
+                if (rawLanguage == null || rawLanguage.isBlank()) {
+                    continue;
+                }
+                String languageCode = LanguageCodes.normalize(rawLanguage);
+                if (!languageCode.matches("[a-z0-9]{2,16}") || !seenLanguages.add(languageCode)) {
+                    continue;
+                }
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("id", translation.getId() == null ? "" : translation.getId().toString());
+                payload.put("languageCode", languageCode);
+                payload.put("pagesBubbles", translation.getPagesBubbles() == null
+                        ? "[]"
+                        : translation.getPagesBubbles());
+                byte[] plaintext = objectMapper.writeValueAsBytes(payload);
+                if (plaintext.length == 0 || plaintext.length > MAX_TRANSLATION_BYTES) {
+                    Arrays.fill(plaintext, (byte) 0);
+                    throw new OfflineDownloadException(
+                            "TRANSLATION_TOO_LARGE",
+                            "A chapter translation is too large for an offline package",
+                            HttpStatus.PAYLOAD_TOO_LARGE
+                    );
+                }
+                result.add(new TranslationSource(
+                        languageCode,
+                        plaintext,
+                        cryptoService.sha256Hex(plaintext)
+                ));
+            }
+            result.sort(Comparator.comparing(TranslationSource::languageCode));
+            return result;
+        } catch (OfflineDownloadException exception) {
+            clearTranslationSources(result);
+            throw exception;
+        } catch (Exception exception) {
+            clearTranslationSources(result);
+            throw new OfflineDownloadException(
+                    "TRANSLATION_PACKAGE_FAILED",
+                    "The approved chapter translations could not be packaged",
+                    HttpStatus.INTERNAL_SERVER_ERROR
+            );
+        }
+    }
+
+    private void clearTranslationSources(List<TranslationSource> translations) {
+        for (TranslationSource translation : translations) {
+            Arrays.fill(translation.plaintext(), (byte) 0);
+        }
     }
 
     private byte[] pageAad(
@@ -311,6 +507,28 @@ public class OfflineChapterPackageService {
                 contentRevision,
                 Integer.toString(pageNumber),
                 pageSha256
+        ).getBytes(StandardCharsets.UTF_8);
+    }
+
+    private byte[] translationAad(
+            UUID packageId,
+            UUID userId,
+            UUID chapterId,
+            String deviceKeySha256,
+            String contentRevision,
+            String languageCode,
+            String translationSha256
+    ) {
+        return String.join("|",
+                "CVPK2",
+                packageId.toString(),
+                userId.toString(),
+                chapterId.toString(),
+                deviceKeySha256,
+                contentRevision,
+                "translation",
+                languageCode,
+                translationSha256
         ).getBytes(StandardCharsets.UTF_8);
     }
 
@@ -383,6 +601,31 @@ public class OfflineChapterPackageService {
             int plaintextLength,
             String pageSha256,
             String ciphertextSha256
+    ) {
+    }
+
+    private record TranslationSource(
+            String languageCode,
+            byte[] plaintext,
+            String plaintextSha256
+    ) {
+    }
+
+    private record TranslationManifestEntry(
+            String languageCode,
+            long offset,
+            int length,
+            String nonce,
+            String contentType,
+            int plaintextLength,
+            String translationSha256,
+            String ciphertextSha256
+    ) {
+    }
+
+    private record EncryptedPayload(
+            List<PageManifestEntry> pages,
+            List<TranslationManifestEntry> translations
     ) {
     }
 

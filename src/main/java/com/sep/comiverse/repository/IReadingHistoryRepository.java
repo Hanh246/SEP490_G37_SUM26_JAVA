@@ -19,7 +19,17 @@ public interface IReadingHistoryRepository extends AbstractCrudRepository<Readin
     @Query("SELECT rh.chapterId FROM ReadingHistoryEntity rh WHERE rh.userId = :userId AND rh.comicId = :comicId AND rh.deleted = false")
     List<UUID> findReadChapterIdsByUserIdAndComicId(@Param("userId") UUID userId, @Param("comicId") UUID comicId);
 
-    @Query("SELECT rh.comicId FROM ReadingHistoryEntity rh WHERE rh.userId = :userId AND rh.deleted = false GROUP BY rh.comicId ORDER BY MAX(rh.updatedAt) DESC")
+    @Query("""
+            SELECT rh.comicId
+            FROM ReadingHistoryEntity rh
+            JOIN ComicEntity c ON rh.comicId = c.id
+            WHERE rh.userId = :userId
+               AND rh.deleted = false
+               AND c.deleted = false
+               AND c.moderationStatus = com.sep.comiverse.entity.enums.ComicModerationStatus.PUBLISHED
+            GROUP BY rh.comicId
+            ORDER BY MAX(rh.updatedAt) DESC
+            """)
     List<UUID> findReadComicIdsByUserId(@Param("userId") UUID userId);
 
     @Query("SELECT COUNT(DISTINCT rh.comicId) FROM ReadingHistoryEntity rh WHERE rh.userId = :userId AND rh.deleted = false")
