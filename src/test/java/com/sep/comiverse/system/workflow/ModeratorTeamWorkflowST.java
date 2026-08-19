@@ -184,7 +184,7 @@ public class ModeratorTeamWorkflowST extends AbstractIntegrationTest {
 
         // Step 3: Verify Project Team is ACTIVE with Translator as Leader
         ProjectTeamEntity claimed = projectTeamRepository.findById(unclaimedProject.getId()).orElseThrow();
-        assertEquals("active", claimed.getStatus().toLowerCase(), "Project status must transition to ACTIVE");
+        assertEquals("ongoing", claimed.getStatus().toLowerCase(), "Project status must transition to ongoing");
         assertEquals(translatorUser.getId(), claimed.getLeaderId(), "LeaderId must match claiming Translator");
     }
 
