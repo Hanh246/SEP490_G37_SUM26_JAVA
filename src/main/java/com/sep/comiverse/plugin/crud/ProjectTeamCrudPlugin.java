@@ -55,6 +55,9 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
                 if (dto.getLeaderName() == null) dto.setLeaderName(principal.getFullName() != null ? principal.getFullName() : principal.getUsername());
             }
         }
+        if (dto.getStatus() == null || dto.getStatus().isBlank()) {
+            dto.setStatus("ongoing");
+        }
         ProjectTeamDTO created = super.create(dto);
         auditLogService.log("PROJECT_TEAMS", "Created project team: " + created.getTitle() + " for comic: " + created.getComicName());
         notifyLeaderAboutAssignment(created, "You were assigned as project leader");

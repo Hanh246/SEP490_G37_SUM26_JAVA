@@ -28,4 +28,5 @@ public class TeamMemberDto {
     private String phoneNumber;
     private String facebookUrl;
     private List<String> specializations;
+    private Integer activeTaskCount;
 }
