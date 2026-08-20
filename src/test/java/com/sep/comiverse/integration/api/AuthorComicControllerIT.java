@@ -13,7 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AuthorComicControllerIT extends AbstractBlackboxIT {
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-001 [UC-17]: POST /author/comics - missing token should be rejected")
+    @DisplayName("TC-INT-AuthorComicController-001 [UC-17]")
     void createUnauthorized() throws Exception {
         postJson("/author/comics", """
                 {"title":"Draft","language":"en","cover":"https://cdn.example.com/c.png"}
@@ -22,118 +22,117 @@ class AuthorComicControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-002 [UC-17]: POST /author/comics - READER should return 403")
+    @DisplayName("TC-INT-AuthorComicController-002 [UC-17]")
     void createForbidden() throws Exception {
         postJson("/author/comics", """
                 {"title":"Draft","language":"en","cover":"https://cdn.example.com/c.png"}
-                """, token("READER"))
+                """, fixedToken(READER_USER))
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-003 [UC-17]: POST /author/comics - licensed AUTHOR should return 201")
+    @DisplayName("TC-INT-AuthorComicController-003 [UC-17]")
     void createAsAuthor() throws Exception {
-        createAuthorComic(token("AUTHOR"), "Author Draft One");
+        createAuthorComic(fixedToken(AUTHOR_USER), "Author Draft One");
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-004 [UC-17]: POST /author/comics - missing title should return 400")
+    @DisplayName("TC-INT-AuthorComicController-004 [UC-17]")
     void missingTitle() throws Exception {
         postJson("/author/comics", """
                 {"language":"en","cover":"https://cdn.example.com/c.png"}
-                """, token("AUTHOR"))
+                """, fixedToken(AUTHOR_USER))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-005 [UC-17]: POST /author/comics - missing cover should return 400")
+    @DisplayName("TC-INT-AuthorComicController-005 [UC-17]")
     void missingCover() throws Exception {
         postJson("/author/comics", """
                 {"title":"No Cover","language":"en"}
-                """, token("AUTHOR"))
+                """, fixedToken(AUTHOR_USER))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-006 [UC-17]: POST /author/comics - minimumAge above 21 should return 400")
+    @DisplayName("TC-INT-AuthorComicController-006 [UC-17]")
     void minAgeTooHigh() throws Exception {
         postJson("/author/comics", """
                 {"title":"Adult","language":"en","cover":"https://cdn.example.com/c.png","minimumAge":30}
-                """, token("AUTHOR"))
+                """, fixedToken(AUTHOR_USER))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-007 [UC-17]: GET /author/comics - AUTHOR should return 200")
+    @DisplayName("TC-INT-AuthorComicController-007 [UC-17]")
     void listOwn() throws Exception {
-        String token = token("AUTHOR");
-        createAuthorComic(token, "Listed Draft");
-        getJson("/author/comics", token)
+        String authorToken = fixedToken(AUTHOR_USER);
+        createAuthorComic(authorToken, "Listed Draft");
+        getJson("/author/comics", authorToken)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", notNullValue()));
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-008 [UC-17]: GET /author/comics/{id} - owner should return 200")
+    @DisplayName("TC-INT-AuthorComicController-008 [UC-17]")
     void getOwn() throws Exception {
-        String token = token("AUTHOR");
-        UUID id = createAuthorComic(token, "Owned Draft");
-        getJson("/author/comics/" + id, token)
+        String authorToken = fixedToken(AUTHOR_USER);
+        UUID id = createAuthorComic(authorToken, "Owned Draft");
+        getJson("/author/comics/" + id, authorToken)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(id.toString()));
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-009 [UC-17]: GET /author/comics/{id} - another author should return 404")
+    @DisplayName("TC-INT-AuthorComicController-009 [UC-17]")
     void getForeign() throws Exception {
-        UUID id = createAuthorComic(token("AUTHOR"), "Foreign Draft");
-        getJson("/author/comics/" + id, token("AUTHOR")).andExpect(status().isNotFound());
+        UUID id = createAuthorComic(fixedToken(AUTHOR_USER), "Foreign Draft");
+        getJson("/author/comics/" + id, fixedToken(TRANS_USER)).andExpect(status().isForbidden());
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-010 [UC-17]: PUT /author/comics/{id} - owner should return 200")
+    @DisplayName("TC-INT-AuthorComicController-010 [UC-17]")
     void updateOwn() throws Exception {
-        String token = token("AUTHOR");
-        UUID id = createAuthorComic(token, "Edit Me");
+        String authorToken = fixedToken(AUTHOR_USER);
+        UUID id = createAuthorComic(authorToken, "Edit Me");
         putJson("/author/comics/" + id, """
                 {"title":"Edited Draft","language":"en","cover":"https://cdn.example.com/c.png","summary":"Edited"}
-                """, token)
+                """, authorToken)
                 .andExpect(status().isOk());
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-011 [UC-17]: PUT /author/comics/{id} - READER should return 403")
+    @DisplayName("TC-INT-AuthorComicController-011 [UC-17]")
     void updateForbidden() throws Exception {
-        UUID id = createAuthorComic(token("AUTHOR"), "Reader Edit");
+        UUID id = createAuthorComic(fixedToken(AUTHOR_USER), "Reader Edit");
         putJson("/author/comics/" + id, """
                 {"title":"Hacked","language":"en","cover":"https://cdn.example.com/c.png"}
-                """, token("READER"))
+                """, fixedToken(READER_USER))
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-012 [UC-17]: DELETE /author/comics/{id} - owner should return 200")
+    @DisplayName("TC-INT-AuthorComicController-012 [UC-17]")
     void deleteOwn() throws Exception {
-        String token = token("AUTHOR");
-        UUID id = createAuthorComic(token, "Delete Me");
-        deleteJson("/author/comics/" + id, token).andExpect(status().isOk());
+        String authorToken = fixedToken(AUTHOR_USER);
+        UUID id = createAuthorComic(authorToken, "Delete Me");
+        deleteJson("/author/comics/" + id, authorToken).andExpect(status().isOk());
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-013 [UC-19]: POST /author/comics/{id}/submit-review - no chapters should return 400")
+    @DisplayName("TC-INT-AuthorComicController-013 [UC-19]")
     void submitWithoutChapters() throws Exception {
-        String token = token("AUTHOR");
-        UUID id = createAuthorComic(token, "Empty Review");
-        postJson("/author/comics/" + id + "/submit-review", "{}", token)
+        String authorToken = fixedToken(AUTHOR_USER);
+        UUID id = createAuthorComic(authorToken, "Empty Review");
+        postJson("/author/comics/" + id + "/submit-review", "{}", authorToken)
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-014 [UC-19]: POST /author/comics/{id}/submit-review - with a chapter should return 200")
+    @DisplayName("TC-INT-AuthorComicController-014 [UC-19]")
     void submitWithChapter() throws Exception {
-        SeededUser author = seedUser("AUTHOR");
-        String authorToken = login(author.username());
-        String admin = token("ADMIN");
+        String authorToken = fixedToken(AUTHOR_USER);
+        String admin = fixedToken(ADMIN_USER);
         UUID comicId = createAuthorComic(authorToken, "Ready Review");
         createChapterAsAdmin(admin, comicId, "1");
         postJson("/author/comics/" + comicId + "/submit-review", "{}", authorToken)
@@ -141,11 +140,10 @@ class AuthorComicControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-015 [UC-19]: POST /author/comics/{id}/submit-review - second submit should return 409")
+    @DisplayName("TC-INT-AuthorComicController-015 [UC-19]")
     void submitTwice() throws Exception {
-        SeededUser author = seedUser("AUTHOR");
-        String authorToken = login(author.username());
-        String admin = token("ADMIN");
+        String authorToken = fixedToken(AUTHOR_USER);
+        String admin = fixedToken(ADMIN_USER);
         UUID comicId = createAuthorComic(authorToken, "Double Review");
         createChapterAsAdmin(admin, comicId, "1");
         postJson("/author/comics/" + comicId + "/submit-review", "{}", authorToken).andExpect(status().isOk());
@@ -153,33 +151,33 @@ class AuthorComicControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-016 [UC-54]: POST /author/comics/{id}/appeal - too short reason should return 400")
+    @DisplayName("TC-INT-AuthorComicController-016 [UC-54]")
     void appealTooShort() throws Exception {
-        String token = token("AUTHOR");
-        UUID id = createAuthorComic(token, "Short Appeal");
+        String authorToken = fixedToken(AUTHOR_USER);
+        UUID id = createAuthorComic(authorToken, "Short Appeal");
         postJson("/author/comics/" + id + "/appeal", """
                 {"reason":"no"}
-                """, token)
+                """, authorToken)
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-017 [UC-54]: POST /author/comics/{id}/appeal - valid reason should return 200")
+    @DisplayName("TC-INT-AuthorComicController-017 [UC-54]")
     void appealValid() throws Exception {
-        String token = token("AUTHOR");
-        UUID id = createAuthorComic(token, "Valid Appeal");
+        String authorToken = fixedToken(AUTHOR_USER);
+        UUID id = createAuthorComic(authorToken, "Valid Appeal");
         postJson("/author/comics/" + id + "/appeal", """
                 {"reason":"The moderation notes were applied and the pages were redrawn."}
-                """, token)
+                """, authorToken)
                 .andExpect(status().isOk());
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-018 [UC-17]: PUT /author/comics/{id}/confirm-edit - owner should return 200")
+    @DisplayName("TC-INT-AuthorComicController-018 [UC-17]")
     void confirmEdit() throws Exception {
-        String token = token("AUTHOR");
-        UUID id = createAuthorComic(token, "Confirm Edit");
-        putJson("/author/comics/" + id + "/confirm-edit", "{}", token)
+        String authorToken = fixedToken(AUTHOR_USER);
+        UUID id = createAuthorComic(authorToken, "Confirm Edit");
+        putJson("/author/comics/" + id + "/confirm-edit", "{}", authorToken)
                 .andExpect(status().isOk());
     }
 }

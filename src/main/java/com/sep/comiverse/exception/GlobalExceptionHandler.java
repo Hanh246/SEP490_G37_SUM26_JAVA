@@ -63,10 +63,15 @@ public class GlobalExceptionHandler {
             }
         });
 
+        String firstError = errors.values().stream()
+                .filter(message -> message != null && !message.isBlank())
+                .findFirst()
+                .orElse("Validation failed");
+
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(BaseResponse.builder()
                         .success(false)
-                        .message("Validation failed")
+                        .message(firstError)
                         .errors(errors)
                         .build());
     }

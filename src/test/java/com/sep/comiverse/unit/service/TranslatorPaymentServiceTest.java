@@ -145,7 +145,6 @@ class TranslatorPaymentServiceTest {
         request.setNewAssigneeId(translatorB);
         request.setCompletedPageNumbers(List.of(1, 2));
         request.setResponsibilityFactor(new BigDecimal("0.80"));
-        request.setReason(" Translator A stopped before finishing the chapter ");
 
         var response = service.handover(task, request, UUID.randomUUID());
 
@@ -153,7 +152,6 @@ class TranslatorPaymentServiceTest {
         assertEquals(List.of(1, 2), response.getCompletedPageNumbers());
         assertEquals(2, response.getAcceptedPageCount());
         assertEquals(2, response.getReassignedPageCount());
-        assertEquals("Translator A stopped before finishing the chapter", response.getReason());
         assertEquals(translatorA, pages.get(0).getAssignedTranslatorId());
         assertEquals(PageStatus.DONE, pages.get(0).getStatus());
         assertEquals(0, new BigDecimal("0.80").compareTo(pages.get(0).getResponsibilityFactor()));
@@ -186,7 +184,6 @@ class TranslatorPaymentServiceTest {
         request.setNewAssigneeId(translatorB);
         request.setCompletedPageNumbers(List.of(1));
         request.setResponsibilityFactor(BigDecimal.ONE);
-        request.setReason("handover");
 
         CustomException error = assertThrows(CustomException.class,
                 () -> service.handover(task, request, UUID.randomUUID()));

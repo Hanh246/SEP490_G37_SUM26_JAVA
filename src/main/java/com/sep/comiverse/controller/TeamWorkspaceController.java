@@ -28,7 +28,6 @@ import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.transaction.annotation.Transactional;
-import jakarta.validation.Valid;
 
 import java.time.Instant;
 import java.util.*;
@@ -64,8 +63,8 @@ public class TeamWorkspaceController {
     private final TranslatorPaymentService translatorPaymentService;
     private final TeamTaskReviewService teamTaskReviewService;
 
-    private static final int MAX_ACTIVE_TEAMS = 20;
-    private static final int MAX_ACTIVE_TASKS = 10;
+    private static final int MAX_ACTIVE_TEAMS = 5;
+    private static final int MAX_ACTIVE_TASKS = 5;
     private static final long CANCEL_COOLDOWN_HOURS = 12;
     private static final long LEAVE_COOLDOWN_HOURS = 24;
 
@@ -693,7 +692,10 @@ public class TeamWorkspaceController {
         List<TeamJoinRequestEntity> requests = joinRequestRepository.findByProjectTeamId(teamId);
         // Only return PENDING requests to the leader's review queue
         List<TeamJoinRequestEntity> pendingRequests = requests.stream()
-                .filter(r -> r.getStatus() == null || "PENDING".equalsIgnoreCase(r.getStatus()))
+                .filter(r -> {
+                    String status = r.getStatus() == null ? "PENDING" : r.getStatus().trim().toUpperCase();
+                    return "PENDING".equals(status);
+                })
                 .collect(Collectors.toList());
         for (TeamJoinRequestEntity request : pendingRequests) {
             if (request.getRequesterId() != null) {
@@ -747,24 +749,23 @@ public class TeamWorkspaceController {
             ));
         }
 
-        // 4. Regular translators may join at most 20 ongoing projects (joined + pending applications)
+        // 4. Pending applications and approved teams together cannot exceed 5
         long joinedTeams = projectTeamRepository.countActiveTeamsByUserId(userId);
         long pendingApps = joinRequestRepository.countByRequesterIdAndStatus(userId, "PENDING");
-        long usedSlots = joinedTeams + pendingApps;
-        if (usedSlots >= MAX_ACTIVE_TEAMS) {
+        if (joinedTeams + pendingApps >= MAX_ACTIVE_TEAMS) {
             return ResponseEntity.badRequest().body(Map.of(
-                    "message", "You have reached the maximum of " + MAX_ACTIVE_TEAMS + " ongoing projects/applications. Cancel a pending application or leave a team first.",
+                    "message", "You have reached the maximum of " + MAX_ACTIVE_TEAMS + " concurrent projects.",
                     "joinedTeams", joinedTeams,
                     "pendingApplications", pendingApps,
                     "maxSlots", MAX_ACTIVE_TEAMS
             ));
         }
 
-        // 5. Regular translators may hold at most 10 incomplete tasks
+        // 5. Regular translators may hold at most 5 incomplete tasks
         long activeTasks = taskRepository.countActiveTasksByAssigneeId(userId);
         if (activeTasks >= MAX_ACTIVE_TASKS) {
             return ResponseEntity.badRequest().body(Map.of(
-                    "message", "Bạn đang xử lý tối đa " + MAX_ACTIVE_TASKS + " task chưa hoàn thành. Vui lòng hoàn thành công việc trước khi xin gia nhập nhóm mới.",
+                    "message", "You are already handling the maximum of " + MAX_ACTIVE_TASKS + " incomplete tasks. Finish a task before applying to another team.",
                     "activeTasks", activeTasks,
                     "maxTasks", MAX_ACTIVE_TASKS
             ));
@@ -807,7 +808,8 @@ public class TeamWorkspaceController {
         if (request == null) {
             return ResponseEntity.notFound().build();
         }
-        if (!"PENDING".equalsIgnoreCase(request.getStatus())) {
+        String currentStatus = request.getStatus() == null ? "PENDING" : request.getStatus().trim();
+        if (!"PENDING".equalsIgnoreCase(currentStatus)) {
             return ResponseEntity.badRequest().body(Map.of("message", "This request is no longer pending."));
         }
 
@@ -826,6 +828,15 @@ public class TeamWorkspaceController {
                 if (currentMembers >= maxMembers) {
                     return ResponseEntity.badRequest().body(Map.of(
                             "message", "This project team has already reached its maximum capacity of " + maxMembers + " members. Cannot approve."
+                    ));
+                }
+            }
+
+            if (request.getRequesterId() != null) {
+                long joinedTeams = projectTeamRepository.countActiveTeamsByUserId(request.getRequesterId());
+                if (joinedTeams >= MAX_ACTIVE_TEAMS) {
+                    return ResponseEntity.badRequest().body(Map.of(
+                            "message", "This translator already belongs to the maximum of " + MAX_ACTIVE_TEAMS + " ongoing project teams. Cannot approve."
                     ));
                 }
             }
@@ -881,7 +892,7 @@ public class TeamWorkspaceController {
             // REJECTED
             request.setStatus("REJECTED");
             request.setDecidedAt(Instant.now());
-            joinRequestRepository.save(request);
+            joinRequestRepository.saveAndFlush(request);
         }
 
         String teamName = team == null ? "the translation team" : team.getTitle();
@@ -1018,7 +1029,14 @@ public class TeamWorkspaceController {
         }
         UUID userId = principal.getId();
         long joinedTeams = projectTeamRepository.countActiveTeamsByUserId(userId);
-        long pendingApps = joinRequestRepository.countByRequesterIdAndStatus(userId, "PENDING");
+        List<TeamJoinRequestEntity> myRequests = joinRequestRepository.findByRequesterId(userId);
+        List<TeamJoinRequestEntity> pendingList = myRequests.stream()
+                .filter(req -> {
+                    String status = req.getStatus() == null ? "PENDING" : req.getStatus().trim();
+                    return "PENDING".equalsIgnoreCase(status);
+                })
+                .toList();
+        long pendingApps = pendingList.size();
         long usedSlots = joinedTeams + pendingApps;
         long availableSlots = Math.max(0, MAX_ACTIVE_TEAMS - usedSlots);
         long activeTasks = taskRepository.countActiveTasksByAssigneeId(userId);
@@ -1034,27 +1052,37 @@ public class TeamWorkspaceController {
         }
 
         // Get list of pending application team IDs
-        List<TeamJoinRequestEntity> pendingList = joinRequestRepository.findByRequesterIdAndStatus(userId, "PENDING");
         List<Map<String, Object>> pendingDetails = pendingList.stream().map(req -> {
             Map<String, Object> m = new HashMap<>();
             m.put("requestId", req.getId());
             m.put("projectTeamId", req.getProjectTeamId());
             m.put("appliedAt", req.getTime());
+            m.put("status", req.getStatus() == null ? "PENDING" : req.getStatus().trim().toUpperCase());
             return m;
         }).collect(Collectors.toList());
 
-        return ResponseEntity.ok(Map.of(
-                "joinedTeams", joinedTeams,
-                "pendingApplications", pendingApps,
-                "usedSlots", usedSlots,
-                "availableSlots", availableSlots,
-                "maxSlots", MAX_ACTIVE_TEAMS,
-                "activeTasks", activeTasks,
-                "maxTasks", MAX_ACTIVE_TASKS,
-                "cooldownUntil", cooldownUntil != null ? cooldownUntil : "",
-                "cooldownType", cooldownType != null ? cooldownType : "",
-                "pendingDetails", pendingDetails
-        ));
+        List<Map<String, Object>> applications = myRequests.stream().map(req -> {
+            Map<String, Object> m = new HashMap<>();
+            m.put("requestId", req.getId());
+            m.put("projectTeamId", req.getProjectTeamId());
+            m.put("appliedAt", req.getTime());
+            m.put("status", req.getStatus() == null ? "PENDING" : req.getStatus().trim().toUpperCase());
+            return m;
+        }).collect(Collectors.toList());
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("joinedTeams", joinedTeams);
+        body.put("pendingApplications", pendingApps);
+        body.put("usedSlots", usedSlots);
+        body.put("availableSlots", availableSlots);
+        body.put("maxSlots", MAX_ACTIVE_TEAMS);
+        body.put("activeTasks", activeTasks);
+        body.put("maxTasks", MAX_ACTIVE_TASKS);
+        body.put("cooldownUntil", cooldownUntil != null ? cooldownUntil : "");
+        body.put("cooldownType", cooldownType != null ? cooldownType : "");
+        body.put("pendingDetails", pendingDetails);
+        body.put("applications", applications);
+        return ResponseEntity.ok(body);
     }
 
     @DeleteMapping("/requests/{id}")
@@ -1269,7 +1297,7 @@ public class TeamWorkspaceController {
     @PutMapping("/tasks/{taskId}/handover")
     public ResponseEntity<?> handoverTask(
             @PathVariable UUID taskId,
-            @Valid @RequestBody HandoverTaskRequest request,
+            @RequestBody HandoverTaskRequest request,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         TeamTaskEntity task = taskRepository.findById(taskId).orElse(null);
@@ -1442,12 +1470,11 @@ public class TeamWorkspaceController {
             return "Only users with the TRANSLATOR role can be assigned payout-eligible tasks";
         }
 
-        // Regular translators may hold at most 10 incomplete tasks. Project Leaders are not capped.
-        if ("TRANSLATOR".equalsIgnoreCase(role)) {
-            long activeTasks = taskRepository.countActiveTasksByAssigneeId(assigneeId);
-            if (activeTasks >= MAX_ACTIVE_TASKS) {
-                return "Dịch giả này đang có tối đa " + MAX_ACTIVE_TASKS + " task chưa hoàn thành, không thể giao thêm task mới.";
-            }
+        // 5 incomplete tasks per person across the whole system — including Project Leaders.
+        long activeTasks = taskRepository.countActiveTasksByAssigneeId(assigneeId);
+        if (activeTasks >= MAX_ACTIVE_TASKS) {
+            return "This translator already has " + MAX_ACTIVE_TASKS
+                    + " incomplete tasks across all projects and cannot take another assignment.";
         }
 
         return null;

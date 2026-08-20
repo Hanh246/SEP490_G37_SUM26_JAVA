@@ -29,7 +29,7 @@ class SchedulerJobIT extends AbstractBlackboxIT {
     // ── JOB-01: Persist buffered reading activity and view counters ───────────
 
     @Test
-    @DisplayName("TC-SCH-JOB01-001 [UC-01, UC-02]: Empty Redis view buffers -> flush completes without error")
+    @DisplayName("TC-SCH-JOB01-001 [UC-01, UC-02]")
     void job01EmptyRedisBuffers() throws Exception {
         viewSyncScheduler.flushViewsToPostgres();
         getJson("/comics")
@@ -38,7 +38,7 @@ class SchedulerJobIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SCH-JOB01-002 [UC-04, UC-32]: After view sync job, public catalog API remains readable")
+    @DisplayName("TC-SCH-JOB01-002 [UC-04, UC-32]")
     void job01CatalogStillReadable() throws Exception {
         viewSyncScheduler.flushViewsToPostgres();
         getJson("/comics/all")
@@ -49,7 +49,7 @@ class SchedulerJobIT extends AbstractBlackboxIT {
     // ── JOB-02: Clean up expired reading history logs ───────────────────────
 
     @Test
-    @DisplayName("TC-SCH-JOB02-001 [UC-17, UC-18]: No reading history older than 30 days -> cleanup completes")
+    @DisplayName("TC-SCH-JOB02-001 [UC-17, UC-18]")
     void job02NoExpiredHistory() throws Exception {
         viewSyncScheduler.cleanOldReadingHistories();
         getJson("/comics")
@@ -58,7 +58,7 @@ class SchedulerJobIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SCH-JOB02-002 [UC-17]: After history cleanup job, catalog API remains readable")
+    @DisplayName("TC-SCH-JOB02-002 [UC-17]")
     void job02CatalogStillReadable() throws Exception {
         viewSyncScheduler.cleanOldReadingHistories();
         getJson("/comics/all")
@@ -69,7 +69,7 @@ class SchedulerJobIT extends AbstractBlackboxIT {
     // ── JOB-03: Compute comic view leaderboards ───────────────────────────────
 
     @Test
-    @DisplayName("TC-SCH-JOB03-001 [UC-18, UC-43]: Leaderboard job caches daily rankings in Redis")
+    @DisplayName("TC-SCH-JOB03-001 [UC-18, UC-43]")
     void job03LeaderboardDay() throws Exception {
         leaderboardScheduler.computeLeaderboards();
         getJson("/comics/leaderboard?timeframe=day")
@@ -78,7 +78,7 @@ class SchedulerJobIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SCH-JOB03-002 [UC-18, UC-43]: Leaderboard job caches weekly rankings in Redis")
+    @DisplayName("TC-SCH-JOB03-002 [UC-18, UC-43]")
     void job03LeaderboardWeek() throws Exception {
         leaderboardScheduler.computeLeaderboards();
         getJson("/comics/leaderboard?timeframe=week")
@@ -87,7 +87,7 @@ class SchedulerJobIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SCH-JOB03-003 [UC-19, UC-43]: Leaderboard job caches monthly rankings in Redis")
+    @DisplayName("TC-SCH-JOB03-003 [UC-19, UC-43]")
     void job03LeaderboardMonth() throws Exception {
         leaderboardScheduler.computeLeaderboards();
         getJson("/comics/leaderboard?timeframe=month")
@@ -98,7 +98,7 @@ class SchedulerJobIT extends AbstractBlackboxIT {
     // ── JOB-04: Synchronize user engagement and interaction metrics ─────────
 
     @Test
-    @DisplayName("TC-SCH-JOB04-001 [UC-05, UC-06]: Empty Redis engagement counters -> sync completes without error")
+    @DisplayName("TC-SCH-JOB04-001 [UC-05, UC-06]")
     void job04EmptyEngagementCounters() throws Exception {
         userInteractionSyncScheduler.flushInteractionsToPostgres();
         getJson("/comics")
@@ -107,7 +107,7 @@ class SchedulerJobIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SCH-JOB04-002 [UC-36, UC-43]: After engagement sync job, comic list API remains readable")
+    @DisplayName("TC-SCH-JOB04-002 [UC-36, UC-43]")
     void job04ComicListStillReadable() throws Exception {
         userInteractionSyncScheduler.flushInteractionsToPostgres();
         getJson("/comics/all")
@@ -118,7 +118,7 @@ class SchedulerJobIT extends AbstractBlackboxIT {
     // ── JOB-05: Generate missing comic embedding vectors ──────────────────────
 
     @Test
-    @DisplayName("TC-SCH-JOB05-001 [UC-14]: No comics missing embeddings -> job completes without error")
+    @DisplayName("TC-SCH-JOB05-001 [UC-14]")
     void job05NoMissingEmbeddings() throws Exception {
         recommendationScheduler.processNewComicsEmbeddings();
         getJson("/comics/recommendations")
@@ -127,7 +127,7 @@ class SchedulerJobIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SCH-JOB05-002 [UC-14]: After embedding job, recommendations API returns 200 OK")
+    @DisplayName("TC-SCH-JOB05-002 [UC-14]")
     void job05RecommendationsApiOk() throws Exception {
         recommendationScheduler.processNewComicsEmbeddings();
         getJson("/comics/recommendations")
@@ -138,7 +138,7 @@ class SchedulerJobIT extends AbstractBlackboxIT {
     // ── JOB-06: Recalculate user preference vectors ───────────────────────────
 
     @Test
-    @DisplayName("TC-SCH-JOB06-001 [UC-06, UC-07]: No users pending vector update -> job completes without error")
+    @DisplayName("TC-SCH-JOB06-001 [UC-06, UC-07]")
     void job06NoPendingUsers() throws Exception {
         recommendationScheduler.processUserPreferences();
         getJson("/comics/recommendations")
@@ -147,7 +147,7 @@ class SchedulerJobIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SCH-JOB06-002 [UC-10, UC-20]: After preference vector job, recommendations API returns 200 OK")
+    @DisplayName("TC-SCH-JOB06-002 [UC-10, UC-20]")
     void job06RecommendationsApiOk() throws Exception {
         recommendationScheduler.processUserPreferences();
         getJson("/comics/recommendations")
