@@ -38,6 +38,7 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
     private final LeaderboardScheduler leaderboardScheduler;
 
     private static final String COMIC_CACHE_PREFIX = "comic:detail:v2:";
+    private static final String COMIC_SLUG_CACHE_PREFIX = "comic:slug:";
     private final IGenreRepository genreRepository;
 
     @Autowired
@@ -274,6 +275,100 @@ public class ComicCrudPlugin extends AbstractCrudPlugin<ComicEntity, ComicDTO, U
         }
 
         return dto;
+    }
+
+    @Transactional(readOnly = true)
+    public ComicDTO getComicDetailBySlug(String slug) {
+        if (slug == null || slug.isBlank()) {
+            throw new com.sep.comiverse.exception.CustomException(404, "Comic not found", org.springframework.http.HttpStatus.NOT_FOUND);
+        }
+
+        String slugCacheKey = COMIC_SLUG_CACHE_PREFIX + slug;
+        String idStr = null;
+        try {
+            idStr = (String) redisTemplate.opsForValue().get(slugCacheKey);
+        } catch (Exception e) {
+            try {
+                redisTemplate.delete(slugCacheKey);
+            } catch (Exception ex) {
+                // Ignore
+            }
+        }
+
+        UUID comicId = null;
+        if (idStr != null) {
+            try {
+                comicId = UUID.fromString(idStr);
+            } catch (Exception e) {
+                // Ignore invalid UUID string
+            }
+        }
+
+        if (comicId == null) {
+            ComicEntity entity = comicRepository.findBySlugWithGenres(slug)
+                    .orElseThrow(() -> new com.sep.comiverse.exception.CustomException(404, "Comic not found", org.springframework.http.HttpStatus.NOT_FOUND));
+
+            comicId = entity.getId();
+            try {
+                redisTemplate.opsForValue().set(slugCacheKey, comicId.toString(), Duration.ofHours(24));
+            } catch (Exception e) {
+                // Ignore Redis set errors
+            }
+        }
+
+        return getComicDetail(comicId);
+    }
+
+    @Transactional
+    public java.util.Map<String, Object> generateSlugsForExistingComics(boolean overwriteExisting) {
+        List<ComicEntity> comics = comicRepository.findAll();
+        java.util.Set<String> usedSlugs = new java.util.HashSet<>();
+        int updatedCount = 0;
+        List<java.util.Map<String, String>> resultList = new java.util.ArrayList<>();
+
+        if (!overwriteExisting) {
+            for (ComicEntity c : comics) {
+                if (c.getSlug() != null && !c.getSlug().isBlank()) {
+                    usedSlugs.add(c.getSlug());
+                }
+            }
+        }
+
+        for (ComicEntity comic : comics) {
+            if (overwriteExisting || comic.getSlug() == null || comic.getSlug().isBlank()) {
+                String baseSlug = ComicEntity.generateSlug(comic.getTitle());
+                String uniqueSlug = baseSlug;
+                int counter = 1;
+
+                while (usedSlugs.contains(uniqueSlug)) {
+                    uniqueSlug = baseSlug + "-" + counter;
+                    counter++;
+                }
+
+                comic.setSlug(uniqueSlug);
+                usedSlugs.add(uniqueSlug);
+                comicRepository.save(comic);
+                updatedCount++;
+
+                try {
+                    redisTemplate.delete(COMIC_SLUG_CACHE_PREFIX + uniqueSlug);
+                    redisTemplate.delete(COMIC_CACHE_PREFIX + comic.getId());
+                } catch (Exception e) {
+                    // Ignore Redis delete errors
+                }
+
+                java.util.Map<String, String> item = new java.util.HashMap<>();
+                item.put("comicId", comic.getId() != null ? comic.getId().toString() : null);
+                item.put("title", comic.getTitle());
+                item.put("slug", uniqueSlug);
+                resultList.add(item);
+            }
+        }
+
+        java.util.Map<String, Object> response = new java.util.HashMap<>();
+        response.put("updatedCount", updatedCount);
+        response.put("comics", resultList);
+        return response;
     }
 
     @SuppressWarnings("unchecked")

@@ -18,6 +18,7 @@ import java.util.UUID;
 public class ComicDTO {
     private UUID id;
     private String title;
+    private String slug;
     private String summary;
     private String language;
     private Integer minimumAge;

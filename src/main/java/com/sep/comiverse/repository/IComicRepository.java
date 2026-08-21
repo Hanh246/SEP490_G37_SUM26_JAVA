@@ -130,6 +130,15 @@ public interface IComicRepository
             """)
     Optional<ComicEntity> findByIdWithGenres(@Param("id") UUID id);
 
+    @Query("""
+            SELECT c
+            FROM ComicEntity c
+            LEFT JOIN FETCH c.genres
+            WHERE c.slug = :slug
+              AND c.deleted = false
+            """)
+    Optional<ComicEntity> findBySlugWithGenres(@Param("slug") String slug);
+
     List<ComicEntity> findAllByTitle(String title);
 
     List<ComicEntity> findAllByTitleIgnoreCase(String title);

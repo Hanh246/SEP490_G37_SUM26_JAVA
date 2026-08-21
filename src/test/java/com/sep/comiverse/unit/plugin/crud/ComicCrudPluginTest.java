@@ -294,9 +294,110 @@ public class ComicCrudPluginTest {
                 IllegalArgumentException.class,
                 () -> comicCrudPlugin.update(comicId, request)
         );
-
         assertEquals("Comic language cannot be blank", exception.getMessage());
         verify(comicRepository, never()).save(any());
     }
 
+    @Test
+    void testGetComicDetailBySlug_SlugCacheHit() {
+        String slug = "invincible-sword-god";
+        String slugCacheKey = "comic:slug:" + slug;
+        String detailCacheKey = "comic:detail:v2:" + comicId.toString();
+
+        ComicDTO cachedDto = new ComicDTO();
+        cachedDto.setId(comicId);
+        cachedDto.setTitle("Invincible Sword God");
+        cachedDto.setSlug(slug);
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(slugCacheKey)).thenReturn(comicId.toString());
+        when(valueOperations.get(detailCacheKey)).thenReturn(cachedDto);
+
+        ComicDTO result = comicCrudPlugin.getComicDetailBySlug(slug);
+
+        assertNotNull(result);
+        assertEquals(comicId, result.getId());
+        assertEquals("Invincible Sword God", result.getTitle());
+        assertEquals(slug, result.getSlug());
+        verify(comicRepository, never()).findBySlugWithGenres(any());
+    }
+
+    @Test
+    void testGetComicDetailBySlug_SlugCacheMiss_DbHit() {
+        String slug = "spirit-recovery";
+        String slugCacheKey = "comic:slug:" + slug;
+
+        ComicEntity entity = new ComicEntity();
+        entity.setId(comicId);
+        entity.setTitle("Spirit Recovery");
+        entity.setSlug(slug);
+
+        ComicDTO dto = new ComicDTO();
+        dto.setId(comicId);
+        dto.setTitle("Spirit Recovery");
+        dto.setSlug(slug);
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(slugCacheKey)).thenReturn(null);
+        when(comicRepository.findBySlugWithGenres(slug)).thenReturn(Optional.of(entity));
+        when(comicRepository.findByIdWithGenres(comicId)).thenReturn(Optional.of(entity));
+        when(mapperPlugin.toDto(entity)).thenReturn(dto);
+
+        ComicDTO result = comicCrudPlugin.getComicDetailBySlug(slug);
+
+        assertNotNull(result);
+        assertEquals(comicId, result.getId());
+        assertEquals("Spirit Recovery", result.getTitle());
+        verify(valueOperations).set(eq(slugCacheKey), eq(comicId.toString()), any(Duration.class));
+    }
+
+    @Test
+    void testGetComicDetailBySlug_NotFound_ThrowsException() {
+        String slug = "non-existent-comic";
+        String slugCacheKey = "comic:slug:" + slug;
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(slugCacheKey)).thenReturn(null);
+        when(comicRepository.findBySlugWithGenres(slug)).thenReturn(Optional.empty());
+
+        com.sep.comiverse.exception.CustomException exception = assertThrows(
+                com.sep.comiverse.exception.CustomException.class,
+                () -> comicCrudPlugin.getComicDetailBySlug(slug)
+        );
+
+        assertEquals(404, exception.getCode());
+        assertEquals("Comic not found", exception.getMessage());
+    }
+
+    @Test
+    void testGenerateSlugsForExistingComics() {
+        ComicEntity comic1 = new ComicEntity();
+        comic1.setId(UUID.randomUUID());
+        comic1.setTitle("Test Comic One");
+        comic1.setSlug(null);
+
+        ComicEntity comic2 = new ComicEntity();
+        comic2.setId(UUID.randomUUID());
+        comic2.setTitle("Test Comic One");
+        comic2.setSlug(null);
+
+        when(comicRepository.findAll()).thenReturn(List.of(comic1, comic2));
+
+        java.util.Map<String, Object> result = comicCrudPlugin.generateSlugsForExistingComics(false);
+
+        assertNotNull(result);
+        assertEquals(2, result.get("updatedCount"));
+        assertEquals("test-comic-one", comic1.getSlug());
+        assertEquals("test-comic-one-1", comic2.getSlug());
+        verify(comicRepository, times(2)).save(any());
+    }
+
+    @Test
+    void testGenerateSlug_UnicodeAndFullwidth() {
+        assertEquals("new-game", ComicEntity.generateSlug("ＮＥＷ　ＧＡＭＥ！"));
+        assertEquals("거짓말쟁이-미군과-고장난-마짱", ComicEntity.generateSlug("거짓말쟁이 미군과 고장난 마짱"));
+        assertEquals("가지와-알타이르", ComicEntity.generateSlug("가지와 알타이르"));
+        assertEquals("1fの騎士", ComicEntity.generateSlug("１Ｆの騎士"));
+        assertEquals("dau-la-dai-luc", ComicEntity.generateSlug("Đấu La Đại Lục"));
+    }
 }
