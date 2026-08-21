@@ -354,7 +354,7 @@ public class ChapterController {
      * Reader/Frontend lấy danh sách các trang truyện được bảo vệ bằng Image Slicing.
      * REST API Endpoint: GET /chapters/{chapterId}/pages
      */
-    @GetMapping({"/{chapterId}/pages", "/api/v1/chapters/{chapterId}/pages"})
+    @GetMapping("/{chapterId}/pages")
     @Operation(summary = "Get protected scrambled pages for a chapter")
     public ResponseEntity<BaseResponse<List<PageResponseDto>>> getProtectedChapterPages(
             @PathVariable UUID chapterId
