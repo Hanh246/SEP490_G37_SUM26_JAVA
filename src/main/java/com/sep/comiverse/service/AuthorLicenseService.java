@@ -272,14 +272,14 @@ public class AuthorLicenseService {
 
     private AuthorEntity requireAuthorById(UUID authorId) {
         if (authorId == null) {
-            throw new CustomException(400, "Author id is required", HttpStatus.BAD_REQUEST);
+            throw new CustomException(400, "AuthorEntity.id is required", HttpStatus.BAD_REQUEST);
         }
-        AuthorEntity author = authorRepository.findById(authorId)
-                .orElseThrow(() -> new CustomException(404, "Author profile not found", HttpStatus.NOT_FOUND));
-        if (Boolean.TRUE.equals(author.getDeleted())) {
-            throw new CustomException(404, "Author profile not found", HttpStatus.NOT_FOUND);
-        }
-        return author;
+        return authorRepository.findByIdAndDeletedFalse(authorId)
+                .orElseThrow(() -> new CustomException(
+                        404,
+                        "Author profile not found for the supplied AuthorEntity.id",
+                        HttpStatus.NOT_FOUND
+                ));
     }
 
     private void refreshExpiry(AuthorEntity author) {

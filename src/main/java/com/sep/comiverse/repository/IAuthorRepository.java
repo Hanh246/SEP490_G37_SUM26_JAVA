@@ -19,6 +19,8 @@ public interface IAuthorRepository extends AbstractCrudRepository<AuthorEntity, 
     @Query("SELECT a FROM AuthorEntity a JOIN FETCH a.user u WHERE u.id = :userId AND a.deleted = false")
     Optional<AuthorEntity> findByUserIdAndDeletedFalse(@Param("userId") UUID userId);
 
+    Optional<AuthorEntity> findByIdAndDeletedFalse(UUID id);
+
     @Query("SELECT CASE WHEN COUNT(a) > 0 THEN true ELSE false END FROM AuthorEntity a WHERE a.user.id = :userId AND a.deleted = false")
     boolean existsByUserIdAndDeletedFalse(@Param("userId") UUID userId);
 

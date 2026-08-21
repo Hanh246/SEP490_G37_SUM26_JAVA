@@ -50,7 +50,7 @@ public class CreatorPayoutOverviewResponse {
 
     private Boolean requestable;
     private String notRequestableReason;
-    private Long calculationUnitCount;
+    private BigDecimal calculationUnitCount;
     private String calculationUnitLabel;
     private BigDecimal calculationUnitRateUsd;
     private BigDecimal calculationUnitRate;
