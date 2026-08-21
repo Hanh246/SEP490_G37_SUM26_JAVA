@@ -68,6 +68,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(URL_WHITELIST).permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/comics/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/v2/comics/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/chapters/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/genres/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/plans/**").permitAll()
