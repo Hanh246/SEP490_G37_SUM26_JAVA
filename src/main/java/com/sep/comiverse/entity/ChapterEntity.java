@@ -92,6 +92,25 @@ public class ChapterEntity extends BaseEntity {
     @Column(name = "content_hash", length = 64)
     private String contentHash;
 
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class ScrambledPageData {
+        private Integer pageNumber;
+        private String scrambledImageUrl;
+        private String encryptedMapping;
+        @Builder.Default
+        private Integer rows = 4;
+        @Builder.Default
+        private Integer cols = 4;
+    }
+
+    @Builder.Default
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "scrambled_pages", columnDefinition = "jsonb")
+    private List<ScrambledPageData> scrambledPages = new ArrayList<>();
+
     @PrePersist
     @PreUpdate
     protected void syncPageCount() {
