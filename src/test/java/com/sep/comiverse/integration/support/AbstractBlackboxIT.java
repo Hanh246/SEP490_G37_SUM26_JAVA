@@ -55,7 +55,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Transactional
 public abstract class AbstractBlackboxIT {
 
-    protected static final String PASSWORD = "Password123!";
+    /** Password from Minimum Test Accounts (Report 5.2). */
+    protected static final String PASSWORD = "Test@1234";
+    protected static final String FIXED_PASSWORD = PASSWORD;
+
+    protected static final String ADMIN_USER   = "admin_test";
+    protected static final String MOD_USER     = "mod_test";
+    protected static final String AUTHOR_USER  = "author_test";
+    protected static final String TRANS_USER   = "trans_test";
+    protected static final String LEADER_USER  = "project_leader_test";
+    protected static final String READER_USER  = "reader_test";
+    protected static final String BANNED_USER  = "banned_test";
+    protected static final String PENDING_USER = "pending_test";
 
     @Autowired
     protected MockMvc mockMvc;
@@ -108,28 +119,32 @@ public abstract class AbstractBlackboxIT {
         for (String role : List.of("ADMIN", "MODERATOR", "AUTHOR", "READER", "TRANSLATOR", "PROJECT_LEADER")) {
             roleOf(role);
         }
+        provisionFixedAccounts();
     }
 
-    protected RoleEntity roleOf(String roleName) {
-        return roleRepository.findByRoleName(roleName).orElseGet(() -> {
-            RoleEntity role = RoleEntity.builder().roleName(roleName).build();
-            return roleRepository.save(role);
-        });
+    /**
+     * Minimum Test Accounts plus banned/pending readers used by negative auth paths.
+     */
+    private void provisionFixedAccounts() {
+        provisionFixed(ADMIN_USER,   "ADMIN",          "ACTIVE");
+        provisionFixed(MOD_USER,     "MODERATOR",       "ACTIVE");
+        provisionFixed(AUTHOR_USER,  "AUTHOR",          "ACTIVE");
+        provisionFixed(TRANS_USER,   "TRANSLATOR",      "ACTIVE");
+        provisionFixed(LEADER_USER,  "PROJECT_LEADER",  "ACTIVE");
+        provisionFixed(READER_USER,  "READER",          "ACTIVE");
+        provisionFixed(BANNED_USER,  "READER",          "INACTIVE");
+        provisionFixed(PENDING_USER, "READER",          "PENDING_VERIFICATION");
     }
 
-    protected SeededUser seedUser(String roleName) {
-        return seedUser(roleName, "ACTIVE");
-    }
-
-    protected SeededUser seedUser(String roleName, String status) {
-        String token = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-        String username = "u" + token;
-        String email = username + "@example.com";
+    private void provisionFixed(String username, String roleName, String status) {
+        if (userRepository.findByUsername(username).isPresent()) {
+            return;
+        }
         UserEntity user = UserEntity.builder()
                 .username(username)
-                .password(passwordEncoder.encode(PASSWORD))
-                .fullName("Black Box User")
-                .email(email)
+                .password(passwordEncoder.encode(FIXED_PASSWORD))
+                .fullName(username.replace("_", " "))
+                .email(username + "@example.com")
                 .role(roleOf(roleName))
                 .status(status)
                 .provider("LOCAL")
@@ -144,7 +159,53 @@ public abstract class AbstractBlackboxIT {
                     .licenseStatus(AuthorLicenseStatus.ACTIVE)
                     .build());
         }
-        return new SeededUser(user.getId(), username, email, roleName);
+    }
+
+    /** Login with a Minimum Test Account and return its JWT. */
+    protected String fixedToken(String username) throws Exception {
+        return login(username);
+    }
+
+    protected SeededUser fixedUser(String username) {
+        UserEntity user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalStateException("Minimum test account missing: " + username));
+        return new SeededUser(user.getId(), user.getUsername(), user.getEmail(), user.getRole().getRoleName());
+    }
+
+    protected void setAccountStatus(String username, String status) {
+        UserEntity user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalStateException("Minimum test account missing: " + username));
+        user.setStatus(status);
+        userRepository.save(user);
+    }
+
+    private String usernameOf(String roleName) {
+        return switch (roleName) {
+            case "ADMIN" -> ADMIN_USER;
+            case "MODERATOR" -> MOD_USER;
+            case "AUTHOR" -> AUTHOR_USER;
+            case "TRANSLATOR" -> TRANS_USER;
+            case "PROJECT_LEADER" -> LEADER_USER;
+            case "READER" -> READER_USER;
+            default -> throw new IllegalArgumentException("No Minimum Test Account for role: " + roleName);
+        };
+    }
+
+    protected RoleEntity roleOf(String roleName) {
+        return roleRepository.findByRoleName(roleName).orElseGet(() -> {
+            RoleEntity role = RoleEntity.builder().roleName(roleName).build();
+            return roleRepository.save(role);
+        });
+    }
+
+    protected SeededUser seedUser(String roleName) {
+        return fixedUser(usernameOf(roleName));
+    }
+
+    protected SeededUser seedUser(String roleName, String status) {
+        String username = usernameOf(roleName);
+        setAccountStatus(username, status);
+        return fixedUser(username);
     }
 
     protected String login(String username) throws Exception {
@@ -152,14 +213,14 @@ public abstract class AbstractBlackboxIT {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json("""
                                 {"username":"%s","password":"%s"}
-                                """.formatted(username, PASSWORD))))
+                                """.formatted(username, FIXED_PASSWORD))))
                 .andExpect(status().isOk())
                 .andReturn();
         return readTree(result).path("token").asText();
     }
 
     protected String token(String roleName) throws Exception {
-        return login(seedUser(roleName).username());
+        return fixedToken(usernameOf(roleName));
     }
 
     protected ResultActions perform(MockHttpServletRequestBuilder request) throws Exception {

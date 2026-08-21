@@ -32,10 +32,27 @@ public interface ITeamTaskRepository extends JpaRepository<TeamTaskEntity, UUID>
     @Query("DELETE FROM TeamTaskEntity t WHERE t.chapter.id = :chapterId")
     void hardDeleteAllByChapterId(@Param("chapterId") UUID chapterId);
 
-    @Query("SELECT COUNT(t) FROM TeamTaskEntity t WHERE t.assigneeId = :assigneeId AND (t.status IS NULL OR LOWER(t.status) NOT IN ('completed', 'complete', 'done', 'published', 'superseded'))")
+    @Query("""
+            SELECT COUNT(t) FROM TeamTaskEntity t
+            WHERE t.assigneeId = :assigneeId
+              AND t.completedAt IS NULL
+              AND (
+                t.status IS NULL
+                OR LOWER(t.status) NOT IN ('completed', 'complete', 'done', 'published', 'superseded')
+              )
+            """)
     long countActiveTasksByAssigneeId(@Param("assigneeId") UUID assigneeId);
 
-    @Query("SELECT t.assigneeId, COUNT(t) FROM TeamTaskEntity t WHERE t.assigneeId IN :assigneeIds AND (t.status IS NULL OR LOWER(t.status) NOT IN ('completed', 'complete', 'done', 'published', 'superseded')) GROUP BY t.assigneeId")
+    @Query("""
+            SELECT t.assigneeId, COUNT(t) FROM TeamTaskEntity t
+            WHERE t.assigneeId IN :assigneeIds
+              AND t.completedAt IS NULL
+              AND (
+                t.status IS NULL
+                OR LOWER(t.status) NOT IN ('completed', 'complete', 'done', 'published', 'superseded')
+              )
+            GROUP BY t.assigneeId
+            """)
     List<Object[]> countActiveTasksByAssigneeIds(@Param("assigneeIds") Collection<UUID> assigneeIds);
 
     List<TeamTaskEntity> findByChapter_Id(UUID chapterId);

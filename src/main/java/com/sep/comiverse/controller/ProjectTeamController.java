@@ -117,7 +117,10 @@ public class ProjectTeamController extends BaseController<ProjectTeamEntity, Pro
                     backlog++;
                 }
 
-                if (!col.contains("done") && !col.contains("completed") && !col.contains("published")) {
+                if (!col.contains("done") && !col.contains("completed") && !col.contains("published")
+                        && !col.contains("superseded")
+                        && userId.equals(task.getAssigneeId())
+                        && task.getCompletedAt() == null) {
                     activeTasks.add(task);
                 }
             }

@@ -25,12 +25,13 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── NFR-20: Token expiration ─────────────────────────────────────────────
 
     @Test
-    @DisplayName("TC-SEC-001 [NFR-20]: Expired JWT should return 401 Unauthorized")
+    @DisplayName("TC-SEC-001 [NFR-20]")
     void expiredJwt() throws Exception {
         SecretKey key = Keys.hmacShaKeyFor(
                 "test-jwt-secret-for-comiverse-context-loads-1234567890".getBytes(StandardCharsets.UTF_8));
+        // reader_test is a pre-provisioned fixed account — its id is not needed for JWT subject validation
         String jwt = Jwts.builder()
-                .subject(seedUser("READER").id().toString())
+                .subject(fixedUser(READER_USER).id().toString())
                 .claim("role", "READER")
                 .issuedAt(Date.from(Instant.now().minusSeconds(7200)))
                 .expiration(Date.from(Instant.now().minusSeconds(60)))
@@ -43,12 +44,12 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SEC-002 [NFR-20]: JWT signed with wrong secret should return 401 Unauthorized")
+    @DisplayName("TC-SEC-002 [NFR-20]")
     void wrongSecret() throws Exception {
         SecretKey other = Keys.hmacShaKeyFor(
                 "wrong-secret-for-comiverse-tests-1234567890xxxx".getBytes(StandardCharsets.UTF_8));
         String jwt = Jwts.builder()
-                .subject(seedUser("ADMIN").id().toString())
+                .subject(fixedUser(ADMIN_USER).id().toString())
                 .claim("role", "ADMIN")
                 .issuedAt(Date.from(Instant.now()))
                 .expiration(Date.from(Instant.now().plusSeconds(3600)))
@@ -61,7 +62,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SEC-003 [NFR-20]: Malformed JWT should return 401 Unauthorized")
+    @DisplayName("TC-SEC-003 [NFR-20]")
     void malformedJwt() throws Exception {
         mockMvc.perform(get("/auth/me")
                         .header("Authorization", "Bearer not.a.valid.token")
@@ -70,7 +71,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SEC-004 [NFR-20]: Empty Bearer token should return 401 Unauthorized")
+    @DisplayName("TC-SEC-004 [NFR-20]")
     void emptyBearer() throws Exception {
         mockMvc.perform(get("/auth/me")
                         .header("Authorization", "Bearer ")
@@ -79,10 +80,12 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SEC-005 [NFR-20]: Token without Bearer prefix should return 401 Unauthorized")
+    @DisplayName("TC-SEC-005 [NFR-20]")
     void missingBearerPrefix() throws Exception {
+        // Pass the raw JWT without the "Bearer " prefix — must be rejected
+        String rawJwt = fixedToken(READER_USER);
         mockMvc.perform(get("/auth/me")
-                        .header("Authorization", token("READER"))
+                        .header("Authorization", rawJwt)
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isUnauthorized());
     }
@@ -90,47 +93,47 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── NFR-03: Protected resources require authentication ───────────────────
 
     @Test
-    @DisplayName("TC-SEC-006 [NFR-03]: Protected endpoint without token should return 401 Unauthorized")
+    @DisplayName("TC-SEC-006 [NFR-03]")
     void protectedWithoutToken() throws Exception {
         getJson("/admin/settings/premium-plans").andExpect(status().isUnauthorized());
     }
 
     @Test
-    @DisplayName("TC-SEC-007 [NFR-03]: READER accessing ADMIN endpoint should return 403 Forbidden")
+    @DisplayName("TC-SEC-007 [NFR-03]")
     void readerForbiddenOnAdmin() throws Exception {
-        getJson("/admin/settings/premium-plans", token("READER"))
+        getJson("/admin/settings/premium-plans", fixedToken(READER_USER))
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    @DisplayName("TC-SEC-008 [NFR-03]: ADMIN token can access protected admin endpoint")
+    @DisplayName("TC-SEC-008 [NFR-03]")
     void adminCanAccessAdmin() throws Exception {
-        getJson("/admin/settings/premium-plans", token("ADMIN"))
+        getJson("/admin/settings/premium-plans", fixedToken(ADMIN_USER))
                 .andExpect(status().isOk());
     }
 
     // ── NFR-10: Workflow enforcement (role-based access) ─────────────────────
 
     @Test
-    @DisplayName("TC-SEC-009 [NFR-10]: READER cannot POST /chapters (bypass workflow)")
+    @DisplayName("TC-SEC-009 [NFR-10]")
     void readerCannotCreateChapter() throws Exception {
         postJson("/chapters", """
                 {"title":"Ch","chapterNumber":"1","comicId":"00000000-0000-0000-0000-000000000000"}
-                """, token("READER"))
+                """, fixedToken(READER_USER))
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    @DisplayName("TC-SEC-010 [NFR-10]: TRANSLATOR cannot approve a submission")
+    @DisplayName("TC-SEC-010 [NFR-10]")
     void translatorCannotApproveSubmission() throws Exception {
-        putJson("/submissions/00000000-0000-0000-0000-000000000001/approve", "{}", token("TRANSLATOR"))
+        putJson("/submissions/00000000-0000-0000-0000-000000000001/approve", "{}", fixedToken(TRANS_USER))
                 .andExpect(status().isForbidden());
     }
 
     // ── NFR-23: File upload constraints ─────────────────────────────────────
 
     @Test
-    @DisplayName("TC-SEC-011 [NFR-23]: Upload endpoint without token should return 401 Unauthorized")
+    @DisplayName("TC-SEC-011 [NFR-23]")
     void uploadWithoutToken() throws Exception {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "page.png", "image/png", "img".getBytes());
@@ -141,7 +144,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── NFR-25: Stripe webhook on public whitelist ───────────────────────────
 
     @Test
-    @DisplayName("TC-SEC-012 [NFR-25]: Stripe webhook should not return 401 (public whitelist)")
+    @DisplayName("TC-SEC-012 [NFR-25]")
     void stripeWebhookPublic() throws Exception {
         mockMvc.perform(post("/stripe/webhook")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -157,7 +160,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── NFR-29: WebSocket / subscription protected ──────────────────────────
 
     @Test
-    @DisplayName("TC-SEC-013 [NFR-29]: POST /comics without token should return 401 Unauthorized")
+    @DisplayName("TC-SEC-013 [NFR-29]")
     void createComicWithoutToken() throws Exception {
         postJson("/comics", """
                 {"title":"X","language":"en","cover":"https://cdn.example.com/c.png"}
@@ -168,13 +171,13 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── NFR-32: Page-size guard ──────────────────────────────────────────────
 
     @Test
-    @DisplayName("TC-SEC-014 [NFR-32]: GET /comics with size above 100 should return 400 Bad Request")
+    @DisplayName("TC-SEC-014 [NFR-32]")
     void oversizedPage() throws Exception {
         getJson("/comics?size=200").andExpect(status().isBadRequest());
     }
 
     @Test
-    @DisplayName("TC-SEC-015 [NFR-32]: GET /comics with page below 1 should return 400 Bad Request")
+    @DisplayName("TC-SEC-015 [NFR-32]")
     void invalidPageNumber() throws Exception {
         getJson("/comics?page=0").andExpect(status().isBadRequest());
     }
@@ -182,7 +185,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── CORS (cross-cutting security) ────────────────────────────────────────
 
     @Test
-    @DisplayName("TC-SEC-016 [NFR-33]: Allowed origin preflight should return CORS headers")
+    @DisplayName("TC-SEC-016 [NFR-33]")
     void corsAllowedOrigin() throws Exception {
         mockMvc.perform(options("/auth/login")
                         .header("Origin", "https://comi-verse.vercel.app")
@@ -194,7 +197,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SEC-017 [NFR-33]: Disallowed origin should not be echoed in CORS response")
+    @DisplayName("TC-SEC-017 [NFR-33]")
     void corsDisallowedOrigin() throws Exception {
         mockMvc.perform(options("/auth/login")
                         .header("Origin", "https://evil.example.com")
@@ -211,13 +214,13 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── Public whitelist ─────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("TC-SEC-018 [NFR-03]: GET /comics should remain on public whitelist")
+    @DisplayName("TC-SEC-018 [NFR-03]")
     void comicsPublic() throws Exception {
         getJson("/comics").andExpect(status().isOk());
     }
 
     @Test
-    @DisplayName("TC-SEC-019 [NFR-03]: GET /v3/api-docs should remain publicly accessible")
+    @DisplayName("TC-SEC-019 [NFR-03]")
     void openApiPublic() throws Exception {
         mockMvc.perform(get("/v3/api-docs").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk());
@@ -226,12 +229,12 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── CSRF disabled ────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("TC-SEC-020 [NFR-33]: POST /auth/login should succeed without CSRF token")
+    @DisplayName("TC-SEC-020 [NFR-33]")
     void csrfDisabled() throws Exception {
-        SeededUser reader = seedUser("READER");
+        // reader_test is pre-provisioned — login should succeed without any CSRF token header
         postJson("/auth/login", """
                 {"username":"%s","password":"%s"}
-                """.formatted(reader.username(), PASSWORD))
+                """.formatted(READER_USER, FIXED_PASSWORD))
                 .andExpect(status().isOk());
     }
 }

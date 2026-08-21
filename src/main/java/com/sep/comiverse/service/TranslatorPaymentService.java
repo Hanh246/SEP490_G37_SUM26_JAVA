@@ -84,10 +84,6 @@ public class TranslatorPaymentService {
             throw new CustomException(400, "New assignee must be different from the current assignee", HttpStatus.BAD_REQUEST);
         }
         BigDecimal factor = normalizeFactor(request.getResponsibilityFactor());
-        String reason = StringUtils.hasText(request.getReason()) ? request.getReason().trim() : null;
-        if (reason == null) {
-            throw new CustomException(400, "Handover reason is required", HttpStatus.BAD_REQUEST);
-        }
 
         List<PageTranslationEntity> pages = pageRepository.findByTaskId_IdOrderByPageNumberAsc(task.getId());
         if (pages.isEmpty()) {
@@ -151,7 +147,6 @@ public class TranslatorPaymentService {
                 .acceptedPageCount(acceptedNumbers.size())
                 .reassignedPageCount(reassignedCount)
                 .acceptedPageNumbers(toJson(acceptedNumbers))
-                .reason(reason)
                 .build();
         handover.setDeleted(false);
         TaskHandoverEntity saved = handoverRepository.save(handover);
@@ -165,7 +160,6 @@ public class TranslatorPaymentService {
                 .acceptedPageCount(acceptedNumbers.size())
                 .reassignedPageCount(reassignedCount)
                 .responsibilityFactor(factor)
-                .reason(reason)
                 .handedOverAt(now)
                 .build();
     }
