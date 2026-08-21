@@ -32,9 +32,9 @@ public class CreatePayoutRequest {
     private BigDecimal requestedAmount;
 
     @Pattern(
-            regexp = "^(USD|EUR|CNY)$",
+            regexp = "^USD$",
             flags = Pattern.Flag.CASE_INSENSITIVE,
-            message = "Payout currency must be USD, EUR, or CNY"
+            message = "Payout currency must be USD"
     )
     private String payoutCurrency;
 

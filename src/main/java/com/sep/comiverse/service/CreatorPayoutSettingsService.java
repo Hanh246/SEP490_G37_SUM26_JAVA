@@ -11,7 +11,6 @@ import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.ICreatorPayoutCurrencyRepository;
 import com.sep.comiverse.repository.ICreatorPayoutSettingRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -21,7 +20,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Comparator;
 import java.util.List;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -33,12 +31,6 @@ public class CreatorPayoutSettingsService {
     private final ICreatorPayoutSettingRepository settingRepository;
     private final ICreatorPayoutCurrencyRepository currencyRateRepository;
     private final JdbcTemplate jdbcTemplate;
-
-    @Value("${payout.currency.eur-units-per-usd:0.920000}")
-    private BigDecimal defaultEurUnitsPerUsd;
-
-    @Value("${payout.currency.cny-units-per-usd:7.200000}")
-    private BigDecimal defaultCnyUnitsPerUsd;
 
     @Transactional
     public CreatorPayoutSettingsResponse getSettings() {
@@ -83,13 +75,8 @@ public class CreatorPayoutSettingsService {
             throw new CustomException(400, ex.getMessage(), HttpStatus.BAD_REQUEST);
         }
 
-        boolean active = Boolean.TRUE.equals(request.getActive());
-        BigDecimal unitsPerUsd = normalizeRate(request.getUnitsPerUsd());
-
-        if (currency == CreatorPayoutCurrency.USD) {
-            unitsPerUsd = BigDecimal.ONE.setScale(6, RoundingMode.UNNECESSARY);
-            active = true;
-        }
+        boolean active = true;
+        BigDecimal unitsPerUsd = BigDecimal.ONE.setScale(6, RoundingMode.UNNECESSARY);
 
         CreatorPayoutCurrencyEntity entity = currencyRateRepository
                 .findByCurrencyCode(currency.getCode())
@@ -111,6 +98,7 @@ public class CreatorPayoutSettingsService {
         return currencyRateRepository
                 .findAllByDeletedFalseOrderByCurrencyCodeAsc()
                 .stream()
+                .filter(item -> "USD".equalsIgnoreCase(item.getCurrencyCode()))
                 .filter(item -> Boolean.TRUE.equals(item.getActive()))
                 .map(this::toCurrencyResponse)
                 .sorted(Comparator.comparingInt(this::currencyOrder))
@@ -210,14 +198,12 @@ public class CreatorPayoutSettingsService {
                 CreatorPayoutCurrency.USD,
                 BigDecimal.ONE
         );
-        upsertDefaultCurrency(
-                CreatorPayoutCurrency.EUR,
-                defaultEurUnitsPerUsd
-        );
-        upsertDefaultCurrency(
-                CreatorPayoutCurrency.CNY,
-                defaultCnyUnitsPerUsd
-        );
+        jdbcTemplate.update("""
+                UPDATE creator_payout_currencies
+                SET active = false, update_at = CURRENT_TIMESTAMP
+                WHERE UPPER(currency_code) <> 'USD'
+                  AND COALESCE(active, false) = true
+                """);
     }
 
     private void upsertDefaultCurrency(
@@ -272,6 +258,7 @@ public class CreatorPayoutSettingsService {
                 .supportedCurrencies(currencyRateRepository
                         .findAllByDeletedFalseOrderByCurrencyCodeAsc()
                         .stream()
+                        .filter(item -> "USD".equalsIgnoreCase(item.getCurrencyCode()))
                         .map(this::toCurrencyResponse)
                         .sorted(Comparator.comparingInt(this::currencyOrder))
                         .toList())
@@ -293,12 +280,7 @@ public class CreatorPayoutSettingsService {
     }
 
     private int currencyOrder(CreatorPayoutCurrencyResponse item) {
-        return switch (item.getCurrencyCode()) {
-            case "USD" -> 0;
-            case "EUR" -> 1;
-            case "CNY" -> 2;
-            default -> 99;
-        };
+        return "USD".equalsIgnoreCase(item.getCurrencyCode()) ? 0 : 99;
     }
 
     public record ResolvedCurrency(

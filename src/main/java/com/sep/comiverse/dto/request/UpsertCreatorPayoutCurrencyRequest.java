@@ -15,9 +15,9 @@ public class UpsertCreatorPayoutCurrencyRequest {
 
     @NotBlank(message = "Currency code is required")
     @Pattern(
-            regexp = "^(USD|EUR|CNY)$",
+            regexp = "^USD$",
             flags = Pattern.Flag.CASE_INSENSITIVE,
-            message = "Currency must be USD, EUR, or CNY"
+            message = "Currency must be USD"
     )
     private String currencyCode;
 

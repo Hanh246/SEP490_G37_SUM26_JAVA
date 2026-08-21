@@ -33,8 +33,8 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class PremiumPlanService {
-    private static final BigDecimal DEFAULT_MONTHLY_PRICE = new BigDecimal("79000");
-    private static final BigDecimal DEFAULT_YEARLY_PRICE = new BigDecimal("790000");
+    private static final BigDecimal DEFAULT_MONTHLY_PRICE = new BigDecimal("3.16");
+    private static final BigDecimal DEFAULT_YEARLY_PRICE = new BigDecimal("31.60");
     private static final List<String> DEFAULT_BENEFITS = List.of(
             "Read without ads",
             "Early access to newest chapters",
@@ -221,12 +221,12 @@ public class PremiumPlanService {
         BigDecimal normalizedPrice = price.stripTrailingZeros();
         BillingInterval expectedInterval = "YEARLY".equals(code) ? BillingInterval.YEAR : BillingInterval.MONTH;
         boolean stripePriceChanged = plan.getPrice().compareTo(normalizedPrice) != 0
-                || !Objects.equals(plan.getCurrency(), "VND")
+                || !Objects.equals(plan.getCurrency(), "USD")
                 || plan.getBillingInterval() != expectedInterval
                 || !Objects.equals(plan.getIntervalCount(), 1);
 
         plan.setPrice(normalizedPrice);
-        plan.setCurrency("VND");
+        plan.setCurrency("USD");
         plan.setBillingInterval(expectedInterval);
         plan.setIntervalCount(1);
         plan.setFeaturesJson(toJson(benefits));
