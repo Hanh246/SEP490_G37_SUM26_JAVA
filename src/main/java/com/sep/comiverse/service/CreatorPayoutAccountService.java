@@ -204,6 +204,23 @@ public class CreatorPayoutAccountService {
                                 HttpStatus.BAD_REQUEST
                         ));
 
+        // Reject malformed local profiles before making a Stripe network call.
+        if (!Boolean.TRUE.equals(profile.getActive())) {
+            throw new CustomException(
+                    400,
+                    "Stripe payout account is inactive",
+                    HttpStatus.BAD_REQUEST
+            );
+        }
+
+        if (!StringUtils.hasText(profile.getStripeConnectedAccountId())) {
+            throw new CustomException(
+                    400,
+                    "Stripe connected account is missing",
+                    HttpStatus.BAD_REQUEST
+            );
+        }
+
         // Always refresh the Connected Account from Stripe before a payout
         // readiness check. The persisted capability snapshot can become stale
         // after Stripe changes verification/capability requirements.

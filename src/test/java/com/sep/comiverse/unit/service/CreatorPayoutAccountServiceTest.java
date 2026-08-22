@@ -73,6 +73,7 @@ class CreatorPayoutAccountServiceTest {
     void isReady_requiresAllStripeReadinessSignals() {
         CreatorPayoutAccountEntity profile = CreatorPayoutAccountEntity.builder()
                 .active(true)
+                .stripeConnectedAccountId("acct_ready")
                 .detailsSubmitted(true)
                 .payoutsEnabled(true)
                 .transfersCapability("active")
@@ -86,7 +87,7 @@ class CreatorPayoutAccountServiceTest {
     }
 
     @Test
-    void requireReadyProfile_handlesMissingIncompleteAndReadyProfiles() {
+    void requireReadyProfile_handlesMissingIncompleteAndReadyProfiles() throws Exception {
         UUID userId = UUID.randomUUID();
         when(profileRepository.findByUserIdAndDeletedFalse(userId)).thenReturn(Optional.empty());
         assertEquals(400, assertThrows(CustomException.class,
@@ -97,11 +98,21 @@ class CreatorPayoutAccountServiceTest {
         when(profileRepository.findByUserIdAndDeletedFalse(userId)).thenReturn(Optional.of(profile));
         assertEquals(400, assertThrows(CustomException.class,
                 () -> service.requireReadyProfile(userId)).getCode());
+        verifyNoInteractions(stripeGatewayService);
 
+        profile.setStripeConnectedAccountId("acct_ready");
         profile.setDetailsSubmitted(true);
         profile.setPayoutsEnabled(true);
         profile.setTransfersCapability("active");
         profile.setExternalAccountLast4("1234");
+        JsonNode readyAccount = mapper.readTree("""
+                {"id":"acct_ready","livemode":false,"country":"VN","default_currency":"usd",
+                 "metadata":{"user_id":"%s"},"details_submitted":true,"payouts_enabled":true,
+                 "charges_enabled":false,"capabilities":{"transfers":"active"},
+                 "requirements":{"currently_due":[]},
+                 "external_accounts":{"data":[{"object":"bank_account","last4":"1234","bank_name":"Test Bank"}]}}
+                """.formatted(userId));
+        when(stripeGatewayService.retrieveConnectedAccount("acct_ready")).thenReturn(readyAccount);
         when(payoutSettingsService.resolveCurrency("USD")).thenReturn(resolved("USD"));
         assertSame(profile, service.requireReadyProfile(userId));
     }
@@ -174,8 +185,6 @@ class CreatorPayoutAccountServiceTest {
                 .userId(userId).stripeConnectedAccountId("acct_123").currency("USD").active(true).build();
         when(profileRepository.findByStripeConnectedAccountIdAndDeletedFalse("acct_123"))
                 .thenReturn(Optional.of(profile));
-        when(payoutSettingsService.resolveCurrency("usd")).thenReturn(resolved("USD"));
-
         JsonNode ready = mapper.readTree("""
                 {"id":"acct_123","livemode":false,"country":"VN","default_currency":"usd",
                  "metadata":{"user_id":"%s"},"details_submitted":true,"payouts_enabled":true,
