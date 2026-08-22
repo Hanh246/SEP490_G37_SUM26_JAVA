@@ -51,6 +51,7 @@ public class AuthorDashboardMetricsResponse {
         private Long views;
         private Long followers;
         private BigDecimal estimatedRevenue;
+        private BigDecimal totalPaid;
         private Long chaptersUploaded;
         private Long reviewsSubmitted;
         private Long chaptersApproved;

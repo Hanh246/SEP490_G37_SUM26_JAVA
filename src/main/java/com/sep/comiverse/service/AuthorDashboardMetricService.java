@@ -14,6 +14,9 @@ import com.sep.comiverse.repository.IComicMetricSnapshotRepository;
 import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.repository.ICreatorPayoutRequestRepository;
 import com.sep.comiverse.repository.ISubmissionRepository;
+import com.sep.comiverse.entity.CreatorPayoutRequestEntity;
+import com.sep.comiverse.entity.enums.CreatorPayoutStatus;
+import com.sep.comiverse.repository.ICreatorPayoutRequestRepository;
 import com.sep.comiverse.repository.projection.ComicChapterCountProjection;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -74,6 +77,8 @@ public class AuthorDashboardMetricService {
                 .findAllByAuthorIdAndQueueTypeIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(authorId, "author");
         List<ComicMetricSnapshotEntity> snapshots = metricSnapshotRepository
                 .findAllByAuthorIdAndDeletedFalseOrderByCreatedAtDesc(authorId);
+        List<CreatorPayoutRequestEntity> payouts = payoutRequestRepository
+                .findAllByUserIdAndDeletedFalseOrderByCreatedAtDesc(authorId);
         BigDecimal totalPaid = payoutRequestRepository.sumPaidAmountUsdByUserIdAndRole(
                 authorId,
                 CreatorPayoutRole.AUTHOR,
@@ -101,6 +106,7 @@ public class AuthorDashboardMetricService {
                 ));
 
         return AuthorDashboardMetricsResponse.builder()
+                .summary(buildSummary(comics, chapters, submissions, latestSnapshotByComic, payouts))
                 .summary(buildSummary(comics, chapters, submissions, latestSnapshotByComic, totalPaid))
                 .monthlyMetrics(buildChartMetrics(period, comics, chapters, submissions, snapshots))
                 .topComics(buildTopComics(comics, chapterCountByComic, latestSnapshotByComic, ratePerView))
@@ -114,6 +120,7 @@ public class AuthorDashboardMetricService {
             List<ChapterEntity> chapters,
             List<SubmissionEntity> submissions,
             Map<UUID, ComicMetricSnapshotEntity> latestSnapshotByComic,
+            List<CreatorPayoutRequestEntity> payouts
             BigDecimal totalPaid
     ) {
         long totalViews = comics.stream().mapToLong(comic -> defaultLong(comic.getViewCount())).sum();
@@ -134,6 +141,11 @@ public class AuthorDashboardMetricService {
         BigDecimal estimatedRevenue = latestSnapshotByComic.values().stream()
                 .map(ComicMetricSnapshotEntity::getEstimatedRevenue)
                 .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalPaid = payouts.stream()
+                .filter(p -> p.getStatus() == CreatorPayoutStatus.PAID)
+                .map(p -> p.getBaseAmountUsd() != null ? p.getBaseAmountUsd() : (p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         return AuthorDashboardMetricsResponse.Summary.builder()
