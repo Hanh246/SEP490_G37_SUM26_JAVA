@@ -38,6 +38,9 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
         String jwt = getJwtFromRequest(request);
         try {
             if (StringUtils.hasLength(jwt) && jwtTokenUtil.validateJwtToken(jwt)) {
+                if (!jwtTokenUtil.isAccessToken(jwt)) {
+                    throw new IllegalArgumentException("REFRESH_TOKEN_NOT_ALLOWED");
+                }
                 String userIdStr = jwtTokenUtil.getSubjectFromJwtToken(jwt);
                 java.util.UUID userId = java.util.UUID.fromString(userIdStr);
                 java.util.UUID loginDeviceId = jwtTokenUtil.getLoginDeviceIdFromToken(jwt);

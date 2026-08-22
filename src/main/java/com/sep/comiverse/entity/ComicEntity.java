@@ -4,11 +4,8 @@ import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.entity.enums.ComicPublicationStatus;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -22,7 +19,8 @@ import java.util.UUID;
         @Index(name = "idx_comics_moderation_deleted", columnList = "moderation_status, deleted"),
         @Index(name = "idx_comics_author_deleted", columnList = "author_id, deleted"),
         @Index(name = "idx_comics_mod_deleted_created", columnList = "moderation_status, deleted, create_at"),
-        @Index(name = "idx_comics_title", columnList = "title")
+        @Index(name = "idx_comics_title", columnList = "title"),
+        @Index(name = "idx_comics_slug", columnList = "slug", unique = true)
 })
 @EqualsAndHashCode(callSuper = true, exclude = "genres")
 @ToString(exclude = "genres")
@@ -30,6 +28,9 @@ public class ComicEntity extends BaseEntity {
 
     @Column(name = "title", nullable = false)
     private String title;
+
+    @Column(name = "slug", nullable = false, unique = true, length = 255)
+    private String slug;
 
     @Column(name = "summary", columnDefinition = "TEXT")
     private String summary;
@@ -125,6 +126,7 @@ public class ComicEntity extends BaseEntity {
     private java.time.Instant approvedAt;
 
     @PrePersist
+    @PreUpdate
     protected void ensureModerationDefaults() {
         if (this.moderationStatus == null) {
             this.moderationStatus = ComicModerationStatus.DRAFT;
@@ -132,5 +134,32 @@ public class ComicEntity extends BaseEntity {
         if (this.language == null || this.language.isBlank()) {
             this.language = "Unknown";
         }
+        if (this.slug == null || this.slug.isBlank()) {
+            this.slug = generateSlug(this.title);
+        }
+    }
+
+    public static String generateSlug(String title) {
+        if (title == null || title.isBlank()) {
+            return UUID.randomUUID().toString();
+        }
+
+        // 1. Convert Fullwidth Latin / symbols to standard Unicode NFKC form
+        String nfkc = java.text.Normalizer.normalize(title.trim(), java.text.Normalizer.Form.NFKC);
+
+        // 2. Normalize Vietnamese đ/Đ and strip combining diacritical marks
+        String withD = nfkc.replaceAll("[đ]", "d").replaceAll("[Đ]", "D");
+        String nfd = java.text.Normalizer.normalize(withD, java.text.Normalizer.Form.NFD);
+        String stripped = nfd.replaceAll("\\p{M}", "");
+
+        // 3. Lowercase
+        String lower = stripped.toLowerCase(java.util.Locale.ROOT);
+
+        // 4. Replace any character that is NOT a Unicode letter (\p{L}), digit (\p{N}), or hyphen (-) with a hyphen
+        String slug = lower.replaceAll("[^\\p{L}\\p{N}-]+", "-")
+                .replaceAll("-+", "-")
+                .replaceAll("^-|-$", "");
+
+        return slug.isBlank() ? UUID.randomUUID().toString() : slug;
     }
 }

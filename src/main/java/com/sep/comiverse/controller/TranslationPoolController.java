@@ -213,7 +213,7 @@ public class TranslationPoolController {
         }
 
         ProjectTeamEntity team = teamOpt.get();
-        team.setStatus("ACTIVE");
+        team.setStatus("ongoing");
         team.setLeaderName(finalLeaderName);
         team.setLeaderInitials(finalLeaderInitials);
         if (principal != null) {

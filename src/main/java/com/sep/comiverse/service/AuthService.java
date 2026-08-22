@@ -278,11 +278,6 @@ public class AuthService {
         return userRepository.save(user);
     }
 
-    private String capitalizeFirst(String str) {
-        if (str == null || str.isEmpty()) return str;
-        return str.substring(0, 1).toUpperCase() + str.substring(1).toLowerCase();
-    }
-
     private void assertPasswordResetThrottle(String normalizedEmail) {
         Instant now = Instant.now();
         synchronized (PASSWORD_RESET_THROTTLE) {

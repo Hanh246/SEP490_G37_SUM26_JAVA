@@ -16,7 +16,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
-
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -170,7 +171,7 @@ class AuthorLicenseServiceTest {
         AuthorEntity author = author(user, AuthorLicenseStatus.PENDING_VERIFICATION);
         author.setLicenseUrl("https://cdn/license.pdf");
         UUID reviewer = UUID.randomUUID();
-        when(authorRepository.findById(author.getId())).thenReturn(Optional.of(author));
+        when(authorRepository.findByIdAndDeletedFalse(author.getId())).thenReturn(Optional.of(author));
 
         AuthorLicenseResponse response = service.approve(author.getId(), reviewer);
 
@@ -182,51 +183,104 @@ class AuthorLicenseServiceTest {
     }
 
     @Test
+    void approve_rejectsUserEntityIdAndDoesNotFallbackToUserLookup() {
+        UserEntity user = user("author@example.com");
+        AuthorEntity author = author(user, AuthorLicenseStatus.PENDING_VERIFICATION);
+        author.setLicenseUrl("https://cdn/license.pdf");
+        UUID reviewer = UUID.randomUUID();
+
+        // The supplied id is the UserEntity.id, not AuthorEntity.id.
+        when(authorRepository.findByIdAndDeletedFalse(user.getId())).thenReturn(Optional.empty());
+
+        CustomException error = assertThrows(CustomException.class,
+                () -> service.approve(user.getId(), reviewer));
+
+        assertEquals(404, error.getCode());
+        assertTrue(error.getMessage().contains("AuthorEntity.id"));
+        verify(authorRepository).findByIdAndDeletedFalse(user.getId());
+        verify(authorRepository, never()).findByUserIdAndDeletedFalse(user.getId());
+        verify(authorRepository, never()).save(author);
+        assertEquals(AuthorLicenseStatus.PENDING_VERIFICATION, author.getLicenseStatus());
+    }
+
+    @Test
     void approve_requiresPendingVerificationAndUploadedPdf() {
         UserEntity user = user("author@example.com");
         AuthorEntity active = author(user, AuthorLicenseStatus.ACTIVE);
-        when(authorRepository.findById(active.getId())).thenReturn(Optional.of(active));
+        when(authorRepository.findByIdAndDeletedFalse(active.getId())).thenReturn(Optional.of(active));
         assertEquals(409, assertThrows(CustomException.class,
                 () -> service.approve(active.getId(), UUID.randomUUID())).getCode());
 
         AuthorEntity pending = author(user, AuthorLicenseStatus.PENDING_VERIFICATION);
-        when(authorRepository.findById(pending.getId())).thenReturn(Optional.of(pending));
+        when(authorRepository.findByIdAndDeletedFalse(pending.getId())).thenReturn(Optional.of(pending));
         assertEquals(409, assertThrows(CustomException.class,
                 () -> service.approve(pending.getId(), UUID.randomUUID())).getCode());
     }
 
     @Test
-    void reject_setsNewDeadlineAndReason_boundaryDeadlineValidated() {
+    void reject_setsNewDeadlineAndTrimsReasonUsingDefaultDeadline() {
         UserEntity user = user("author@example.com");
         AuthorEntity pending = author(user, AuthorLicenseStatus.PENDING_VERIFICATION);
-        when(authorRepository.findById(pending.getId())).thenReturn(Optional.of(pending));
+        when(authorRepository.findByIdAndDeletedFalse(pending.getId())).thenReturn(Optional.of(pending));
         Instant before = Instant.now();
 
-        AuthorLicenseResponse response = service.reject(pending.getId(), UUID.randomUUID(), "  blurry scan  ", 30);
+        AuthorLicenseResponse response = service.reject(pending.getId(), UUID.randomUUID(), "  blurry scan  ", null);
 
         assertEquals(AuthorLicenseStatus.REJECTED, response.getStatus());
         assertEquals("blurry scan", pending.getLicenseRejectionReason());
-        assertTrue(pending.getLicenseDeadlineAt().isAfter(before.plus(29, ChronoUnit.DAYS)));
+        assertTrue(pending.getLicenseDeadlineAt().isAfter(before.plus(6, ChronoUnit.DAYS)));
+        assertTrue(pending.getLicenseDeadlineAt().isBefore(before.plus(8, ChronoUnit.DAYS)));
+    }
 
-        AuthorEntity second = author(user, AuthorLicenseStatus.PENDING_VERIFICATION);
-        when(authorRepository.findById(second.getId())).thenReturn(Optional.of(second));
-        assertEquals(400, assertThrows(CustomException.class,
-                () -> service.reject(second.getId(), UUID.randomUUID(), "x", 31)).getCode());
+    @ParameterizedTest
+    @CsvSource({
+            "0,false",
+            "1,true",
+            "2,true",
+            "29,true",
+            "30,true",
+            "31,false"
+    })
+    void reject_deadlineDaysBoundary_coversMinAndMaxEdges(int deadlineDays, boolean valid) {
+        UserEntity user = user("author@example.com");
+        AuthorEntity pending = author(user, AuthorLicenseStatus.PENDING_VERIFICATION);
+        when(authorRepository.findByIdAndDeletedFalse(pending.getId())).thenReturn(Optional.of(pending));
+        Instant before = Instant.now();
+
+        if (!valid) {
+            CustomException error = assertThrows(CustomException.class, () ->
+                    service.reject(pending.getId(), UUID.randomUUID(), "reason", deadlineDays));
+            assertEquals(400, error.getCode());
+            assertEquals(AuthorLicenseStatus.PENDING_VERIFICATION, pending.getLicenseStatus());
+            return;
+        }
+
+        AuthorLicenseResponse response =
+                service.reject(pending.getId(), UUID.randomUUID(), "reason", deadlineDays);
+        assertEquals(AuthorLicenseStatus.REJECTED, response.getStatus());
+        assertTrue(pending.getLicenseDeadlineAt().isAfter(before.plus(deadlineDays - 1L, ChronoUnit.DAYS)));
+        assertTrue(pending.getLicenseDeadlineAt().isBefore(before.plus(deadlineDays + 1L, ChronoUnit.DAYS)));
     }
 
     @Test
     void reopen_onlyExpiredOrDisabled_returnsPendingLicense() {
         UserEntity user = user("author@example.com");
         AuthorEntity expired = author(user, AuthorLicenseStatus.EXPIRED);
-        when(authorRepository.findById(expired.getId())).thenReturn(Optional.of(expired));
-
-        AuthorLicenseResponse response = service.reopen(expired.getId(), UUID.randomUUID(), 7);
-
+        when(authorRepository.findByIdAndDeletedFalse(expired.getId()))
+                .thenReturn(Optional.of(expired));
+        AuthorLicenseResponse response =
+                service.reopen(expired.getId(), UUID.randomUUID(), 7);
         assertEquals(AuthorLicenseStatus.PENDING_LICENSE, response.getStatus());
         assertTrue(response.isCanUploadLicense());
+        AuthorEntity disabled = author(user, AuthorLicenseStatus.AUTHOR_DISABLED);
+        when(authorRepository.findByIdAndDeletedFalse(disabled.getId())).thenReturn(Optional.of(disabled));
+        AuthorLicenseResponse disabledResponse =
+                service.reopen(disabled.getId(), UUID.randomUUID(), 7);
+        assertEquals(AuthorLicenseStatus.PENDING_LICENSE, disabledResponse.getStatus());
+        assertTrue(disabledResponse.isCanUploadLicense());
 
         AuthorEntity active = author(user, AuthorLicenseStatus.ACTIVE);
-        when(authorRepository.findById(active.getId())).thenReturn(Optional.of(active));
+        when(authorRepository.findByIdAndDeletedFalse(active.getId())).thenReturn(Optional.of(active));
         assertEquals(409, assertThrows(CustomException.class,
                 () -> service.reopen(active.getId(), UUID.randomUUID(), 7)).getCode());
     }
@@ -235,7 +289,7 @@ class AuthorLicenseServiceTest {
     void disable_blocksPublishingAndPayoutUntilReopenedAndApproved() {
         UserEntity user = user("author@example.com");
         AuthorEntity author = author(user, AuthorLicenseStatus.ACTIVE);
-        when(authorRepository.findById(author.getId())).thenReturn(Optional.of(author));
+        when(authorRepository.findByIdAndDeletedFalse(author.getId())).thenReturn(Optional.of(author));
         when(authorRepository.findByUserIdAndDeletedFalse(user.getId())).thenReturn(Optional.of(author));
 
         service.disable(author.getId(), UUID.randomUUID());
@@ -270,7 +324,7 @@ class AuthorLicenseServiceTest {
     void reject_requiresNonBlankReason_evenWhenServiceCalledDirectly() {
         UserEntity user = user("author@example.com");
         AuthorEntity pending = author(user, AuthorLicenseStatus.PENDING_VERIFICATION);
-        when(authorRepository.findById(pending.getId())).thenReturn(Optional.of(pending));
+        when(authorRepository.findByIdAndDeletedFalse(pending.getId())).thenReturn(Optional.of(pending));
 
         CustomException blank = assertThrows(CustomException.class,
                 () -> service.reject(pending.getId(), UUID.randomUUID(), "   ", 7));

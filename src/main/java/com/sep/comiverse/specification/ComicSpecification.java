@@ -3,9 +3,13 @@ package com.sep.comiverse.specification;
 import com.sep.comiverse.dto.request.ComicExploreRequestDTO;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.GenreEntity;
+import com.sep.comiverse.entity.AuthorEntity;
 import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.util.CollectionUtils;
 
@@ -22,6 +26,28 @@ public class ComicSpecification {
 
             predicates.add(criteriaBuilder.equal(root.get("deleted"), false));
             predicates.add(criteriaBuilder.equal(root.get("moderationStatus"), ComicModerationStatus.PUBLISHED));
+
+            String search = request.getSearch() == null ? "" : request.getSearch().trim().toLowerCase();
+            if (!search.isEmpty()) {
+                String pattern = "%" + search + "%";
+                Join<ComicEntity, GenreEntity> searchGenre = root.join("genres", JoinType.LEFT);
+                Subquery<UUID> authorSubquery = query.subquery(UUID.class);
+                Root<ComicEntity> correlatedComic = authorSubquery.correlate(root);
+                Root<AuthorEntity> author = authorSubquery.from(AuthorEntity.class);
+                authorSubquery.select(author.get("id")).where(
+                        criteriaBuilder.isFalse(author.get("deleted")),
+                        criteriaBuilder.or(
+                                criteriaBuilder.equal(author.get("id"), correlatedComic.get("authorId")),
+                                criteriaBuilder.equal(author.get("user").get("id"), correlatedComic.get("authorId"))
+                        ),
+                        criteriaBuilder.like(criteriaBuilder.lower(author.get("displayName")), pattern)
+                );
+                predicates.add(criteriaBuilder.or(
+                        criteriaBuilder.like(criteriaBuilder.lower(root.get("title")), pattern),
+                        criteriaBuilder.like(criteriaBuilder.lower(searchGenre.get("name")), pattern),
+                        criteriaBuilder.exists(authorSubquery)
+                ));
+            }
 
             if (request.getPublicationStatus() != null) {
                 predicates.add(criteriaBuilder.equal(

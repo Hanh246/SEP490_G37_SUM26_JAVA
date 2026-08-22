@@ -1,64 +1,148 @@
 package com.sep.comiverse.integration.api;
 
-import com.sep.comiverse.entity.RoleEntity;
-import com.sep.comiverse.entity.UserEntity;
-import com.sep.comiverse.integration.support.AbstractIntegrationTest;
-import com.sep.comiverse.repository.IRoleRepository;
-import com.sep.comiverse.repository.IUserRepository;
-import com.sep.comiverse.security.JwtTokenUtil;
-import org.junit.jupiter.api.BeforeEach;
+import com.sep.comiverse.integration.support.AbstractBlackboxIT;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.test.web.servlet.MockMvc;
 
-import static org.hamcrest.Matchers.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import java.util.UUID;
 
-public class SubmissionControllerIT extends AbstractIntegrationTest {
+import static org.hamcrest.Matchers.notNullValue;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-    @Autowired
-    private MockMvc mockMvc;
+class SubmissionControllerIT extends AbstractBlackboxIT {
 
-    @Autowired
-    private IUserRepository userRepository;
-
-    @Autowired
-    private IRoleRepository roleRepository;
-
-    @Autowired
-    private JwtTokenUtil jwtTokenUtil;
-
-    private UserEntity modUser;
-    private String modToken;
-
-    @BeforeEach
-    void setUp() {
-        RoleEntity modRole = roleRepository.findByRoleName("MODERATOR")
-                .orElseGet(() -> roleRepository.save(RoleEntity.builder().roleName("MODERATOR").build()));
-
-        modUser = userRepository.findByEmail("mod_submission@example.com")
-                .orElseGet(() -> userRepository.save(UserEntity.builder()
-                        .username("mod_submission")
-                        .email("mod_submission@example.com")
-                        .password("Password123!")
-                        .fullName("Mod Submission User")
-                        .status("ACTIVE")
-                        .role(modRole)
-                        .build()));
-
-        modToken = jwtTokenUtil.generateToken(modUser);
+    @Test
+    @DisplayName("TC-INT-SubmissionController-001 [UC-19]")
+    void listUnauthorized() throws Exception {
+        getJson("/submissions").andExpect(status().is4xxClientError());
     }
 
     @Test
-    @DisplayName("TC-INT-SubmissionController-001: GET /submissions - List all submissions with pagination as MODERATOR should return 200 OK")
-    void findAll() throws Exception {
-        mockMvc.perform(get("/submissions")
-                        .header("Authorization", "Bearer " + modToken)
-                        .param("page", "1")
-                        .param("size", "10"))
+    @DisplayName("TC-INT-SubmissionController-002 [UC-19]")
+    void listAsAdmin() throws Exception {
+        getJson("/submissions", fixedToken(ADMIN_USER))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success", is(true)));
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data", notNullValue()));
+    }
+
+    @Test
+    @DisplayName("TC-INT-SubmissionController-003 [UC-19]")
+    void listAllAsAdmin() throws Exception {
+        getJson("/submissions/all", fixedToken(ADMIN_USER))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    @DisplayName("TC-INT-SubmissionController-004 [UC-19]")
+    void createAsAdmin() throws Exception {
+        pendingSubmission();
+    }
+
+    @Test
+    @DisplayName("TC-INT-SubmissionController-005 [UC-19]")
+    void getById() throws Exception {
+        UUID id = pendingSubmission();
+        getJson("/submissions/" + id, fixedToken(ADMIN_USER))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    @DisplayName("TC-INT-SubmissionController-006 [UC-19]")
+    void getUnknown() throws Exception {
+        getJson("/submissions/" + UUID.randomUUID(), fixedToken(ADMIN_USER))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("TC-INT-SubmissionController-007 [UC-19]")
+    void updateAsAdmin() throws Exception {
+        UUID id = pendingSubmission();
+        putJson("/submissions/" + id, """
+                {"title":"Updated submission","status":"pending","queueType":"author"}
+                """, fixedToken(ADMIN_USER))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("TC-INT-SubmissionController-008 [UC-19]")
+    void deleteAsAdmin() throws Exception {
+        UUID id = pendingSubmission();
+        deleteJson("/submissions/" + id, fixedToken(ADMIN_USER)).andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("TC-INT-SubmissionController-009 [UC-19]")
+    void claimForbidden() throws Exception {
+        UUID id = pendingSubmission();
+        putJson("/submissions/" + id + "/claim", "{}", fixedToken(READER_USER))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("TC-INT-SubmissionController-010 [UC-19]")
+    void claimAsModerator() throws Exception {
+        UUID id = pendingSubmission();
+        putJson("/submissions/" + id + "/claim", "{}", fixedToken(MOD_USER))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("TC-INT-SubmissionController-011 [UC-19]")
+    void releaseAsModerator() throws Exception {
+        UUID id = pendingSubmission();
+        String mod = fixedToken(MOD_USER);
+        putJson("/submissions/" + id + "/claim", "{}", mod).andExpect(status().isOk());
+        putJson("/submissions/" + id + "/release", "{}", mod).andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("TC-INT-SubmissionController-012 [UC-19]")
+    void approveForbidden() throws Exception {
+        UUID id = pendingSubmission();
+        putJson("/submissions/" + id + "/approve", "{}", fixedToken(READER_USER))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("TC-INT-SubmissionController-013 [UC-19]")
+    void approveAsAdmin() throws Exception {
+        UUID id = pendingSubmission();
+        putJson("/submissions/" + id + "/approve", "{}", fixedToken(ADMIN_USER))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("TC-INT-SubmissionController-014 [UC-19]")
+    void rejectAsAdmin() throws Exception {
+        UUID id = pendingSubmission();
+        putJson("/submissions/" + id + "/reject", """
+                {"reason":"Needs clearer lettering"}
+                """, fixedToken(ADMIN_USER))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("TC-INT-SubmissionController-015 [UC-19]")
+    void claimUnknown() throws Exception {
+        putJson("/submissions/" + UUID.randomUUID() + "/claim", "{}", fixedToken(MOD_USER))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("TC-INT-SubmissionController-016 [UC-19]")
+    void invalidPageSize() throws Exception {
+        getJson("/submissions?size=0", fixedToken(ADMIN_USER)).andExpect(status().isBadRequest());
+    }
+
+    private UUID pendingSubmission() throws Exception {
+        SeededUser author = fixedUser(AUTHOR_USER);
+        String admin = fixedToken(ADMIN_USER);
+        UUID comicId = createComicAsAdmin(admin, author.id(), "Submission Host");
+        UUID chapterId = createChapterAsAdmin(admin, comicId, "1");
+        return createSubmission(admin, comicId, chapterId, author.id());
     }
 }

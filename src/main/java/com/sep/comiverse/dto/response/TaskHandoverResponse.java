@@ -20,6 +20,5 @@ public class TaskHandoverResponse {
     private Integer acceptedPageCount;
     private Integer reassignedPageCount;
     private BigDecimal responsibilityFactor;
-    private String reason;
     private Instant handedOverAt;
 }

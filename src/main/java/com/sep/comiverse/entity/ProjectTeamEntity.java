@@ -26,7 +26,7 @@ public class ProjectTeamEntity extends BaseEntity {
     private String comicName;
 
     @Column(name = "status")
-    private String status; // Active, Paused, Completed
+    private String status; // UNCLAIMED, ongoing, completed (legacy: Active)
 
     @Column(name = "members_count")
     private Integer membersCount;

@@ -2,6 +2,7 @@ package com.sep.comiverse.plugin.crud;
 
 import com.sep.comiverse.dto.ChapterDTO;
 import com.sep.comiverse.dto.ChapterLiteDTO;
+import com.sep.comiverse.dto.response.PageResponseDto;
 import com.sep.comiverse.dto.ReadingHistoryCacheDTO;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.entity.ChapterEntity;
@@ -168,6 +169,21 @@ public class ChapterCrudPlugin
                 .build();
 
         responseDto.setImages(hasContentAccess ? images : Collections.emptyList());
+
+        if (hasContentAccess && chapter.getScrambledPages() != null && !chapter.getScrambledPages().isEmpty()) {
+            List<PageResponseDto> protectedPages = new java.util.ArrayList<>();
+            for (ChapterEntity.ScrambledPageData data : chapter.getScrambledPages()) {
+                protectedPages.add(PageResponseDto.builder()
+                        .pageNumber(data.getPageNumber() != null ? data.getPageNumber() : 1)
+                        .scrambledImageUrl(data.getScrambledImageUrl())
+                        .cols(data.getCols() != null ? data.getCols() : 4)
+                        .rows(data.getRows() != null ? data.getRows() : 4)
+                        .encryptedMapping(data.getEncryptedMapping())
+                        .token(UUID.randomUUID().toString())
+                        .build());
+            }
+            responseDto.setProtectedPages(protectedPages);
+        }
 
         if (hasContentAccess && chapter.getModerationStatus() == ChapterStatus.PUBLISHED && !isStaffOrPrivileged) {
             try {

@@ -23,6 +23,11 @@ import java.util.UUID;
 @Component
 public class JwtTokenUtil {
 
+    private static final String TOKEN_TYPE_CLAIM = "tokenType";
+    private static final String ACCESS_TOKEN_TYPE = "ACCESS";
+    private static final String REFRESH_TOKEN_TYPE = "REFRESH";
+    private static final long LEGACY_TOKEN_TOLERANCE_MS = 60_000L;
+
     private static final Logger logger = LoggerFactory.getLogger(JwtTokenUtil.class);
 
     @Value("${app.auth.tokenSecret}")
@@ -44,7 +49,7 @@ public class JwtTokenUtil {
 
     public String generateToken(com.sep.comiverse.entity.UserEntity user, UUID loginDeviceId) {
         Instant expiration = Instant.now().plusMillis(jwtExpirationMs);
-        return buildToken(user, expiration, loginDeviceId);
+        return buildToken(user, expiration, loginDeviceId, ACCESS_TOKEN_TYPE);
     }
 
     public String generateRefreshToken(com.sep.comiverse.entity.UserEntity user) {
@@ -54,13 +59,19 @@ public class JwtTokenUtil {
     public String generateRefreshToken(com.sep.comiverse.entity.UserEntity user, UUID loginDeviceId) {
         long refreshExpirationMs = 7 * 24 * 60 * 60 * 1000L;
         Instant expiration = Instant.now().plusMillis(refreshExpirationMs);
-        return buildToken(user, expiration, loginDeviceId);
+        return buildToken(user, expiration, loginDeviceId, REFRESH_TOKEN_TYPE);
     }
 
-    private String buildToken(com.sep.comiverse.entity.UserEntity user, Instant expiration, UUID loginDeviceId) {
+    private String buildToken(
+            com.sep.comiverse.entity.UserEntity user,
+            Instant expiration,
+            UUID loginDeviceId,
+            String tokenType
+    ) {
         var builder = Jwts.builder()
                 .subject(user.getId().toString())
                 .claim("role", user.getRole() != null ? user.getRole().getRoleName() : "READER")
+                .claim(TOKEN_TYPE_CLAIM, tokenType)
                 .issuedAt(Date.from(Instant.now()))
                 .expiration(Date.from(expiration));
         if (loginDeviceId != null) {
@@ -90,6 +101,33 @@ public class JwtTokenUtil {
         Object value = getClaimsFromToken(token).get("loginDeviceId");
         if (value == null || value.toString().isBlank()) return null;
         return UUID.fromString(value.toString());
+    }
+
+    public boolean isAccessToken(String token) {
+        return ACCESS_TOKEN_TYPE.equals(resolveTokenType(getClaimsFromToken(token)));
+    }
+
+    public boolean isRefreshToken(String token) {
+        return REFRESH_TOKEN_TYPE.equals(resolveTokenType(getClaimsFromToken(token)));
+    }
+
+    private String resolveTokenType(io.jsonwebtoken.Claims claims) {
+        Object explicitType = claims.get(TOKEN_TYPE_CLAIM);
+        if (explicitType != null && !explicitType.toString().isBlank()) {
+            return explicitType.toString().trim().toUpperCase(java.util.Locale.ROOT);
+        }
+
+        // Tokens issued before tokenType was introduced are classified by their
+        // lifetime so existing access sessions keep working after deployment.
+        Date issuedAt = claims.getIssuedAt();
+        Date expiration = claims.getExpiration();
+        if (issuedAt != null && expiration != null) {
+            long lifetimeMs = expiration.getTime() - issuedAt.getTime();
+            if (lifetimeMs > jwtExpirationMs + LEGACY_TOKEN_TOLERANCE_MS) {
+                return REFRESH_TOKEN_TYPE;
+            }
+        }
+        return ACCESS_TOKEN_TYPE;
     }
 
     public boolean validateJwtToken(String authToken) {

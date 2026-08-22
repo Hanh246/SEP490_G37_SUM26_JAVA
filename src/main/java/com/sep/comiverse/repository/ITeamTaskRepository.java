@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -31,8 +32,28 @@ public interface ITeamTaskRepository extends JpaRepository<TeamTaskEntity, UUID>
     @Query("DELETE FROM TeamTaskEntity t WHERE t.chapter.id = :chapterId")
     void hardDeleteAllByChapterId(@Param("chapterId") UUID chapterId);
 
-    @Query("SELECT COUNT(t) FROM TeamTaskEntity t WHERE t.assigneeId = :assigneeId AND LOWER(t.status) IN ('todo', 'in_progress', 'pending_review', 'under_review')")
+    @Query("""
+            SELECT COUNT(t) FROM TeamTaskEntity t
+            WHERE t.assigneeId = :assigneeId
+              AND t.completedAt IS NULL
+              AND (
+                t.status IS NULL
+                OR LOWER(t.status) NOT IN ('completed', 'complete', 'done', 'published', 'superseded')
+              )
+            """)
     long countActiveTasksByAssigneeId(@Param("assigneeId") UUID assigneeId);
+
+    @Query("""
+            SELECT t.assigneeId, COUNT(t) FROM TeamTaskEntity t
+            WHERE t.assigneeId IN :assigneeIds
+              AND t.completedAt IS NULL
+              AND (
+                t.status IS NULL
+                OR LOWER(t.status) NOT IN ('completed', 'complete', 'done', 'published', 'superseded')
+              )
+            GROUP BY t.assigneeId
+            """)
+    List<Object[]> countActiveTasksByAssigneeIds(@Param("assigneeIds") Collection<UUID> assigneeIds);
 
     List<TeamTaskEntity> findByChapter_Id(UUID chapterId);
     @Query("""

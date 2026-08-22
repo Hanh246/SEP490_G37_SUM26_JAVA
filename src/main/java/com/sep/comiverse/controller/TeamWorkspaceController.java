@@ -28,7 +28,6 @@ import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.transaction.annotation.Transactional;
-import jakarta.validation.Valid;
 
 import java.time.Instant;
 import java.util.*;
@@ -626,6 +625,14 @@ public class TeamWorkspaceController {
         Map<UUID, TranslatorEntity> translatorsByUserId = translatorRepository.findAllByUser_IdIn(memberUserIds)
                 .stream()
                 .collect(Collectors.toMap(t -> t.getUser().getId(), t -> t, (a, b) -> a));
+        Map<UUID, Integer> activeTaskCountByUserId = new HashMap<>();
+        if (!memberUserIds.isEmpty()) {
+            for (Object[] row : taskRepository.countActiveTasksByAssigneeIds(memberUserIds)) {
+                if (row[0] instanceof UUID assigneeId) {
+                    activeTaskCountByUserId.put(assigneeId, ((Number) row[1]).intValue());
+                }
+            }
+        }
 
         List<TeamMemberDto> result = members.stream()
                 .map(m -> {
@@ -640,7 +647,8 @@ public class TeamWorkspaceController {
                             .avatar(computeInitials(u.getFullName()))
                             .online(userPresenceService.isOnline(u.getId()))
                             .lastSeenAt(u.getLastSeenAt())
-                            .joinDate(m.getCreatedAt());
+                            .joinDate(m.getCreatedAt())
+                            .activeTaskCount(activeTaskCountByUserId.getOrDefault(u.getId(), 0));
                     if (translator != null) {
                         builder.cvUrl(translator.getCvUrl())
                                 .bio(translator.getBio())
@@ -684,7 +692,10 @@ public class TeamWorkspaceController {
         List<TeamJoinRequestEntity> requests = joinRequestRepository.findByProjectTeamId(teamId);
         // Only return PENDING requests to the leader's review queue
         List<TeamJoinRequestEntity> pendingRequests = requests.stream()
-                .filter(r -> r.getStatus() == null || "PENDING".equalsIgnoreCase(r.getStatus()))
+                .filter(r -> {
+                    String status = r.getStatus() == null ? "PENDING" : r.getStatus().trim().toUpperCase();
+                    return "PENDING".equals(status);
+                })
                 .collect(Collectors.toList());
         for (TeamJoinRequestEntity request : pendingRequests) {
             if (request.getRequesterId() != null) {
@@ -738,24 +749,23 @@ public class TeamWorkspaceController {
             ));
         }
 
-        // 4. Check max 5 slots (joined teams + pending applications)
+        // 4. Pending applications and approved teams together cannot exceed 5
         long joinedTeams = projectTeamRepository.countActiveTeamsByUserId(userId);
         long pendingApps = joinRequestRepository.countByRequesterIdAndStatus(userId, "PENDING");
-        long usedSlots = joinedTeams + pendingApps;
-        if (usedSlots >= MAX_ACTIVE_TEAMS) {
+        if (joinedTeams + pendingApps >= MAX_ACTIVE_TEAMS) {
             return ResponseEntity.badRequest().body(Map.of(
-                    "message", "You have reached the maximum of " + MAX_ACTIVE_TEAMS + " active teams/applications. Cancel a pending application or leave a team first.",
+                    "message", "You have reached the maximum of " + MAX_ACTIVE_TEAMS + " concurrent projects.",
                     "joinedTeams", joinedTeams,
                     "pendingApplications", pendingApps,
                     "maxSlots", MAX_ACTIVE_TEAMS
             ));
         }
 
-        // 5. Check max active tasks (max 5 active tasks allowed per translator)
+        // 5. Regular translators may hold at most 5 incomplete tasks
         long activeTasks = taskRepository.countActiveTasksByAssigneeId(userId);
         if (activeTasks >= MAX_ACTIVE_TASKS) {
             return ResponseEntity.badRequest().body(Map.of(
-                    "message", "Bạn đang xử lý tối đa " + MAX_ACTIVE_TASKS + " công việc dịch thuật cùng lúc. Vui lòng hoàn thành công việc trước khi xin gia nhập nhóm mới.",
+                    "message", "You are already handling the maximum of " + MAX_ACTIVE_TASKS + " incomplete tasks. Finish a task before applying to another team.",
                     "activeTasks", activeTasks,
                     "maxTasks", MAX_ACTIVE_TASKS
             ));
@@ -798,7 +808,8 @@ public class TeamWorkspaceController {
         if (request == null) {
             return ResponseEntity.notFound().build();
         }
-        if (!"PENDING".equalsIgnoreCase(request.getStatus())) {
+        String currentStatus = request.getStatus() == null ? "PENDING" : request.getStatus().trim();
+        if (!"PENDING".equalsIgnoreCase(currentStatus)) {
             return ResponseEntity.badRequest().body(Map.of("message", "This request is no longer pending."));
         }
 
@@ -821,12 +832,11 @@ public class TeamWorkspaceController {
                 }
             }
 
-            // Before approving, check if the translator already hit 5 active teams
             if (request.getRequesterId() != null) {
                 long joinedTeams = projectTeamRepository.countActiveTeamsByUserId(request.getRequesterId());
                 if (joinedTeams >= MAX_ACTIVE_TEAMS) {
                     return ResponseEntity.badRequest().body(Map.of(
-                            "message", "This translator has already reached the maximum of " + MAX_ACTIVE_TEAMS + " active teams. Cannot approve."
+                            "message", "This translator already belongs to the maximum of " + MAX_ACTIVE_TEAMS + " ongoing project teams. Cannot approve."
                     ));
                 }
             }
@@ -855,34 +865,6 @@ public class TeamWorkspaceController {
             request.setDecidedAt(Instant.now());
             joinRequestRepository.save(request);
 
-            // Auto-withdraw excess pending applications if translator hit 5 slots
-            if (request.getRequesterId() != null) {
-                long newJoinedCount = projectTeamRepository.countActiveTeamsByUserId(request.getRequesterId());
-                long remainingPending = joinRequestRepository.countByRequesterIdAndStatus(request.getRequesterId(), "PENDING");
-                if (newJoinedCount + remainingPending > MAX_ACTIVE_TEAMS) {
-                    // Need to auto-withdraw some pending apps
-                    long excessCount = (newJoinedCount + remainingPending) - MAX_ACTIVE_TEAMS;
-                    List<TeamJoinRequestEntity> pendingApps = joinRequestRepository.findByRequesterIdAndStatus(request.getRequesterId(), "PENDING");
-                    int withdrawn = 0;
-                    for (TeamJoinRequestEntity pending : pendingApps) {
-                        if (withdrawn >= excessCount) break;
-                        pending.setStatus("AUTO_WITHDRAWN");
-                        pending.setDecidedAt(Instant.now());
-                        joinRequestRepository.save(pending);
-                        withdrawn++;
-
-                        // Notify the translator
-                        notificationService.notifyUser(
-                                pending.getRequesterId(),
-                                "Application auto-withdrawn",
-                                "Your application to " + getTeamName(pending.getProjectTeamId()) + " was auto-withdrawn because you've reached the maximum of " + MAX_ACTIVE_TEAMS + " active teams.",
-                                "WARNING",
-                                NotificationPreferenceKey.TEAM_UPDATES
-                        );
-                    }
-                }
-            }
-
             // Auto-reject remaining pending applications for this team if it reached max capacity
             if (team != null) {
                 int newMembersCount = team.getMembersCount() != null ? team.getMembersCount() : 0;
@@ -910,7 +892,7 @@ public class TeamWorkspaceController {
             // REJECTED
             request.setStatus("REJECTED");
             request.setDecidedAt(Instant.now());
-            joinRequestRepository.save(request);
+            joinRequestRepository.saveAndFlush(request);
         }
 
         String teamName = team == null ? "the translation team" : team.getTitle();
@@ -1047,9 +1029,17 @@ public class TeamWorkspaceController {
         }
         UUID userId = principal.getId();
         long joinedTeams = projectTeamRepository.countActiveTeamsByUserId(userId);
-        long pendingApps = joinRequestRepository.countByRequesterIdAndStatus(userId, "PENDING");
+        List<TeamJoinRequestEntity> myRequests = joinRequestRepository.findByRequesterId(userId);
+        List<TeamJoinRequestEntity> pendingList = myRequests.stream()
+                .filter(req -> {
+                    String status = req.getStatus() == null ? "PENDING" : req.getStatus().trim();
+                    return "PENDING".equalsIgnoreCase(status);
+                })
+                .toList();
+        long pendingApps = pendingList.size();
         long usedSlots = joinedTeams + pendingApps;
         long availableSlots = Math.max(0, MAX_ACTIVE_TEAMS - usedSlots);
+        long activeTasks = taskRepository.countActiveTasksByAssigneeId(userId);
 
         // Check active cooldown
         List<TranslatorCooldownEntity> activeCooldowns = cooldownRepository.findActiveCooldowns(userId, Instant.now());
@@ -1062,25 +1052,37 @@ public class TeamWorkspaceController {
         }
 
         // Get list of pending application team IDs
-        List<TeamJoinRequestEntity> pendingList = joinRequestRepository.findByRequesterIdAndStatus(userId, "PENDING");
         List<Map<String, Object>> pendingDetails = pendingList.stream().map(req -> {
             Map<String, Object> m = new HashMap<>();
             m.put("requestId", req.getId());
             m.put("projectTeamId", req.getProjectTeamId());
             m.put("appliedAt", req.getTime());
+            m.put("status", req.getStatus() == null ? "PENDING" : req.getStatus().trim().toUpperCase());
             return m;
         }).collect(Collectors.toList());
 
-        return ResponseEntity.ok(Map.of(
-                "joinedTeams", joinedTeams,
-                "pendingApplications", pendingApps,
-                "usedSlots", usedSlots,
-                "availableSlots", availableSlots,
-                "maxSlots", MAX_ACTIVE_TEAMS,
-                "cooldownUntil", cooldownUntil != null ? cooldownUntil : "",
-                "cooldownType", cooldownType != null ? cooldownType : "",
-                "pendingDetails", pendingDetails
-        ));
+        List<Map<String, Object>> applications = myRequests.stream().map(req -> {
+            Map<String, Object> m = new HashMap<>();
+            m.put("requestId", req.getId());
+            m.put("projectTeamId", req.getProjectTeamId());
+            m.put("appliedAt", req.getTime());
+            m.put("status", req.getStatus() == null ? "PENDING" : req.getStatus().trim().toUpperCase());
+            return m;
+        }).collect(Collectors.toList());
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("joinedTeams", joinedTeams);
+        body.put("pendingApplications", pendingApps);
+        body.put("usedSlots", usedSlots);
+        body.put("availableSlots", availableSlots);
+        body.put("maxSlots", MAX_ACTIVE_TEAMS);
+        body.put("activeTasks", activeTasks);
+        body.put("maxTasks", MAX_ACTIVE_TASKS);
+        body.put("cooldownUntil", cooldownUntil != null ? cooldownUntil : "");
+        body.put("cooldownType", cooldownType != null ? cooldownType : "");
+        body.put("pendingDetails", pendingDetails);
+        body.put("applications", applications);
+        return ResponseEntity.ok(body);
     }
 
     @DeleteMapping("/requests/{id}")
@@ -1295,7 +1297,7 @@ public class TeamWorkspaceController {
     @PutMapping("/tasks/{taskId}/handover")
     public ResponseEntity<?> handoverTask(
             @PathVariable UUID taskId,
-            @Valid @RequestBody HandoverTaskRequest request,
+            @RequestBody HandoverTaskRequest request,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         TeamTaskEntity task = taskRepository.findById(taskId).orElse(null);
@@ -1468,9 +1470,11 @@ public class TeamWorkspaceController {
             return "Only users with the TRANSLATOR role can be assigned payout-eligible tasks";
         }
 
+        // 5 incomplete tasks per person across the whole system — including Project Leaders.
         long activeTasks = taskRepository.countActiveTasksByAssigneeId(assigneeId);
         if (activeTasks >= MAX_ACTIVE_TASKS) {
-            return "Dịch giả này đang xử lý tối đa " + MAX_ACTIVE_TASKS + " công việc cùng lúc, không thể giao thêm task mới.";
+            return "This translator already has " + MAX_ACTIVE_TASKS
+                    + " incomplete tasks across all projects and cannot take another assignment.";
         }
 
         return null;
@@ -1613,27 +1617,14 @@ public class TeamWorkspaceController {
     }
 
     private boolean canCreateRevisionTask(UUID chapterId, ProjectTeamEntity team, List<TeamTaskEntity> existingTasks) {
-        Optional<ReportEntity> acceptedReport = findLatestAcceptedTranslationReport(chapterId, team);
-        if (acceptedReport.isEmpty()) {
+        if (findLatestAcceptedTranslationReport(chapterId, team).isEmpty()) {
             return false;
         }
-        Instant resolvedAt = acceptedReport.get().getResolvedAt();
+        // An accepted translation report is enough to unlock a revision.
+        // Only block while another revision for this chapter is already in progress.
         return existingTasks.stream()
                 .filter(t -> !isSupersededStatus(t.getStatus()))
-                .noneMatch(t -> isTaskCreatedAfterAcceptedReport(t, resolvedAt));
-    }
-
-    private boolean isTaskCreatedAfterAcceptedReport(TeamTaskEntity task, Instant reportResolvedAt) {
-        if (isActiveTaskStatus(task.getStatus()) && "REVISION".equalsIgnoreCase(task.getTaskType())) {
-            return true;
-        }
-        if (isCompletedStatus(task.getStatus())
-                && task.getCompletedAt() != null
-                && reportResolvedAt != null
-                && task.getCompletedAt().isAfter(reportResolvedAt)) {
-            return true;
-        }
-        return false;
+                .noneMatch(t -> isActiveTaskStatus(t.getStatus()) && "REVISION".equalsIgnoreCase(t.getTaskType()));
     }
 
     private boolean isTeamTranslationPublished(UUID chapterId, ProjectTeamEntity team) {

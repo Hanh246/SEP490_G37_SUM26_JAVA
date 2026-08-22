@@ -2,13 +2,11 @@ package com.sep.comiverse.controller;
 
 import com.sep.comiverse.dto.ChapterPageDTO;
 import com.sep.comiverse.entity.PageTranslationEntity;
-import com.sep.comiverse.entity.ProjectTeamEntity;
 import com.sep.comiverse.entity.TeamTaskEntity;
 import com.sep.comiverse.entity.enums.ChapterTranslationStatus;
 import com.sep.comiverse.entity.enums.PageStatus;
 import com.sep.comiverse.repository.IChapterTranslationRepository;
 import com.sep.comiverse.repository.IPageTranslationRepository;
-import com.sep.comiverse.repository.IProjectTeamRepository;
 import com.sep.comiverse.security.UserPrincipal;
 import com.sep.comiverse.service.TranslatorPaymentService;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +26,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PageController {
     private final IPageTranslationRepository pageTranslationRepository;
-    private final IProjectTeamRepository projectTeamRepository;
     private final IChapterTranslationRepository chapterTranslationRepository;
     private final TranslatorPaymentService translatorPaymentService;
 
@@ -126,10 +123,11 @@ public class PageController {
 
     private boolean canEditPage(UserPrincipal principal, PageTranslationEntity page) {
         if (principal == null || principal.getId() == null || page == null) return false;
-        if (principal.getId().equals(page.getAssignedTranslatorId())) return true;
-        if (!"PROJECT_LEADER".equalsIgnoreCase(principal.getRole()) || page.getTaskId() == null) return false;
-        ProjectTeamEntity team = projectTeamRepository.findById(page.getTaskId().getProjectTeamId()).orElse(null);
-        return team != null && principal.getId().equals(team.getLeaderId());
+        TeamTaskEntity task = page.getTaskId();
+        if (task == null || task.getAssigneeId() == null) return false;
+        if (!principal.getId().equals(task.getAssigneeId())) return false;
+        UUID pageOwner = page.getAssignedTranslatorId();
+        return pageOwner == null || principal.getId().equals(pageOwner);
     }
 
     private boolean isLockedForReview(TeamTaskEntity task) {

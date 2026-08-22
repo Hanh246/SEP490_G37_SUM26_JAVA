@@ -1,14 +1,9 @@
 package com.sep.comiverse.entity.enums;
 
 import java.util.Locale;
-import java.util.Set;
 
 public enum CreatorPayoutCurrency {
-    USD("US Dollar", "$"),
-    EUR("Euro", "€"),
-    CNY("Chinese Yuan (Renminbi)", "¥");
-
-    private static final Set<String> SUPPORTED_CODES = Set.of("USD", "EUR", "CNY");
+    USD("US Dollar", "$");
 
     private final String displayName;
     private final String symbol;
@@ -34,11 +29,11 @@ public enum CreatorPayoutCurrency {
         String normalized = value == null || value.isBlank()
                 ? "USD"
                 : value.trim().toUpperCase(Locale.ROOT);
-        if (!SUPPORTED_CODES.contains(normalized)) {
+        if (!"USD".equals(normalized)) {
             throw new IllegalArgumentException(
-                    "Unsupported payout currency. Allowed values: USD, EUR, CNY"
+                    "Unsupported payout currency. Allowed value: USD"
             );
         }
-        return valueOf(normalized);
+        return USD;
     }
 }

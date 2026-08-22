@@ -10,6 +10,7 @@ import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
 import com.sep.comiverse.entity.enums.ComicModerationStatus;
+import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.plugin.crud.ChapterCrudPlugin;
@@ -56,6 +57,9 @@ public class ChapterController {
 
     @org.springframework.beans.factory.annotation.Autowired
     private com.sep.comiverse.service.NotificationService notificationService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.sep.comiverse.service.AuthorComicService authorComicService;
 
     public ChapterController(ChapterCrudPlugin chapterCrudPlugin, JwtTokenUtil jwtTokenUtil) {
         this.chapterCrudPlugin = chapterCrudPlugin;
@@ -226,6 +230,7 @@ public class ChapterController {
             }
             if (comic != null) {
                 if (comic.getModerationStatus() != ComicModerationStatus.PUBLISHED) {
+                    authorComicService.assertPublishedComicQuotaAvailable(comic);
                     comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
                     comic.setApprovedById(modId);
                     comic.setApprovedAt(java.time.Instant.now());
@@ -264,6 +269,10 @@ public class ChapterController {
                     .success(true)
                     .data(responseDto)
                     .build());
+        } catch (CustomException ex) {
+            // Preserve quota/business HTTP status and let @Transactional roll back
+            // chapter/submission updates already made in this request.
+            throw ex;
         } catch (Exception ex) {
             java.io.StringWriter sw = new java.io.StringWriter();
             ex.printStackTrace(new java.io.PrintWriter(sw));

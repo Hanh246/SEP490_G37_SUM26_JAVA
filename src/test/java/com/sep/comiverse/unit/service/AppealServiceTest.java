@@ -15,7 +15,6 @@ import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.service.AppealService;
 import com.sep.comiverse.service.NotificationService;
-import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -129,12 +128,12 @@ class AppealServiceTest {
     }
 
     @Test
-    void getPendingAppealByTargetId_throwsWhenMissing() {
+    void getPendingAppealByTargetId_returnsNullWhenMissing() {
         UUID targetId = UUID.randomUUID();
         when(appealTicketRepository.findByTargetIdAndStatusIn(eq(targetId), anyList()))
                 .thenReturn(Optional.empty());
 
-        assertThrows(EntityNotFoundException.class, () -> service.getPendingAppealByTargetId(targetId));
+        assertNull(service.getPendingAppealByTargetId(targetId));
     }
 
     @Test
@@ -210,6 +209,47 @@ class AppealServiceTest {
                 eq(authorId), contains("Approved"), contains("Accepted"),
                 eq("APPEAL_RESOLVED"), any()
         );
+    }
+
+
+    @Test
+    void resolveRejectedComicEdit_movesPendingToRejectedWithoutRestoringPreviousSnapshot() {
+        UUID ticketId = UUID.randomUUID();
+        UUID authorId = UUID.randomUUID();
+        UUID comicId = UUID.randomUUID();
+        UUID moderatorId = UUID.randomUUID();
+
+        AppealTicketEntity ticket = new AppealTicketEntity();
+        ticket.setId(ticketId);
+        ticket.setAuthorId(authorId);
+        ticket.setTargetId(comicId);
+        ticket.setTargetType(AppealTargetType.COMIC_EDIT);
+        ticket.setStatus(AppealStatus.PENDING);
+        ticket.setPreviousStateSnapshot("{\"title\":\"Original Title\"}");
+
+        ComicEntity comic = ComicEntity.builder()
+                .title("Moderator Edited Title")
+                .isAppealed(true)
+                .appealReason("restore")
+                .isModEdited(true)
+                .build();
+        comic.setId(comicId);
+        when(appealTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(comicRepository.findById(comicId)).thenReturn(Optional.of(comic));
+        when(appealTicketRepository.save(any(AppealTicketEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.resolveAppeal(ticketId, moderatorId, resolve(AppealStatus.REJECTED, "Moderation retained"));
+
+        assertEquals(AppealStatus.REJECTED, ticket.getStatus());
+        assertEquals(moderatorId, ticket.getResolvedByModId());
+        assertEquals("Moderator Edited Title", comic.getTitle());
+        assertFalse(comic.getIsAppealed());
+        assertNull(comic.getAppealReason());
+        assertTrue(comic.getIsModEdited());
+        verify(notificationService).notifyUser(
+                eq(authorId), contains("Rejected"), contains("Moderation retained"),
+                eq("APPEAL_RESOLVED"), any());
     }
 
     private AppealTicketRequestDTO request(AppealTargetType type) {
