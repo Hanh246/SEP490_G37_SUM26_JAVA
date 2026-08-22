@@ -664,11 +664,23 @@ public class AuthorComicService {
         if (!StringUtils.hasText(request.getTitle())) {
             throw new CustomException(400, "Title is required", HttpStatus.BAD_REQUEST);
         }
+        if (!StringUtils.hasText(request.getSummary())) {
+            throw new CustomException(400, "Description is required", HttpStatus.BAD_REQUEST);
+        }
         if (!StringUtils.hasText(request.getLanguage())) {
             throw new CustomException(400, "Comic language is required", HttpStatus.BAD_REQUEST);
         }
         if (!StringUtils.hasText(request.getCover())) {
             throw new CustomException(400, "Cover image is required", HttpStatus.BAD_REQUEST);
+        }
+        if (request.getGenres() == null || request.getGenres().isEmpty()) {
+            throw new CustomException(400, "At least one genre is required", HttpStatus.BAD_REQUEST);
+        }
+        if (request.getMinimumAge() == null) {
+            throw new CustomException(400, "Minimum age is required", HttpStatus.BAD_REQUEST);
+        }
+        if (request.getPublicationStatus() == null) {
+            throw new CustomException(400, "Publication status is required", HttpStatus.BAD_REQUEST);
         }
     }
 
