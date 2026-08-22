@@ -1,6 +1,7 @@
 package com.sep.comiverse.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.sep.comiverse.dto.response.PageResponseDto;
 import com.sep.comiverse.entity.enums.ChapterStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -38,6 +39,11 @@ public class ChapterDTO {
 
     @JsonProperty(access = JsonProperty.Access.AUTO)
     private List<String> images;
+
+    /**
+     * Danh sách các trang truyện được bảo vệ bằng Image Slicing (chỉ chứa link Cloudinary ảnh đã xáo trộn và encryptedMapping)
+     */
+    private List<PageResponseDto> protectedPages;
 
     private Integer pageCount;
 

@@ -14,7 +14,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -34,8 +33,6 @@ class CreatorPayoutSettingsServiceTest {
     @BeforeEach
     void setUp() {
         service = new CreatorPayoutSettingsService(settingRepository, currencyRepository, jdbcTemplate);
-        ReflectionTestUtils.setField(service, "defaultEurUnitsPerUsd", new BigDecimal("0.920000"));
-        ReflectionTestUtils.setField(service, "defaultCnyUnitsPerUsd", new BigDecimal("7.200000"));
         lenient().when(currencyRepository.save(any(CreatorPayoutCurrencyEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
     }
@@ -62,15 +59,15 @@ class CreatorPayoutSettingsServiceTest {
     }
 
     @Test
-    void conversion_roundTripsUsingResolvedRate() {
-        var eur = new CreatorPayoutSettingsService.ResolvedCurrency(
-                CreatorPayoutCurrency.EUR, new BigDecimal("0.920000"));
+    void conversion_roundTripsUsingResolvedUsdRate() {
+        var usd = new CreatorPayoutSettingsService.ResolvedCurrency(
+                CreatorPayoutCurrency.USD, new BigDecimal("1.000000"));
 
-        BigDecimal eurAmount = service.convertUsdToCurrency(new BigDecimal("100.00"), eur);
-        BigDecimal usdAmount = service.convertCurrencyToUsd(eurAmount, eur);
+        BigDecimal converted = service.convertUsdToCurrency(new BigDecimal("100.00"), usd);
+        BigDecimal roundTrip = service.convertCurrencyToUsd(converted, usd);
 
-        assertEquals(new BigDecimal("92.00"), eurAmount);
-        assertEquals(new BigDecimal("100.00"), usdAmount);
+        assertEquals(new BigDecimal("100.00"), converted);
+        assertEquals(new BigDecimal("100.00"), roundTrip);
     }
 
     @Test
@@ -97,37 +94,46 @@ class CreatorPayoutSettingsServiceTest {
     }
 
     @Test
-    void upsertCurrency_rejectsUnknownCodeAndNonPositiveRate() {
+    void upsertCurrency_rejectsUnsupportedCode() {
         UpsertCreatorPayoutCurrencyRequest invalidCode = new UpsertCreatorPayoutCurrencyRequest();
         invalidCode.setCurrencyCode("BTC");
         invalidCode.setUnitsPerUsd(BigDecimal.ONE);
         invalidCode.setActive(true);
+
         assertEquals(400, assertThrows(CustomException.class,
                 () -> service.upsertCurrency(invalidCode)).getCode());
-
-        UpsertCreatorPayoutCurrencyRequest zero = new UpsertCreatorPayoutCurrencyRequest();
-        zero.setCurrencyCode("EUR");
-        zero.setUnitsPerUsd(BigDecimal.ZERO);
-        zero.setActive(true);
-        assertEquals(400, assertThrows(CustomException.class,
-                () -> service.upsertCurrency(zero)).getCode());
     }
 
     @Test
-    void resolveCurrency_returnsActiveRateAndRejectsDisabledOrMissing() {
-        CreatorPayoutCurrencyEntity eur = CreatorPayoutCurrencyEntity.builder()
-                .currencyCode("EUR").displayName("Euro").symbol("€")
-                .unitsPerUsd(new BigDecimal("0.92")).active(true).build();
-        when(currencyRepository.findByCurrencyCodeAndDeletedFalse("EUR")).thenReturn(Optional.of(eur));
+    void resolveCurrency_returnsActiveUsdRate() {
+        CreatorPayoutCurrencyEntity usd = CreatorPayoutCurrencyEntity.builder()
+                .currencyCode("USD")
+                .displayName("US Dollar")
+                .symbol("$")
+                .unitsPerUsd(new BigDecimal("1.000000"))
+                .active(true)
+                .build();
+        when(currencyRepository.findByCurrencyCode("USD")).thenReturn(Optional.of(usd));
+        when(currencyRepository.findByCurrencyCodeAndDeletedFalse("USD")).thenReturn(Optional.of(usd));
 
-        var resolved = service.resolveCurrency("eur");
-        assertEquals("EUR", resolved.code());
-        assertEquals(new BigDecimal("0.920000"), resolved.unitsPerUsd());
+        var resolved = service.resolveCurrency("usd");
 
-        eur.setActive(false);
-        assertEquals(400, assertThrows(CustomException.class, () -> service.resolveCurrency("EUR")).getCode());
+        assertEquals("USD", resolved.code());
+        assertEquals(new BigDecimal("1.000000"), resolved.unitsPerUsd());
+    }
 
-        when(currencyRepository.findByCurrencyCodeAndDeletedFalse("CNY")).thenReturn(Optional.empty());
-        assertEquals(400, assertThrows(CustomException.class, () -> service.resolveCurrency("CNY")).getCode());
+    @Test
+    void resolveCurrency_rejectsUnsupportedCurrency() {
+        assertEquals(400, assertThrows(CustomException.class,
+                () -> service.resolveCurrency("EUR")).getCode());
+    }
+
+    @Test
+    void resolveCurrency_rejectsMissingUsdConfiguration() {
+        when(currencyRepository.findByCurrencyCode("USD")).thenReturn(Optional.empty());
+        when(currencyRepository.findByCurrencyCodeAndDeletedFalse("USD")).thenReturn(Optional.empty());
+
+        assertEquals(400, assertThrows(CustomException.class,
+                () -> service.resolveCurrency("USD")).getCode());
     }
 }

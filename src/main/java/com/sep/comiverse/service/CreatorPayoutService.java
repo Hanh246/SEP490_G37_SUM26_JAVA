@@ -102,22 +102,25 @@ public class CreatorPayoutService {
 
         List<CreatorPayoutRequestEntity> entities = payoutRequestRepository
                 .findAllByUserIdAndDeletedFalseOrderByCreatedAtDesc(user.getId());
-        CreatorPayoutRequestEntity existing = entities.stream()
+        List<CreatorPayoutRequestEntity> roleEntities = entities.stream()
+                .filter(item -> item.getRole() == role)
+                .toList();
+        CreatorPayoutRequestEntity existing = roleEntities.stream()
                 .filter(item -> selectedMonth.toString().equals(item.getPayoutMonth()))
                 .findFirst()
                 .orElse(null);
-        CreatorPayoutRequestEntity activeRequest = entities.stream()
+        CreatorPayoutRequestEntity activeRequest = roleEntities.stream()
                 .filter(item -> selectedMonth.toString().equals(item.getPayoutMonth()))
                 .filter(item -> isActiveReservation(item.getStatus()))
                 .findFirst()
                 .orElse(null);
 
         BigDecimal lifetimePaidUsd = sumBaseUsdByStatuses(
-                entities,
+                roleEntities,
                 List.of(CreatorPayoutStatus.PAID)
         );
         BigDecimal pendingUsd = sumBaseUsdByStatuses(
-                entities,
+                roleEntities,
                 List.of(
                         CreatorPayoutStatus.PENDING,
                         CreatorPayoutStatus.APPROVED,
@@ -140,7 +143,7 @@ public class CreatorPayoutService {
                 ? BigDecimal.ZERO.setScale(2)
                 : normalizeUsd(
                 calculation.grossUsd()
-                        .subtract(calculation.withdrawableUsd())
+                        .subtract(calculation.grossUsd().min(calculation.monthlyLimitUsd()))
                         .max(BigDecimal.ZERO)
         );
 
@@ -284,6 +287,7 @@ public class CreatorPayoutService {
                         payoutMonth.toString()
                 )
                 .stream()
+                .filter(item -> item.getRole() == role)
                 .anyMatch(item -> isActiveReservation(item.getStatus()));
         if (activeRequestExists) {
             throw new CustomException(
@@ -576,7 +580,7 @@ public class CreatorPayoutService {
                     cumulativeEarned,
                     availableBalance,
                     pendingCurrentMonth,
-                    totalPages,
+                    BigDecimal.valueOf(totalPages),
                     "approved pages in fully completed chapters",
                     defaultPageRate,
                     totalPages + " approved page(s); chapter reward is divided by total chapter pages and multiplied by coefficient K",
@@ -603,10 +607,29 @@ public class CreatorPayoutService {
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
         BigDecimal limit = normalizeUsd(settings.getAuthorMonthlyLimitUsd());
-        BigDecimal withdrawable = gross.min(limit);
-        long totalUnits = comics.stream()
-                .mapToLong(item -> item.getViewUnits() + item.getFollowUnits())
-                .sum();
+        BigDecimal cappedGross = normalizeUsd(gross.min(limit));
+
+        BigDecimal reservedThisMonth = sumBaseUsd(
+                payoutRequestRepository
+                        .findAllByUserIdAndPayoutMonthAndDeletedFalseOrderByCreatedAtDesc(
+                                userId,
+                                month.toString()
+                        )
+                        .stream()
+                        .filter(item -> item.getRole() == CreatorPayoutRole.AUTHOR)
+                        .filter(item -> item.getStatus() == CreatorPayoutStatus.PENDING
+                                || item.getStatus() == CreatorPayoutStatus.APPROVED
+                                || item.getStatus() == CreatorPayoutStatus.PROCESSING
+                                || item.getStatus() == CreatorPayoutStatus.PAID)
+                        .toList()
+        );
+        BigDecimal withdrawable = normalizeUsd(
+                cappedGross.subtract(reservedThisMonth).max(BigDecimal.ZERO)
+        );
+        BigDecimal totalUnits = comics.stream()
+                .map(item -> item.getViewUnits().add(item.getFollowUnits()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(4, RoundingMode.HALF_UP);
 
         return new MonthlyCalculation(
                 gross,
@@ -616,11 +639,13 @@ public class CreatorPayoutService {
                 withdrawable,
                 BigDecimal.ZERO.setScale(2),
                 totalUnits,
-                "view/follow reward units",
+                "proportional view/follow reward units",
                 null,
-                "Per comic: floor(views/" + viewUnitSize + ") x $" + viewRate.toPlainString()
-                        + " + floor(follows/" + followUnitSize + ") x $" + followRate.toPlainString(),
-                "Rewards are calculated separately for each comic in USD, then summed, capped, and settled in the selected payout currency.",
+                "Per comic: (views/" + viewUnitSize + ") x $" + viewRate.toPlainString()
+                        + " + (follows/" + followUnitSize + ") x $" + followRate.toPlainString()
+                        + "; partial units are paid; reserved/paid this month=$"
+                        + reservedThisMonth.toPlainString(),
+                "Rewards are proportional to every qualified view/follow, calculated per comic in USD, summed, capped, then reduced by pending/approved/processing/paid requests for the same month so the author cannot be paid twice.",
                 List.of(),
                 comics
         );
@@ -794,10 +819,10 @@ public class CreatorPayoutService {
     ) throws SQLException {
         long views = rs.getLong("monthly_views");
         long follows = rs.getLong("monthly_follows");
-        long viewUnits = views / viewUnitSize;
-        long followUnits = follows / followUnitSize;
-        BigDecimal viewRevenue = normalizeUsd(viewRate.multiply(BigDecimal.valueOf(viewUnits)));
-        BigDecimal followRevenue = normalizeUsd(followRate.multiply(BigDecimal.valueOf(followUnits)));
+        BigDecimal viewUnits = proportionalUnits(views, viewUnitSize);
+        BigDecimal followUnits = proportionalUnits(follows, followUnitSize);
+        BigDecimal viewRevenue = proportionalReward(views, viewUnitSize, viewRate);
+        BigDecimal followRevenue = proportionalReward(follows, followUnitSize, followRate);
 
         return AuthorComicRevenueResponse.builder()
                 .comicId(rs.getObject("comic_id", UUID.class))
@@ -810,6 +835,21 @@ public class CreatorPayoutService {
                 .followRevenueUsd(followRevenue)
                 .totalRevenueUsd(normalizeUsd(viewRevenue.add(followRevenue)))
                 .build();
+    }
+
+    private BigDecimal proportionalUnits(long count, long unitSize) {
+        long safeUnitSize = Math.max(1L, unitSize);
+        return BigDecimal.valueOf(Math.max(0L, count))
+                .divide(BigDecimal.valueOf(safeUnitSize), 4, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal proportionalReward(long count, long unitSize, BigDecimal unitRateUsd) {
+        long safeUnitSize = Math.max(1L, unitSize);
+        return normalizeUsd(
+                BigDecimal.valueOf(Math.max(0L, count))
+                        .multiply(normalizeUsd(unitRateUsd))
+                        .divide(BigDecimal.valueOf(safeUnitSize), 8, RoundingMode.HALF_UP)
+        );
     }
 
     private Requestability evaluateRequestability(
@@ -976,30 +1016,14 @@ public class CreatorPayoutService {
     ) {
         if (payout == null) return null;
 
-        String currencyCode = StringUtils.hasText(payout.getCurrency())
-                ? payout.getCurrency()
-                : "USD";
-        CreatorPayoutCurrency currency;
-        try {
-            currency = CreatorPayoutCurrency.fromCode(currencyCode);
-        } catch (IllegalArgumentException ex) {
-            currency = CreatorPayoutCurrency.USD;
-        }
-
+        CreatorPayoutCurrency currency = CreatorPayoutCurrency.USD;
         BigDecimal amountUsd = normalizeUsd(
                 payout.getBaseAmountUsd() != null
                         ? payout.getBaseAmountUsd()
                         : payout.getAmount()
         );
-        BigDecimal unitsPerUsd = payout.getPayoutUnitsPerUsd() == null
-                ? BigDecimal.ONE.setScale(6)
-                : payout.getPayoutUnitsPerUsd().setScale(
-                6,
-                RoundingMode.HALF_UP
-        );
-        BigDecimal amount = payout.getAmount() == null
-                ? normalizeUsd(amountUsd.multiply(unitsPerUsd))
-                : normalizeUsd(payout.getAmount());
+        BigDecimal unitsPerUsd = BigDecimal.ONE.setScale(6);
+        BigDecimal amount = amountUsd;
 
         return CreatorPayoutRequestResponse.builder()
                 .id(payout.getId())
@@ -1042,7 +1066,7 @@ public class CreatorPayoutService {
             BigDecimal cumulativeEarnedUsd,
             BigDecimal availableBalanceUsd,
             BigDecimal pendingCurrentMonthUsd,
-            Long unitCount,
+            BigDecimal unitCount,
             String unitLabel,
             BigDecimal unitRateUsd,
             String details,

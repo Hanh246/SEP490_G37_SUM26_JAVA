@@ -32,7 +32,7 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class PaymentStatisticsService {
     private static final int MAX_RANGE_DAYS = 366;
-    private static final String DEFAULT_CURRENCY = "VND";
+    private static final String DEFAULT_CURRENCY = "USD";
     private static final Pattern CURRENCY_PATTERN = Pattern.compile("[A-Z]{3}");
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
 
@@ -49,6 +49,7 @@ public class PaymentStatisticsService {
         List<String> availableCurrencies = paymentRepository.findDistinctCurrencies().stream()
                 .filter(value -> value != null && !value.isBlank())
                 .map(value -> value.trim().toUpperCase(Locale.ROOT))
+                .filter(DEFAULT_CURRENCY::equals)
                 .distinct()
                 .sorted()
                 .toList();
@@ -253,7 +254,10 @@ public class PaymentStatisticsService {
         if (!CURRENCY_PATTERN.matcher(normalized).matches()) {
             throw badRequest("Currency must be a three-letter ISO code");
         }
-        return normalized;
+        if (!DEFAULT_CURRENCY.equals(normalized)) {
+            throw badRequest("ComiVerse payment statistics are available only in USD");
+        }
+        return DEFAULT_CURRENCY;
     }
 
     private ZoneId parseZoneId(String requestedZoneId) {

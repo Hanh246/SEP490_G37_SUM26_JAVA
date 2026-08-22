@@ -150,25 +150,21 @@ class CreatorPayoutAccountServiceTest {
     }
 
     @Test
-    void createOnboardingLink_existingStartedProfile_blocksCurrencyChange() {
+    void createOnboardingLink_rejectsUnsupportedCurrencyBeforeStripeChanges() {
         UserEntity translator = user("TRANSLATOR");
         CreateStripePayoutOnboardingRequest request = CreateStripePayoutOnboardingRequest.builder()
                 .countryCode("VN").payoutCurrency("EUR").build();
-        CreatorPayoutAccountEntity profile = CreatorPayoutAccountEntity.builder()
-                .userId(translator.getId())
-                .role(CreatorPayoutRole.TRANSLATOR)
-                .stripeConnectedAccountId("acct_existing")
-                .currency("USD")
-                .detailsSubmitted(true)
-                .active(true)
-                .build();
         when(userRepository.findByIdWithRole(translator.getId())).thenReturn(Optional.of(translator));
-        when(payoutSettingsService.resolveCurrency("EUR")).thenReturn(resolved("EUR"));
-        when(profileRepository.findByUserId(translator.getId())).thenReturn(Optional.of(profile));
+        when(payoutSettingsService.resolveCurrency("EUR"))
+                .thenThrow(new CustomException(
+                        400,
+                        "Unsupported payout currency. Allowed value: USD",
+                        org.springframework.http.HttpStatus.BAD_REQUEST
+                ));
 
-        assertEquals(409, assertThrows(CustomException.class,
+        assertEquals(400, assertThrows(CustomException.class,
                 () -> service.createOnboardingLink(new UserPrincipal(translator), request)).getCode());
-        verify(stripeGatewayService, never()).updateConnectedAccountDefaultCurrency(anyString(), anyString());
+        verifyNoInteractions(profileRepository, stripeGatewayService);
     }
 
     @Test

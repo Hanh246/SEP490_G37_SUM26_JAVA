@@ -16,10 +16,10 @@ public class AuthorComicRevenueResponse {
     private UUID comicId;
     private String comicTitle;
     private Long monthlyViews;
-    private Long viewUnits;
+    private BigDecimal viewUnits;
     private BigDecimal viewRevenueUsd;
     private Long monthlyFollows;
-    private Long followUnits;
+    private BigDecimal followUnits;
     private BigDecimal followRevenueUsd;
     private BigDecimal totalRevenueUsd;
 }

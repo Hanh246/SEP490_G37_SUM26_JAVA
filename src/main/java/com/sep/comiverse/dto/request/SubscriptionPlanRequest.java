@@ -38,7 +38,10 @@ public class SubscriptionPlanRequest {
     private BigDecimal price;
 
     @NotBlank(message = "Currency is required")
-    @Pattern(regexp = "^[A-Za-z]{3}$", message = "Currency must be a 3-letter ISO code")
+    @Pattern(
+            regexp = "^(?i:USD)$",
+            message = "Currency must be USD"
+    )
     private String currency;
 
     @NotNull(message = "Billing interval is required")
