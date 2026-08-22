@@ -11,6 +11,9 @@ import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IComicMetricSnapshotRepository;
 import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.repository.ISubmissionRepository;
+import com.sep.comiverse.entity.CreatorPayoutRequestEntity;
+import com.sep.comiverse.entity.enums.CreatorPayoutStatus;
+import com.sep.comiverse.repository.ICreatorPayoutRequestRepository;
 import com.sep.comiverse.repository.projection.ComicChapterCountProjection;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -49,6 +52,7 @@ public class AuthorDashboardMetricService {
     private final IChapterRepository chapterRepository;
     private final ISubmissionRepository submissionRepository;
     private final IComicMetricSnapshotRepository metricSnapshotRepository;
+    private final ICreatorPayoutRequestRepository payoutRequestRepository;
 
     @Transactional(readOnly = true)
     public AuthorDashboardMetricsResponse getDashboardMetrics(UUID authorId, String period) {
@@ -62,6 +66,8 @@ public class AuthorDashboardMetricService {
                 .findAllByAuthorIdAndQueueTypeIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(authorId, "author");
         List<ComicMetricSnapshotEntity> snapshots = metricSnapshotRepository
                 .findAllByAuthorIdAndDeletedFalseOrderByCreatedAtDesc(authorId);
+        List<CreatorPayoutRequestEntity> payouts = payoutRequestRepository
+                .findAllByUserIdAndDeletedFalseOrderByCreatedAtDesc(authorId);
 
         Map<UUID, Integer> chapterCountByComic = chapterRepository.countChaptersByComicForAuthor(authorId).stream()
                 .filter(p -> p.getComicId() != null)
@@ -81,7 +87,7 @@ public class AuthorDashboardMetricService {
                 ));
 
         return AuthorDashboardMetricsResponse.builder()
-                .summary(buildSummary(comics, chapters, submissions, latestSnapshotByComic))
+                .summary(buildSummary(comics, chapters, submissions, latestSnapshotByComic, payouts))
                 .monthlyMetrics(buildChartMetrics(period, comics, chapters, submissions, snapshots))
                 .topComics(buildTopComics(comics, chapterCountByComic, latestSnapshotByComic))
                 .recentActivities(buildRecentActivities(submissions))
@@ -93,7 +99,8 @@ public class AuthorDashboardMetricService {
             List<ComicEntity> comics,
             List<ChapterEntity> chapters,
             List<SubmissionEntity> submissions,
-            Map<UUID, ComicMetricSnapshotEntity> latestSnapshotByComic
+            Map<UUID, ComicMetricSnapshotEntity> latestSnapshotByComic,
+            List<CreatorPayoutRequestEntity> payouts
     ) {
         long totalViews = comics.stream().mapToLong(comic -> defaultLong(comic.getViewCount())).sum();
         long totalFollowers = comics.stream().mapToLong(comic -> defaultLong(comic.getSaveCount())).sum();
@@ -115,6 +122,11 @@ public class AuthorDashboardMetricService {
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        BigDecimal totalPaid = payouts.stream()
+                .filter(p -> p.getStatus() == CreatorPayoutStatus.PAID)
+                .map(p -> p.getBaseAmountUsd() != null ? p.getBaseAmountUsd() : (p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
         return AuthorDashboardMetricsResponse.Summary.builder()
                 .totalComics((long) comics.size())
                 .publishedComics(comics.stream().filter(this::isPublished).count())
@@ -128,6 +140,7 @@ public class AuthorDashboardMetricService {
                 .pendingReviews(pendingReviews)
                 .approvedRate(round(approvedRate, 2))
                 .estimatedRevenue(estimatedRevenue)
+                .totalPaid(totalPaid)
                 .build();
     }
 
