@@ -96,11 +96,11 @@ public class AuthorComicService {
         comic.setIsModEdited(false);
         comic.setPreviousStateSnapshot(null);
         comicRepository.save(comic);
-        
+
         try {
             if (comicCrudPlugin != null) comicCrudPlugin.evictComicCache(comicId);
         } catch (Exception e) {}
-        
+
         auditLogService.log("COMIC_AUTHOR", "Author confirmed moderator edit for comic " + comicId);
     }
 
@@ -118,7 +118,7 @@ public class AuthorComicService {
             comic.setIsAppealed(true);
             comic.setAppealReason(reason);
             comicRepository.save(comic);
-            
+
             try {
                 if (comicCrudPlugin != null) comicCrudPlugin.evictComicCache(comicId);
             } catch (Exception e) {}
@@ -133,7 +133,7 @@ public class AuthorComicService {
             String formattedCategory = category != null ? java.util.Arrays.stream(category.replace("_", " ").toLowerCase().split(" "))
                     .map(word -> word.isEmpty() ? "" : Character.toUpperCase(word.charAt(0)) + word.substring(1))
                     .collect(java.util.stream.Collectors.joining(" ")) : "Other";
-            
+
             String notifTitle = "Author Appeal: " + comic.getTitle();
             String notifMessage = "Author " + authorName + " submitted a moderation appeal for \"" + comic.getTitle() + "\" [" + formattedCategory + "]: " + reason;
 
@@ -233,9 +233,7 @@ public class AuthorComicService {
     }
     @Transactional
     public AuthorComicResponse updateComic(UUID comicId, AuthorComicUpdateRequest request) {
-        if (request == null || request.getAuthorId() == null) {
-            throw new CustomException(400, "Author id is required", HttpStatus.BAD_REQUEST);
-        }
+        validateUpdateRequest(request);
 
         ComicEntity comic = getOwnedComic(comicId, request.getAuthorId());
         boolean requiresModerationReview = false;
@@ -643,6 +641,36 @@ public class AuthorComicService {
         }
         if (count != null && count > limit) {
             throw new CustomException(429, message, HttpStatus.TOO_MANY_REQUESTS);
+        }
+    }
+
+    private void validateUpdateRequest(AuthorComicUpdateRequest request) {
+        if (request == null) {
+            throw new CustomException(400, "Request body is required", HttpStatus.BAD_REQUEST);
+        }
+        if (request.getAuthorId() == null) {
+            throw new CustomException(400, "Author id is required", HttpStatus.BAD_REQUEST);
+        }
+        if (!StringUtils.hasText(request.getTitle())) {
+            throw new CustomException(400, "Title is required", HttpStatus.BAD_REQUEST);
+        }
+        if (!StringUtils.hasText(request.getSummary())) {
+            throw new CustomException(400, "Description is required", HttpStatus.BAD_REQUEST);
+        }
+        if (!StringUtils.hasText(request.getLanguage())) {
+            throw new CustomException(400, "Comic language is required", HttpStatus.BAD_REQUEST);
+        }
+        if (!StringUtils.hasText(request.getCover())) {
+            throw new CustomException(400, "Cover image is required", HttpStatus.BAD_REQUEST);
+        }
+        if (request.getGenres() == null || request.getGenres().isEmpty()) {
+            throw new CustomException(400, "At least one genre is required", HttpStatus.BAD_REQUEST);
+        }
+        if (request.getMinimumAge() == null) {
+            throw new CustomException(400, "Minimum age is required", HttpStatus.BAD_REQUEST);
+        }
+        if (request.getPublicationStatus() == null) {
+            throw new CustomException(400, "Publication status is required", HttpStatus.BAD_REQUEST);
         }
     }
 
