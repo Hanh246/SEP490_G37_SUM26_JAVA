@@ -260,9 +260,9 @@ public class AuthorDashboardMetricService {
                             .likeCount(defaultLong(comic.getLikeCount()))
                             .chapterCount(chapterCountByComic.getOrDefault(comic.getId(), 0))
                             .ratingAverage(round(defaultDouble(comic.getRatingAverage()), 2))
-                            .estimatedRevenue(snapshot == null || snapshot.getEstimatedRevenue() == null
-                                    ? BigDecimal.ZERO
-                                    : snapshot.getEstimatedRevenue())
+                            .estimatedRevenue(snapshot != null && snapshot.getEstimatedRevenue() != null
+                                    ? snapshot.getEstimatedRevenue()
+                                    : BigDecimal.valueOf(defaultLong(comic.getViewCount()) * 0.01))
                             .build();
                 })
                 .toList();
