@@ -92,7 +92,7 @@ class PaymentStatisticsServiceTest {
         );
 
         when(paymentRepository.findDistinctCurrencies()).thenReturn(List.of("USD", "VND"));
-        when(paymentRepository.findForStatistics(eq("VND"), any(Instant.class), any(Instant.class)))
+        when(paymentRepository.findForStatistics(eq("USD"), any(Instant.class), any(Instant.class)))
                 .thenReturn(List.of(paid, failed, pending, refunded, previousPaid));
         when(subscriptionRepository.countByDeletedFalseAndStatusInAndCurrentPeriodEndAfter(any(), any()))
                 .thenReturn(2L);
@@ -100,7 +100,7 @@ class PaymentStatisticsServiceTest {
         PaymentStatisticsResponse response = service.getStatistics(3, null, "UTC");
         PaymentStatisticsResponse.Summary summary = response.getSummary();
 
-        assertEquals("VND", response.getPeriod().getCurrency());
+        assertEquals("USD", response.getPeriod().getCurrency());
         assertEquals(today.minusDays(2), response.getPeriod().getFrom());
         assertEquals(today, response.getPeriod().getTo());
         assertEquals(4L, summary.getTotalTransactions());
@@ -138,7 +138,7 @@ class PaymentStatisticsServiceTest {
     @Test
     void emptyPreviousPeriodReturnsNullComparisons() {
         when(paymentRepository.findDistinctCurrencies()).thenReturn(List.of());
-        when(paymentRepository.findForStatistics(eq("VND"), any(Instant.class), any(Instant.class)))
+        when(paymentRepository.findForStatistics(eq("USD"), any(Instant.class), any(Instant.class)))
                 .thenReturn(List.of());
         when(subscriptionRepository.countByDeletedFalseAndStatusInAndCurrentPeriodEndAfter(any(), any()))
                 .thenReturn(0L);
@@ -150,14 +150,14 @@ class PaymentStatisticsServiceTest {
         assertNull(response.getSummary().getRevenueChangePercent());
         assertNull(response.getSummary().getPaidPaymentsChangePercent());
         assertEquals(30, response.getDailySeries().size());
-        assertEquals(List.of("VND"), response.getAvailableCurrencies());
+        assertEquals(List.of("USD"), response.getAvailableCurrencies());
     }
 
     @Test
     void invalidRangeIsRejectedBeforeQueryingRepositories() {
         CustomException exception = assertThrows(
                 CustomException.class,
-                () -> service.getStatistics(367, "VND", "UTC")
+                () -> service.getStatistics(367, "USD", "UTC")
         );
 
         assertEquals(400, exception.getCode());
@@ -179,7 +179,7 @@ class PaymentStatisticsServiceTest {
                 .planCode("MONTHLY")
                 .planName("Premium Monthly")
                 .amount(new BigDecimal(amount))
-                .currency("VND")
+                .currency("USD")
                 .status(status)
                 .paidAt(paidAt)
                 .build();

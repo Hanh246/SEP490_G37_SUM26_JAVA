@@ -6,6 +6,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -13,6 +14,11 @@ import java.util.UUID;
 public interface IProjectTeamRepository extends AbstractCrudRepository<ProjectTeamEntity, UUID> {
     @Override
     Optional<ProjectTeamEntity> findById(@Param("id") UUID uuid);
+
+    @Query("SELECT DISTINCT pt FROM ProjectTeamEntity pt " +
+           "LEFT JOIN FETCH pt.members m LEFT JOIN FETCH m.user " +
+           "WHERE pt.id IN :ids AND pt.deleted = false")
+    List<ProjectTeamEntity> findAllWithMembersByIdIn(@Param("ids") Collection<UUID> ids);
 
     @Query("select pt from ProjectTeamEntity pt join pt.members m where m.id = :userId")
     List<ProjectTeamEntity> findByMemberId(@Param("userId") UUID userId);

@@ -1,0 +1,71 @@
+package com.sep.comiverse.service;
+
+import com.sep.comiverse.dto.GenreDTO;
+import com.sep.comiverse.dto.response.AdminStatisticsResponse;
+import com.sep.comiverse.entity.enums.ComicModerationStatus;
+import com.sep.comiverse.repository.IComicRepository;
+import com.sep.comiverse.repository.IGenreRepository;
+import com.sep.comiverse.repository.ISubmissionRepository;
+import com.sep.comiverse.repository.IUserRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+
+@Service
+@RequiredArgsConstructor
+public class AdminStatisticsService {
+
+    private static final List<String> PLATFORM_ROLES = List.of(
+            "READER",
+            "AUTHOR",
+            "TRANSLATOR",
+            "PROJECT_LEADER",
+            "MODERATOR",
+            "ADMIN"
+    );
+
+    private final IUserRepository userRepository;
+    private final IComicRepository comicRepository;
+    private final IGenreRepository genreRepository;
+    private final ISubmissionRepository submissionRepository;
+
+    @Transactional(readOnly = true)
+    public AdminStatisticsResponse getStatistics() {
+        Map<String, Long> roleCounts = new LinkedHashMap<>();
+        PLATFORM_ROLES.forEach(role -> roleCounts.put(role, 0L));
+
+        userRepository.countUsersByRole().forEach(row -> {
+            String role = row[0] == null
+                    ? "UNASSIGNED"
+                    : row[0].toString().trim().toUpperCase(Locale.ROOT).replaceAll("[\\s-]+", "_");
+            roleCounts.merge(role, ((Number) row[1]).longValue(), Long::sum);
+        });
+
+        List<GenreDTO> genres = genreRepository
+                .findAll(PageRequest.of(0, 8, Sort.by(Sort.Direction.ASC, "name")))
+                .getContent()
+                .stream()
+                .map(genre -> new GenreDTO(genre.getId(), genre.getName(), genre.getSlug()))
+                .toList();
+
+        return AdminStatisticsResponse.builder()
+                .totalUsers(userRepository.count())
+                .activeUsers(userRepository.countByStatusIgnoreCaseAndDeletedFalse("ACTIVE"))
+                .bannedUsers(userRepository.countByStatusIgnoreCaseAndDeletedFalse("INACTIVE"))
+                .totalPublishedComics(comicRepository.countByModerationStatusAndDeletedFalse(ComicModerationStatus.PUBLISHED))
+                .totalGenres(genreRepository.count())
+                .pendingSubmissions(submissionRepository.countByStatusIgnoreCaseAndDeletedFalse("pending"))
+                .roleCounts(roleCounts)
+                .genres(genres)
+                .generatedAt(Instant.now())
+                .build();
+    }
+}

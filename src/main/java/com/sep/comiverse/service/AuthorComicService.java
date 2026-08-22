@@ -23,6 +23,10 @@ import com.sep.comiverse.repository.projection.ComicChapterCountProjection;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+
+import com.sep.comiverse.service.CreatorPayoutSettingsService;
+import com.sep.comiverse.entity.CreatorPayoutSettingEntity;
+import java.math.RoundingMode;
 import org.springframework.data.domain.Page;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
@@ -57,6 +61,7 @@ public class AuthorComicService {
     private final AuditLogService auditLogService;
     private final com.sep.comiverse.plugin.crud.ComicCrudPlugin comicCrudPlugin;
     private final AuthorLicenseService authorLicenseService;
+    private final CreatorPayoutSettingsService payoutSettingsService;
 
     /*
      * Keep quota/rate-limit enforcement inside the existing comic service so the
@@ -350,6 +355,10 @@ public class AuthorComicService {
                 .findTopByComicIdAndAuthorIdAndDeletedFalseOrderByCreatedAtDesc(comicId, authorId)
                 .orElse(null);
 
+        CreatorPayoutSettingEntity settings = payoutSettingsService.currentSettings();
+        BigDecimal ratePerView = settings.getAuthorViewUnitRateUsd()
+                .divide(BigDecimal.valueOf(settings.getAuthorViewsPerUnit()), 4, RoundingMode.HALF_UP);
+
         long savedCount = defaultInteger(comic.getSaveCount()).longValue();
         return ComicMetricsResponse.builder()
                 .comicId(comicId)
@@ -361,9 +370,9 @@ public class AuthorComicService {
                 .chapterCount(Math.toIntExact(chapterRepository.countByComic_IdAndDeletedFalse(comicId)))
                 .ratingAverage(comic.getRatingAverage() == null ? 0.0 : comic.getRatingAverage())
                 .ratingCount(defaultInteger(comic.getRatingCount()))
-                .estimatedRevenue(snapshot == null || snapshot.getEstimatedRevenue() == null
-                        ? BigDecimal.ZERO
-                        : snapshot.getEstimatedRevenue())
+                .estimatedRevenue(snapshot != null && snapshot.getEstimatedRevenue() != null
+                        ? snapshot.getEstimatedRevenue()
+                        : BigDecimal.valueOf(defaultLong(comic.getViewCount())).multiply(ratePerView).setScale(2, RoundingMode.HALF_UP))
                 .snapshotAt(snapshot == null ? new Date() : toDate(snapshot.getCreatedAt()))
                 .build();
     }

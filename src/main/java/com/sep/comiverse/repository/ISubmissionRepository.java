@@ -13,6 +13,8 @@ import java.util.UUID;
 @Repository
 public interface ISubmissionRepository extends AbstractCrudRepository<SubmissionEntity, UUID> {
 
+    long countByStatusIgnoreCaseAndDeletedFalse(String status);
+
     /** Pessimistic lock: locks the row in the DB to prevent concurrent claim/approve/reject. */
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM SubmissionEntity s WHERE s.id = :id")
