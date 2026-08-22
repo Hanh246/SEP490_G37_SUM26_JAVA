@@ -120,7 +120,6 @@ public class AuthorDashboardMetricService {
             List<ChapterEntity> chapters,
             List<SubmissionEntity> submissions,
             Map<UUID, ComicMetricSnapshotEntity> latestSnapshotByComic,
-            List<CreatorPayoutRequestEntity> payouts
             BigDecimal totalPaid
     ) {
         long totalViews = comics.stream().mapToLong(comic -> defaultLong(comic.getViewCount())).sum();
