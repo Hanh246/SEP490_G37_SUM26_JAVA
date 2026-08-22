@@ -6,10 +6,13 @@ import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.ComicMetricSnapshotEntity;
 import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.entity.enums.ComicModerationStatus;
+import com.sep.comiverse.entity.enums.CreatorPayoutRole;
+import com.sep.comiverse.entity.enums.CreatorPayoutStatus;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IComicMetricSnapshotRepository;
 import com.sep.comiverse.repository.IComicRepository;
+import com.sep.comiverse.repository.ICreatorPayoutRequestRepository;
 import com.sep.comiverse.repository.ISubmissionRepository;
 import com.sep.comiverse.repository.projection.ComicChapterCountProjection;
 import lombok.RequiredArgsConstructor;
@@ -49,19 +52,28 @@ public class AuthorDashboardMetricService {
     private final IChapterRepository chapterRepository;
     private final ISubmissionRepository submissionRepository;
     private final IComicMetricSnapshotRepository metricSnapshotRepository;
+    private final ICreatorPayoutRequestRepository payoutRequestRepository;
 
     @Transactional(readOnly = true)
     public AuthorDashboardMetricsResponse getDashboardMetrics(UUID authorId, String period) {
         if (authorId == null) {
             throw new CustomException(400, "Author id is required", HttpStatus.BAD_REQUEST);
         }
-        
+
         List<ComicEntity> comics = comicRepository.findAllByAuthorIdAndDeletedFalseOrderByCreatedAtAsc(authorId);
         List<ChapterEntity> chapters = chapterRepository.findAllByComic_AuthorIdAndDeletedFalseOrderByCreatedAtAsc(authorId);
         List<SubmissionEntity> submissions = submissionRepository
                 .findAllByAuthorIdAndQueueTypeIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(authorId, "author");
         List<ComicMetricSnapshotEntity> snapshots = metricSnapshotRepository
                 .findAllByAuthorIdAndDeletedFalseOrderByCreatedAtDesc(authorId);
+        BigDecimal totalPaid = payoutRequestRepository.sumPaidAmountUsdByUserIdAndRole(
+                authorId,
+                CreatorPayoutRole.AUTHOR,
+                CreatorPayoutStatus.PAID
+        );
+        if (totalPaid == null) {
+            totalPaid = BigDecimal.ZERO;
+        }
 
         Map<UUID, Integer> chapterCountByComic = chapterRepository.countChaptersByComicForAuthor(authorId).stream()
                 .filter(p -> p.getComicId() != null)
@@ -81,7 +93,7 @@ public class AuthorDashboardMetricService {
                 ));
 
         return AuthorDashboardMetricsResponse.builder()
-                .summary(buildSummary(comics, chapters, submissions, latestSnapshotByComic))
+                .summary(buildSummary(comics, chapters, submissions, latestSnapshotByComic, totalPaid))
                 .monthlyMetrics(buildChartMetrics(period, comics, chapters, submissions, snapshots))
                 .topComics(buildTopComics(comics, chapterCountByComic, latestSnapshotByComic))
                 .recentActivities(buildRecentActivities(submissions))
@@ -93,7 +105,8 @@ public class AuthorDashboardMetricService {
             List<ComicEntity> comics,
             List<ChapterEntity> chapters,
             List<SubmissionEntity> submissions,
-            Map<UUID, ComicMetricSnapshotEntity> latestSnapshotByComic
+            Map<UUID, ComicMetricSnapshotEntity> latestSnapshotByComic,
+            BigDecimal totalPaid
     ) {
         long totalViews = comics.stream().mapToLong(comic -> defaultLong(comic.getViewCount())).sum();
         long totalFollowers = comics.stream().mapToLong(comic -> defaultLong(comic.getSaveCount())).sum();
@@ -128,6 +141,7 @@ public class AuthorDashboardMetricService {
                 .pendingReviews(pendingReviews)
                 .approvedRate(round(approvedRate, 2))
                 .estimatedRevenue(estimatedRevenue)
+                .totalPaid(totalPaid)
                 .build();
     }
 
@@ -157,7 +171,7 @@ public class AuthorDashboardMetricService {
             LocalDate periodEnd;
             String label;
             String key;
-            
+
             if ("YEAR".equalsIgnoreCase(period)) {
                 YearMonth ym = YearMonth.now(ZoneOffset.UTC).minusMonths(i);
                 periodEnd = (i == 0) ? endDate : ym.atEndOfMonth();
