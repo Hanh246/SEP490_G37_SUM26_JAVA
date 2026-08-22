@@ -77,6 +77,8 @@ public class AuthorDashboardMetricService {
                 .findAllByAuthorIdAndQueueTypeIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(authorId, "author");
         List<ComicMetricSnapshotEntity> snapshots = metricSnapshotRepository
                 .findAllByAuthorIdAndDeletedFalseOrderByCreatedAtDesc(authorId);
+        List<CreatorPayoutRequestEntity> payouts = payoutRequestRepository
+                .findAllByUserIdAndDeletedFalseOrderByCreatedAtDesc(authorId);
         BigDecimal totalPaid = payoutRequestRepository.sumPaidAmountUsdByUserIdAndRole(
                 authorId,
                 CreatorPayoutRole.AUTHOR,
@@ -104,6 +106,7 @@ public class AuthorDashboardMetricService {
                 ));
 
         return AuthorDashboardMetricsResponse.builder()
+                .summary(buildSummary(comics, chapters, submissions, latestSnapshotByComic, payouts))
                 .summary(buildSummary(comics, chapters, submissions, latestSnapshotByComic, totalPaid))
                 .monthlyMetrics(buildChartMetrics(period, comics, chapters, submissions, snapshots))
                 .topComics(buildTopComics(comics, chapterCountByComic, latestSnapshotByComic, ratePerView))
@@ -117,6 +120,7 @@ public class AuthorDashboardMetricService {
             List<ChapterEntity> chapters,
             List<SubmissionEntity> submissions,
             Map<UUID, ComicMetricSnapshotEntity> latestSnapshotByComic,
+            List<CreatorPayoutRequestEntity> payouts
             BigDecimal totalPaid
     ) {
         long totalViews = comics.stream().mapToLong(comic -> defaultLong(comic.getViewCount())).sum();
