@@ -240,45 +240,37 @@ public class AuthorComicService {
         ComicEntity comic = getOwnedComic(comicId, request.getAuthorId());
         boolean requiresModerationReview = false;
 
-        if (StringUtils.hasText(request.getTitle())) {
-            String title = request.getTitle().trim();
-            requiresModerationReview |= differentString(comic.getTitle(), title);
-            comic.setTitle(title);
-        }
-        if (request.getSummary() != null) {
-            String summary = trimToNull(request.getSummary());
-            requiresModerationReview |= differentString(comic.getSummary(), summary);
-            comic.setSummary(summary);
-        }
-        if (request.getLanguage() != null) {
-            String language = normalizeRequiredLanguage(request.getLanguage());
-            requiresModerationReview |= differentString(comic.getLanguage(), language);
-            comic.setLanguage(language);
-        }
-        if (request.getMinimumAge() != null) {
-            Integer minimumAge = normalizeMinimumAge(request.getMinimumAge());
-            requiresModerationReview |= differentInteger(comic.getMinimumAge(), minimumAge);
-            comic.setMinimumAge(minimumAge);
-        }
-        if (request.getCover() != null) {
-            String cover = trimToNull(request.getCover());
-            requiresModerationReview |= differentString(comic.getCover(), cover);
-            comic.setCover(cover);
-        }
-        if (request.getGenres() != null) {
-            Set<GenreEntity> genres = resolveGenres(request.getGenres());
-            Set<UUID> currentGenreIds = comic.getGenres() == null
-                    ? Set.of()
-                    : comic.getGenres().stream().map(GenreEntity::getId).collect(Collectors.toSet());
-            Set<UUID> requestedGenreIds = genres.stream()
-                    .map(GenreEntity::getId)
-                    .collect(Collectors.toSet());
-            requiresModerationReview |= !currentGenreIds.equals(requestedGenreIds);
-            comic.setGenres(genres);
-        }
-        if (request.getPublicationStatus() != null) {
-            comic.setPublicationStatus(request.getPublicationStatus());
-        }
+        String title = request.getTitle().trim();
+        requiresModerationReview |= differentString(comic.getTitle(), title);
+        comic.setTitle(title);
+
+        String summary = trimToNull(request.getSummary());
+        requiresModerationReview |= differentString(comic.getSummary(), summary);
+        comic.setSummary(summary);
+
+        String language = normalizeRequiredLanguage(request.getLanguage());
+        requiresModerationReview |= differentString(comic.getLanguage(), language);
+        comic.setLanguage(language);
+
+        Integer minimumAge = normalizeMinimumAge(request.getMinimumAge());
+        requiresModerationReview |= differentInteger(comic.getMinimumAge(), minimumAge);
+        comic.setMinimumAge(minimumAge);
+
+        String cover = trimToNull(request.getCover());
+        requiresModerationReview |= differentString(comic.getCover(), cover);
+        comic.setCover(cover);
+
+        Set<GenreEntity> genres = resolveGenres(request.getGenres());
+        Set<UUID> currentGenreIds = comic.getGenres() == null
+                ? Set.of()
+                : comic.getGenres().stream().map(GenreEntity::getId).collect(Collectors.toSet());
+        Set<UUID> requestedGenreIds = genres.stream()
+                .map(GenreEntity::getId)
+                .collect(Collectors.toSet());
+        requiresModerationReview |= !currentGenreIds.equals(requestedGenreIds);
+        comic.setGenres(genres);
+
+        comic.setPublicationStatus(request.getPublicationStatus());
 
         if (requiresModerationReview) {
             // Any profile content change invalidates the currently pending/approved
@@ -664,11 +656,23 @@ public class AuthorComicService {
         if (!StringUtils.hasText(request.getTitle())) {
             throw new CustomException(400, "Title is required", HttpStatus.BAD_REQUEST);
         }
+        if (!StringUtils.hasText(request.getSummary())) {
+            throw new CustomException(400, "Description is required", HttpStatus.BAD_REQUEST);
+        }
         if (!StringUtils.hasText(request.getLanguage())) {
             throw new CustomException(400, "Comic language is required", HttpStatus.BAD_REQUEST);
         }
         if (!StringUtils.hasText(request.getCover())) {
             throw new CustomException(400, "Cover image is required", HttpStatus.BAD_REQUEST);
+        }
+        if (request.getGenres() == null || request.getGenres().isEmpty()) {
+            throw new CustomException(400, "At least one genre is required", HttpStatus.BAD_REQUEST);
+        }
+        if (request.getMinimumAge() == null) {
+            throw new CustomException(400, "Minimum age is required", HttpStatus.BAD_REQUEST);
+        }
+        if (request.getPublicationStatus() == null) {
+            throw new CustomException(400, "Publication status is required", HttpStatus.BAD_REQUEST);
         }
     }
 
