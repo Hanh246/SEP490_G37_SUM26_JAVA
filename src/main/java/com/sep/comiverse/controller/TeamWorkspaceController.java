@@ -66,6 +66,7 @@ public class TeamWorkspaceController {
     private static final int MAX_ACTIVE_TEAMS = 5;
     private static final int MAX_ACTIVE_TASKS = 5;
     private static final long CANCEL_COOLDOWN_HOURS = 12;
+    private static final long REJECT_COOLDOWN_HOURS = 24;
     private static final long LEAVE_COOLDOWN_HOURS = 24;
 
     // ── ANNOUNCEMENTS ────────────────────────────────
@@ -644,6 +645,7 @@ public class TeamWorkspaceController {
                             .role(team.getLeaderId() != null && team.getLeaderId().equals(u.getId())
                                     ? "Group Leader"
                                     : "Member")
+                            .accountRole(u.getRole() != null ? u.getRole().getRoleName() : null)
                             .avatar(computeInitials(u.getFullName()))
                             .online(userPresenceService.isOnline(u.getId()))
                             .lastSeenAt(u.getLastSeenAt())
@@ -734,41 +736,44 @@ public class TeamWorkspaceController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "You are banned from applying to this team."));
         }
 
-        // 3. Check cooldown (cancel / leave)
-        List<TranslatorCooldownEntity> activeCooldowns = cooldownRepository.findActiveCooldowns(userId, Instant.now());
-        if (!activeCooldowns.isEmpty()) {
-            TranslatorCooldownEntity cd = activeCooldowns.get(0);
-            long remainingMinutes = java.time.Duration.between(Instant.now(), cd.getCooldownUntil()).toMinutes();
+        // 3. Cancel / reject cooldown only blocks THIS project
+        TranslatorCooldownEntity blockingCooldown = findBlockingCooldown(userId, teamId);
+        if (blockingCooldown != null) {
+            long remainingMinutes = Math.max(0, java.time.Duration.between(Instant.now(), blockingCooldown.getCooldownUntil()).toMinutes());
             String timeLabel = remainingMinutes >= 60
                     ? (remainingMinutes / 60) + "h " + (remainingMinutes % 60) + "m"
                     : remainingMinutes + " minutes";
+            String type = blockingCooldown.getCooldownType() == null ? "" : blockingCooldown.getCooldownType();
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of(
-                    "message", "You are on cooldown. Please wait " + timeLabel + " before applying.",
-                    "cooldownUntil", cd.getCooldownUntil().toString(),
-                    "cooldownType", cd.getCooldownType()
+                    "message", "This project is on cooldown. Please wait " + timeLabel
+                            + " before applying again. Other projects are still available.",
+                    "cooldownUntil", blockingCooldown.getCooldownUntil().toString(),
+                    "cooldownType", type,
+                    "projectTeamId", teamId
             ));
         }
 
-        // 4. Pending applications and approved teams together cannot exceed 5
-        long joinedTeams = projectTeamRepository.countActiveTeamsByUserId(userId);
-        long pendingApps = joinRequestRepository.countByRequesterIdAndStatus(userId, "PENDING");
-        if (joinedTeams + pendingApps >= MAX_ACTIVE_TEAMS) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "message", "You have reached the maximum of " + MAX_ACTIVE_TEAMS + " concurrent projects.",
-                    "joinedTeams", joinedTeams,
-                    "pendingApplications", pendingApps,
-                    "maxSlots", MAX_ACTIVE_TEAMS
-            ));
-        }
+        // 4-5. Only translators are capped on concurrent projects and incomplete tasks
+        if (isTranslatorWorkloadLimited(principal.getRole())) {
+            long joinedTeams = projectTeamRepository.countActiveTeamsByUserId(userId);
+            long pendingApps = joinRequestRepository.countByRequesterIdAndStatus(userId, "PENDING");
+            if (joinedTeams + pendingApps >= MAX_ACTIVE_TEAMS) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "message", "You have reached the maximum of " + MAX_ACTIVE_TEAMS + " concurrent projects.",
+                        "joinedTeams", joinedTeams,
+                        "pendingApplications", pendingApps,
+                        "maxSlots", MAX_ACTIVE_TEAMS
+                ));
+            }
 
-        // 5. Regular translators may hold at most 5 incomplete tasks
-        long activeTasks = taskRepository.countActiveTasksByAssigneeId(userId);
-        if (activeTasks >= MAX_ACTIVE_TASKS) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "message", "You are already handling the maximum of " + MAX_ACTIVE_TASKS + " incomplete tasks. Finish a task before applying to another team.",
-                    "activeTasks", activeTasks,
-                    "maxTasks", MAX_ACTIVE_TASKS
-            ));
+            long activeTasks = taskRepository.countActiveTasksByAssigneeId(userId);
+            if (activeTasks >= MAX_ACTIVE_TASKS) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "message", "You are already handling the maximum of " + MAX_ACTIVE_TASKS + " incomplete tasks. Finish a task before applying to another team.",
+                        "activeTasks", activeTasks,
+                        "maxTasks", MAX_ACTIVE_TASKS
+                ));
+            }
         }
 
         // All checks passed — create the request
@@ -832,7 +837,7 @@ public class TeamWorkspaceController {
                 }
             }
 
-            if (request.getRequesterId() != null) {
+            if (request.getRequesterId() != null && isTranslatorWorkloadLimitedUser(request.getRequesterId())) {
                 long joinedTeams = projectTeamRepository.countActiveTeamsByUserId(request.getRequesterId());
                 if (joinedTeams >= MAX_ACTIVE_TEAMS) {
                     return ResponseEntity.badRequest().body(Map.of(
@@ -889,17 +894,30 @@ public class TeamWorkspaceController {
                 }
             }
         } else {
-            // REJECTED
+            // REJECTED — same apply-block as cancel, for 24 hours
             request.setStatus("REJECTED");
             request.setDecidedAt(Instant.now());
             joinRequestRepository.saveAndFlush(request);
+
+            if (request.getRequesterId() != null) {
+                cooldownRepository.save(TranslatorCooldownEntity.builder()
+                        .userId(request.getRequesterId())
+                        .cooldownType("REJECT")
+                        .cooldownUntil(Instant.now().plusSeconds(REJECT_COOLDOWN_HOURS * 3600))
+                        .relatedTeamId(request.getProjectTeamId())
+                        .build());
+            }
         }
 
         String teamName = team == null ? "the translation team" : team.getTitle();
+        String notifyBody = "approved".equals(decision)
+                ? "Your request to join " + teamName + " was approved."
+                : "Your request to join " + teamName + " was rejected. You can re-apply to this project after "
+                    + REJECT_COOLDOWN_HOURS + " hours. Other projects are unaffected.";
         notificationService.notifyUser(
                 request.getRequesterId(),
                 "Team request " + decision,
-                "Your request to join " + teamName + " was " + decision + ".",
+                notifyBody,
                 "approved".equals(decision) ? "UPDATE" : "WARNING",
                 NotificationPreferenceKey.TEAM_UPDATES
         );
@@ -907,6 +925,7 @@ public class TeamWorkspaceController {
     }
 
     // ── CANCEL APPLICATION ──
+    @Transactional
     @PutMapping("/requests/{id}/cancel")
     public ResponseEntity<?> cancelRequest(
             @PathVariable UUID id,
@@ -929,17 +948,24 @@ public class TeamWorkspaceController {
 
         request.setStatus("CANCELLED");
         request.setCancelledAt(Instant.now());
-        joinRequestRepository.save(request);
+        joinRequestRepository.saveAndFlush(request);
 
-        // Create 12-hour cooldown
+        Instant cooldownUntil = Instant.now().plusSeconds(CANCEL_COOLDOWN_HOURS * 3600);
         cooldownRepository.save(TranslatorCooldownEntity.builder()
                 .userId(principal.getId())
                 .cooldownType("CANCEL")
-                .cooldownUntil(Instant.now().plusSeconds(CANCEL_COOLDOWN_HOURS * 3600))
+                .cooldownUntil(cooldownUntil)
                 .relatedTeamId(request.getProjectTeamId())
                 .build());
 
-        return ResponseEntity.ok(Map.of("success", true, "message", "Application cancelled. You are on a " + CANCEL_COOLDOWN_HOURS + "-hour cooldown before you can apply again."));
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "Application cancelled. You can re-apply to this project after "
+                        + CANCEL_COOLDOWN_HOURS + " hours. Other projects are unaffected.",
+                "projectTeamId", request.getProjectTeamId(),
+                "cooldownUntil", cooldownUntil.toString(),
+                "cooldownType", "CANCEL"
+        ));
     }
 
     // ── BAN / UNBAN ──
@@ -1022,6 +1048,7 @@ public class TeamWorkspaceController {
     }
 
     // ── MY APPLICATION STATUS ──
+    @Transactional
     @GetMapping("/my-application-status")
     public ResponseEntity<?> getMyApplicationStatus(@AuthenticationPrincipal UserPrincipal principal) {
         if (principal == null) {
@@ -1037,19 +1064,13 @@ public class TeamWorkspaceController {
                 })
                 .toList();
         long pendingApps = pendingList.size();
+        boolean workloadLimited = isTranslatorWorkloadLimited(principal.getRole());
         long usedSlots = joinedTeams + pendingApps;
-        long availableSlots = Math.max(0, MAX_ACTIVE_TEAMS - usedSlots);
+        long availableSlots = workloadLimited ? Math.max(0, MAX_ACTIVE_TEAMS - usedSlots) : Integer.MAX_VALUE;
         long activeTasks = taskRepository.countActiveTasksByAssigneeId(userId);
 
-        // Check active cooldown
-        List<TranslatorCooldownEntity> activeCooldowns = cooldownRepository.findActiveCooldowns(userId, Instant.now());
-        String cooldownUntil = null;
-        String cooldownType = null;
-        if (!activeCooldowns.isEmpty()) {
-            TranslatorCooldownEntity cd = activeCooldowns.get(0);
-            cooldownUntil = cd.getCooldownUntil().toString();
-            cooldownType = cd.getCooldownType();
-        }
+        List<TranslatorCooldownEntity> activeCooldowns = listProjectScopedCooldowns(userId);
+        List<Map<String, Object>> cooldownDetails = toCooldownDtos(activeCooldowns);
 
         // Get list of pending application team IDs
         List<Map<String, Object>> pendingDetails = pendingList.stream().map(req -> {
@@ -1064,9 +1085,16 @@ public class TeamWorkspaceController {
         List<Map<String, Object>> applications = myRequests.stream().map(req -> {
             Map<String, Object> m = new HashMap<>();
             m.put("requestId", req.getId());
-            m.put("projectTeamId", req.getProjectTeamId());
+            m.put("projectTeamId", req.getProjectTeamId() != null ? req.getProjectTeamId().toString() : null);
             m.put("appliedAt", req.getTime());
+            m.put("cancelledAt", req.getCancelledAt() != null ? req.getCancelledAt().toString() : null);
+            m.put("decidedAt", req.getDecidedAt() != null ? req.getDecidedAt().toString() : null);
             m.put("status", req.getStatus() == null ? "PENDING" : req.getStatus().trim().toUpperCase());
+            TranslatorCooldownEntity fromRequest = cooldownFromRequest(req);
+            if (fromRequest != null && fromRequest.getCooldownUntil() != null && fromRequest.getCooldownUntil().isAfter(Instant.now())) {
+                m.put("cooldownType", fromRequest.getCooldownType());
+                m.put("cooldownUntil", fromRequest.getCooldownUntil().toString());
+            }
             return m;
         }).collect(Collectors.toList());
 
@@ -1075,11 +1103,13 @@ public class TeamWorkspaceController {
         body.put("pendingApplications", pendingApps);
         body.put("usedSlots", usedSlots);
         body.put("availableSlots", availableSlots);
-        body.put("maxSlots", MAX_ACTIVE_TEAMS);
+        body.put("maxSlots", workloadLimited ? MAX_ACTIVE_TEAMS : null);
         body.put("activeTasks", activeTasks);
-        body.put("maxTasks", MAX_ACTIVE_TASKS);
-        body.put("cooldownUntil", cooldownUntil != null ? cooldownUntil : "");
-        body.put("cooldownType", cooldownType != null ? cooldownType : "");
+        body.put("maxTasks", workloadLimited ? MAX_ACTIVE_TASKS : null);
+        body.put("workloadLimited", workloadLimited);
+        body.put("cooldownUntil", "");
+        body.put("cooldownType", "");
+        body.put("cooldowns", cooldownDetails);
         body.put("pendingDetails", pendingDetails);
         body.put("applications", applications);
         return ResponseEntity.ok(body);
@@ -1212,16 +1242,11 @@ public class TeamWorkspaceController {
             } else if (isUnderReviewStatus(previousStatus) && isInProgressStatus(newStatus)) {
                 task = teamTaskReviewService.returnToInProgress(task);
             } else {
-                if (isBacklogStatus(previousStatus) && isBacklogStatus(newStatus)) {
-                    newStatus = "in_progress";
-                }
                 task.setStatus(newStatus);
                 if (!isCompletedStatus(newStatus)) {
                     task.setCompletedAt(null);
                 }
             }
-        } else if (isBacklogStatus(task.getStatus())) {
-            task.setStatus("in_progress");
         }
         if (updates.containsKey("dueDate")) {
             task.setDueDate((String) updates.get("dueDate"));
@@ -1275,16 +1300,33 @@ public class TeamWorkspaceController {
             }
 
             UUID previousAssigneeId = task.getAssigneeId();
-            if (previousAssigneeId != null && !previousAssigneeId.equals(primaryAssigneeId)) {
-                return ResponseEntity.status(HttpStatus.CONFLICT)
-                        .body(Map.of("success", false,
-                                "message", "Use the handover endpoint when changing an assignee so completed pages and coefficient K are preserved"));
-            }
-            task.setAssigneeId(primaryAssigneeId);
-            if (previousAssigneeId == null && primaryAssigneeId != null) {
+            if (previousAssigneeId != null && primaryAssigneeId != null
+                    && !previousAssigneeId.equals(primaryAssigneeId)) {
                 List<PageTranslationEntity> pages = iPageTranslationRepository
                         .findByTaskId_IdOrderByPageNumberAsc(task.getId());
-                translatorPaymentService.initializePageAssignments(task, pages);
+                if (!pages.isEmpty()) {
+                    taskRepository.save(task);
+                    HandoverTaskRequest handoverRequest = new HandoverTaskRequest();
+                    handoverRequest.setNewAssigneeId(primaryAssigneeId);
+                    Object rawReason = updates.get("reason");
+                    handoverRequest.setReason(rawReason == null ? "Reassigned" : String.valueOf(rawReason));
+                    try {
+                        translatorPaymentService.handover(task, handoverRequest, principal.getId());
+                    } catch (CustomException ex) {
+                        return ResponseEntity.status(ex.getHttpStatus())
+                                .body(Map.of("success", false, "message", ex.getMessage()));
+                    }
+                    task = taskRepository.findById(taskId).orElse(task);
+                } else {
+                    task.setAssigneeId(primaryAssigneeId);
+                }
+            } else {
+                task.setAssigneeId(primaryAssigneeId);
+                if (previousAssigneeId == null && primaryAssigneeId != null) {
+                    List<PageTranslationEntity> pages = iPageTranslationRepository
+                            .findByTaskId_IdOrderByPageNumberAsc(task.getId());
+                    translatorPaymentService.initializePageAssignments(task, pages);
+                }
             }
         }
         if (isCompletedStatus(task.getStatus()) && task.getCompletedAt() == null) {
@@ -1292,7 +1334,14 @@ public class TeamWorkspaceController {
         }
 
         TeamTaskEntity saved = taskRepository.save(task);
-        return ResponseEntity.ok(saved);
+        Map<String, Object> body = new HashMap<>();
+        body.put("success", true);
+        body.put("id", saved.getId());
+        body.put("title", saved.getTitle());
+        body.put("status", saved.getStatus());
+        body.put("assigneeId", saved.getAssigneeId());
+        body.put("dueDate", saved.getDueDate());
+        return ResponseEntity.ok(body);
     }
     @PutMapping("/tasks/{taskId}/handover")
     public ResponseEntity<?> handoverTask(
@@ -1470,14 +1519,196 @@ public class TeamWorkspaceController {
             return "Only users with the TRANSLATOR role can be assigned payout-eligible tasks";
         }
 
-        // 5 incomplete tasks per person across the whole system — including Project Leaders.
-        long activeTasks = taskRepository.countActiveTasksByAssigneeId(assigneeId);
-        if (activeTasks >= MAX_ACTIVE_TASKS) {
-            return "This translator already has " + MAX_ACTIVE_TASKS
-                    + " incomplete tasks across all projects and cannot take another assignment.";
+        // Translators may hold at most 5 incomplete tasks system-wide. Project Leaders are not capped.
+        if (isTranslatorWorkloadLimited(role)) {
+            long activeTasks = taskRepository.countActiveTasksByAssigneeId(assigneeId);
+            if (activeTasks >= MAX_ACTIVE_TASKS) {
+                return "This translator already has " + MAX_ACTIVE_TASKS
+                        + " incomplete tasks across all projects and cannot take another assignment.";
+            }
         }
 
         return null;
+    }
+
+    private boolean isTranslatorWorkloadLimited(String role) {
+        return role != null && "TRANSLATOR".equalsIgnoreCase(role.trim());
+    }
+
+    private boolean isTranslatorWorkloadLimitedUser(UUID userId) {
+        if (userId == null) {
+            return false;
+        }
+        return userRepository.findById(userId)
+                .map(user -> user.getRole() != null && isTranslatorWorkloadLimited(user.getRole().getRoleName()))
+                .orElse(false);
+    }
+
+    private TranslatorCooldownEntity findBlockingCooldown(UUID userId, UUID teamId) {
+        if (userId == null || teamId == null) {
+            return null;
+        }
+        Instant now = Instant.now();
+        return listProjectScopedCooldowns(userId).stream()
+                .filter(cd -> teamId.equals(cd.getRelatedTeamId()))
+                .filter(cd -> cd.getCooldownUntil() != null && cd.getCooldownUntil().isAfter(now))
+                .max(Comparator.comparing(TranslatorCooldownEntity::getCooldownUntil))
+                .orElse(null);
+    }
+
+    private List<TranslatorCooldownEntity> listProjectScopedCooldowns(UUID userId) {
+        Instant now = Instant.now();
+        Map<UUID, TranslatorCooldownEntity> byTeam = new HashMap<>();
+        List<TranslatorCooldownEntity> orphans = new ArrayList<>();
+        for (TranslatorCooldownEntity cd : cooldownRepository.findActiveCooldowns(userId, now)) {
+            if (cd.getCooldownUntil() == null || !cd.getCooldownUntil().isAfter(now)) {
+                continue;
+            }
+            if (cd.getRelatedTeamId() == null) {
+                orphans.add(cd);
+                continue;
+            }
+            byTeam.merge(cd.getRelatedTeamId(), cd, (left, right) ->
+                    left.getCooldownUntil().isAfter(right.getCooldownUntil()) ? left : right);
+        }
+
+        List<TeamJoinRequestEntity> requests = joinRequestRepository.findByRequesterId(userId);
+        for (TeamJoinRequestEntity req : requests) {
+            TranslatorCooldownEntity fromRequest = cooldownFromRequest(req);
+            if (fromRequest == null
+                    || fromRequest.getRelatedTeamId() == null
+                    || fromRequest.getCooldownUntil() == null
+                    || !fromRequest.getCooldownUntil().isAfter(now)) {
+                continue;
+            }
+            byTeam.merge(fromRequest.getRelatedTeamId(), fromRequest, (left, right) ->
+                    left.getCooldownUntil().isAfter(right.getCooldownUntil()) ? left : right);
+        }
+
+        // Old rows stored a global cooldown (relatedTeamId null). Bind each type
+        // to the latest matching join request only — never to every project.
+        for (TranslatorCooldownEntity orphan : orphans) {
+            TeamJoinRequestEntity match = requests.stream()
+                    .filter(req -> requestMatchesCooldownType(req, orphan.getCooldownType()))
+                    .max(Comparator.comparing(this::requestEventTime, Comparator.nullsLast(Comparator.naturalOrder())))
+                    .orElse(null);
+            if (match == null || match.getProjectTeamId() == null) {
+                continue;
+            }
+            if (orphan.getId() != null) {
+                orphan.setRelatedTeamId(match.getProjectTeamId());
+                cooldownRepository.save(orphan);
+            }
+            TranslatorCooldownEntity scoped = TranslatorCooldownEntity.builder()
+                    .id(orphan.getId())
+                    .userId(orphan.getUserId())
+                    .relatedTeamId(match.getProjectTeamId())
+                    .cooldownType(orphan.getCooldownType())
+                    .cooldownUntil(orphan.getCooldownUntil())
+                    .createdAt(orphan.getCreatedAt())
+                    .build();
+            byTeam.merge(match.getProjectTeamId(), scoped, (left, right) ->
+                    left.getCooldownUntil().isAfter(right.getCooldownUntil()) ? left : right);
+        }
+        return new ArrayList<>(byTeam.values());
+    }
+
+    private boolean requestMatchesCooldownType(TeamJoinRequestEntity req, String cooldownType) {
+        if (req == null) {
+            return false;
+        }
+        String status = req.getStatus() == null ? "" : req.getStatus().trim();
+        String type = cooldownType == null ? "" : cooldownType.trim().toUpperCase();
+        if ("CANCEL".equals(type)) {
+            return "CANCELLED".equalsIgnoreCase(status) || "CANCELED".equalsIgnoreCase(status);
+        }
+        if ("REJECT".equals(type)) {
+            return "REJECTED".equalsIgnoreCase(status);
+        }
+        return false;
+    }
+
+    private Instant requestEventTime(TeamJoinRequestEntity req) {
+        if (req == null) {
+            return null;
+        }
+        if (req.getCancelledAt() != null) {
+            return req.getCancelledAt();
+        }
+        if (req.getDecidedAt() != null) {
+            return req.getDecidedAt();
+        }
+        return parseFlexibleInstant(req.getTime());
+    }
+
+    private Instant parseFlexibleInstant(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String value = raw.trim();
+        try {
+            return Instant.parse(value);
+        } catch (Exception ignored) {
+        }
+        try {
+            return java.time.OffsetDateTime.parse(value).toInstant();
+        } catch (Exception ignored) {
+        }
+        try {
+            return java.time.LocalDateTime.parse(value).toInstant(java.time.ZoneOffset.UTC);
+        } catch (Exception ignored) {
+        }
+        try {
+            return Instant.ofEpochMilli(Long.parseLong(value));
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private TranslatorCooldownEntity cooldownFromRequest(TeamJoinRequestEntity req) {
+        if (req == null || req.getProjectTeamId() == null) {
+            return null;
+        }
+        String status = req.getStatus() == null ? "" : req.getStatus().trim();
+        Instant start = null;
+        String type = null;
+        long hours = 0;
+        if ("CANCELLED".equalsIgnoreCase(status) || "CANCELED".equalsIgnoreCase(status)) {
+            start = req.getCancelledAt();
+            type = "CANCEL";
+            hours = CANCEL_COOLDOWN_HOURS;
+        } else if ("REJECTED".equalsIgnoreCase(status)) {
+            start = req.getDecidedAt();
+            type = "REJECT";
+            hours = REJECT_COOLDOWN_HOURS;
+        }
+        if (start == null || type == null) {
+            return null;
+        }
+        return TranslatorCooldownEntity.builder()
+                .userId(req.getRequesterId())
+                .relatedTeamId(req.getProjectTeamId())
+                .cooldownType(type)
+                .cooldownUntil(start.plusSeconds(hours * 3600))
+                .createdAt(start)
+                .build();
+    }
+
+    private List<Map<String, Object>> toCooldownDtos(List<TranslatorCooldownEntity> cooldowns) {
+        if (cooldowns == null || cooldowns.isEmpty()) {
+            return List.of();
+        }
+        return cooldowns.stream()
+                .filter(cd -> cd.getRelatedTeamId() != null && cd.getCooldownUntil() != null)
+                .map(cd -> {
+                    Map<String, Object> m = new HashMap<>();
+                    m.put("projectTeamId", cd.getRelatedTeamId().toString());
+                    m.put("cooldownType", cd.getCooldownType());
+                    m.put("cooldownUntil", cd.getCooldownUntil().toString());
+                    m.put("global", false);
+                    return m;
+                })
+                .collect(Collectors.toList());
     }
     @GetMapping("/{teamId}/chapters")
     public ResponseEntity<List<Map<String, Object>>> getTeamChapters(

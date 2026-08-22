@@ -48,6 +48,13 @@ public class TaskHandoverEntity extends BaseEntity {
     @Column(name = "accepted_page_numbers", nullable = false, columnDefinition = "jsonb")
     private String acceptedPageNumbers;
 
-    @Column(name = "reason", length = 1000)
+    @Column(name = "reason", nullable = false, length = 1000)
     private String reason;
+
+    @PrePersist
+    void ensureReason() {
+        if (reason == null || reason.isBlank()) {
+            reason = "Reassigned";
+        }
+    }
 }
