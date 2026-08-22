@@ -17,6 +17,17 @@ import java.util.UUID;
 
 @Repository
 public interface IUserRepository extends AbstractCrudRepository<UserEntity, UUID> {
+    long countByStatusIgnoreCaseAndDeletedFalse(String status);
+
+    @Query("""
+        SELECT r.roleName, COUNT(u)
+        FROM UserEntity u
+        LEFT JOIN u.role r
+        WHERE u.deleted = false
+        GROUP BY r.roleName
+        """)
+    List<Object[]> countUsersByRole();
+
     @Query("""
         SELECT new com.sep.comiverse.dto.UserSnapshot(u.id, u.fullName, u.avatarUrl)
         FROM UserEntity u

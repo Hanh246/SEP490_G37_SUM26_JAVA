@@ -23,6 +23,10 @@ import com.sep.comiverse.repository.projection.ComicChapterCountProjection;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+
+import com.sep.comiverse.service.CreatorPayoutSettingsService;
+import com.sep.comiverse.entity.CreatorPayoutSettingEntity;
+import java.math.RoundingMode;
 import org.springframework.data.domain.Page;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
@@ -57,6 +61,7 @@ public class AuthorComicService {
     private final AuditLogService auditLogService;
     private final com.sep.comiverse.plugin.crud.ComicCrudPlugin comicCrudPlugin;
     private final AuthorLicenseService authorLicenseService;
+    private final CreatorPayoutSettingsService payoutSettingsService;
 
     /*
      * Keep quota/rate-limit enforcement inside the existing comic service so the
@@ -96,11 +101,11 @@ public class AuthorComicService {
         comic.setIsModEdited(false);
         comic.setPreviousStateSnapshot(null);
         comicRepository.save(comic);
-        
+
         try {
             if (comicCrudPlugin != null) comicCrudPlugin.evictComicCache(comicId);
         } catch (Exception e) {}
-        
+
         auditLogService.log("COMIC_AUTHOR", "Author confirmed moderator edit for comic " + comicId);
     }
 
@@ -118,7 +123,7 @@ public class AuthorComicService {
             comic.setIsAppealed(true);
             comic.setAppealReason(reason);
             comicRepository.save(comic);
-            
+
             try {
                 if (comicCrudPlugin != null) comicCrudPlugin.evictComicCache(comicId);
             } catch (Exception e) {}
@@ -133,7 +138,7 @@ public class AuthorComicService {
             String formattedCategory = category != null ? java.util.Arrays.stream(category.replace("_", " ").toLowerCase().split(" "))
                     .map(word -> word.isEmpty() ? "" : Character.toUpperCase(word.charAt(0)) + word.substring(1))
                     .collect(java.util.stream.Collectors.joining(" ")) : "Other";
-            
+
             String notifTitle = "Author Appeal: " + comic.getTitle();
             String notifMessage = "Author " + authorName + " submitted a moderation appeal for \"" + comic.getTitle() + "\" [" + formattedCategory + "]: " + reason;
 
@@ -233,9 +238,7 @@ public class AuthorComicService {
     }
     @Transactional
     public AuthorComicResponse updateComic(UUID comicId, AuthorComicUpdateRequest request) {
-        if (request == null || request.getAuthorId() == null) {
-            throw new CustomException(400, "Author id is required", HttpStatus.BAD_REQUEST);
-        }
+        validateUpdateRequest(request);
 
         ComicEntity comic = getOwnedComic(comicId, request.getAuthorId());
         boolean requiresModerationReview = false;
@@ -352,6 +355,10 @@ public class AuthorComicService {
                 .findTopByComicIdAndAuthorIdAndDeletedFalseOrderByCreatedAtDesc(comicId, authorId)
                 .orElse(null);
 
+        CreatorPayoutSettingEntity settings = payoutSettingsService.currentSettings();
+        BigDecimal ratePerView = settings.getAuthorViewUnitRateUsd()
+                .divide(BigDecimal.valueOf(settings.getAuthorViewsPerUnit()), 4, RoundingMode.HALF_UP);
+
         long savedCount = defaultInteger(comic.getSaveCount()).longValue();
         return ComicMetricsResponse.builder()
                 .comicId(comicId)
@@ -363,9 +370,9 @@ public class AuthorComicService {
                 .chapterCount(Math.toIntExact(chapterRepository.countByComic_IdAndDeletedFalse(comicId)))
                 .ratingAverage(comic.getRatingAverage() == null ? 0.0 : comic.getRatingAverage())
                 .ratingCount(defaultInteger(comic.getRatingCount()))
-                .estimatedRevenue(snapshot == null || snapshot.getEstimatedRevenue() == null
-                        ? BigDecimal.ZERO
-                        : snapshot.getEstimatedRevenue())
+                .estimatedRevenue(snapshot != null && snapshot.getEstimatedRevenue() != null && snapshot.getEstimatedRevenue().compareTo(BigDecimal.ZERO) > 0
+                        ? snapshot.getEstimatedRevenue()
+                        : BigDecimal.valueOf(defaultLong(comic.getViewCount())).multiply(ratePerView).setScale(2, RoundingMode.HALF_UP))
                 .snapshotAt(snapshot == null ? new Date() : toDate(snapshot.getCreatedAt()))
                 .build();
     }
@@ -643,6 +650,36 @@ public class AuthorComicService {
         }
         if (count != null && count > limit) {
             throw new CustomException(429, message, HttpStatus.TOO_MANY_REQUESTS);
+        }
+    }
+
+    private void validateUpdateRequest(AuthorComicUpdateRequest request) {
+        if (request == null) {
+            throw new CustomException(400, "Request body is required", HttpStatus.BAD_REQUEST);
+        }
+        if (request.getAuthorId() == null) {
+            throw new CustomException(400, "Author id is required", HttpStatus.BAD_REQUEST);
+        }
+        if (!StringUtils.hasText(request.getTitle())) {
+            throw new CustomException(400, "Title is required", HttpStatus.BAD_REQUEST);
+        }
+        if (!StringUtils.hasText(request.getSummary())) {
+            throw new CustomException(400, "Description is required", HttpStatus.BAD_REQUEST);
+        }
+        if (!StringUtils.hasText(request.getLanguage())) {
+            throw new CustomException(400, "Comic language is required", HttpStatus.BAD_REQUEST);
+        }
+        if (!StringUtils.hasText(request.getCover())) {
+            throw new CustomException(400, "Cover image is required", HttpStatus.BAD_REQUEST);
+        }
+        if (request.getGenres() == null || request.getGenres().isEmpty()) {
+            throw new CustomException(400, "At least one genre is required", HttpStatus.BAD_REQUEST);
+        }
+        if (request.getMinimumAge() == null) {
+            throw new CustomException(400, "Minimum age is required", HttpStatus.BAD_REQUEST);
+        }
+        if (request.getPublicationStatus() == null) {
+            throw new CustomException(400, "Publication status is required", HttpStatus.BAD_REQUEST);
         }
     }
 

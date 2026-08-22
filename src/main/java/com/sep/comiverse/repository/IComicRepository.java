@@ -153,6 +153,10 @@ public interface IComicRepository
             ComicModerationStatus moderationStatus
     );
 
+    long countByModerationStatusAndDeletedFalse(
+            ComicModerationStatus moderationStatus
+    );
+
     @Query("""
             SELECT DISTINCT c
             FROM ComicEntity c

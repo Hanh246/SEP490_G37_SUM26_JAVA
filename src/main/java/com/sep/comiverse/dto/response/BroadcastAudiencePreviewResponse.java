@@ -6,21 +6,14 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.Date;
-import java.util.UUID;
-
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class BroadcastResponse {
-    private UUID id;
-    private String type;
-    private String title;
-    private String message;
+public class BroadcastAudiencePreviewResponse {
     private BroadcastAudienceType audienceType;
     private String audienceLabel;
-    private String targetRoles;
-    private long recipientCount;
-    private Date sentAt;
+    private long matchedRecipientCount;
+    private long enabledRecipientCount;
+    private long optedOutCount;
 }
