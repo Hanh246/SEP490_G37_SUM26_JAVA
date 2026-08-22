@@ -69,8 +69,8 @@ public class AuthorComicService {
     @Autowired(required = false)
     private RedisTemplate<String, Object> redisTemplate;
 
-    @Value("${author.comic.max-active-work:30}")
-    private long maxActiveWorkComics = 30L;
+    @Value("${author.comic.max-active-work:5}")
+    private long maxActiveWorkComics = 5L;
 
     @Value("${author.comic.max-pending-reviews:5}")
     private long maxPendingComicReviews = 5L;
