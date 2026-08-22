@@ -106,7 +106,6 @@ public class AuthorDashboardMetricService {
                 ));
 
         return AuthorDashboardMetricsResponse.builder()
-                .summary(buildSummary(comics, chapters, submissions, latestSnapshotByComic, payouts))
                 .summary(buildSummary(comics, chapters, submissions, latestSnapshotByComic, totalPaid))
                 .monthlyMetrics(buildChartMetrics(period, comics, chapters, submissions, snapshots))
                 .topComics(buildTopComics(comics, chapterCountByComic, latestSnapshotByComic, ratePerView))
@@ -142,10 +141,6 @@ public class AuthorDashboardMetricService {
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal totalPaid = payouts.stream()
-                .filter(p -> p.getStatus() == CreatorPayoutStatus.PAID)
-                .map(p -> p.getBaseAmountUsd() != null ? p.getBaseAmountUsd() : (p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         return AuthorDashboardMetricsResponse.Summary.builder()
                 .totalComics((long) comics.size())
