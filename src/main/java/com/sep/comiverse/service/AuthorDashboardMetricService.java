@@ -281,7 +281,7 @@ public class AuthorDashboardMetricService {
                             .likeCount(defaultLong(comic.getLikeCount()))
                             .chapterCount(chapterCountByComic.getOrDefault(comic.getId(), 0))
                             .ratingAverage(round(defaultDouble(comic.getRatingAverage()), 2))
-                            .estimatedRevenue(snapshot != null && snapshot.getEstimatedRevenue() != null
+                            .estimatedRevenue(snapshot != null && snapshot.getEstimatedRevenue() != null && snapshot.getEstimatedRevenue().compareTo(BigDecimal.ZERO) > 0
                                     ? snapshot.getEstimatedRevenue()
                                     : BigDecimal.valueOf(defaultLong(comic.getViewCount())).multiply(ratePerView).setScale(2, RoundingMode.HALF_UP))
                             .build();
