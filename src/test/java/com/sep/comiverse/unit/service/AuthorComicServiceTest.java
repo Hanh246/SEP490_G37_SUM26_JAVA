@@ -9,6 +9,7 @@ import com.sep.comiverse.dto.response.ComicMetricsResponse;
 import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.ComicMetricSnapshotEntity;
+import com.sep.comiverse.entity.CreatorPayoutSettingEntity;
 import com.sep.comiverse.entity.GenreEntity;
 import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.entity.UserEntity;
@@ -27,6 +28,7 @@ import com.sep.comiverse.repository.projection.ComicChapterCountProjection;
 import com.sep.comiverse.service.AuditLogService;
 import com.sep.comiverse.service.AuthorComicService;
 import com.sep.comiverse.service.AuthorLicenseService;
+import com.sep.comiverse.service.CreatorPayoutSettingsService;
 import com.sep.comiverse.service.NotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -68,6 +70,7 @@ class AuthorComicServiceTest {
     @Mock private AuditLogService auditLogService;
     @Mock private ComicCrudPlugin comicCrudPlugin;
     @Mock private AuthorLicenseService authorLicenseService;
+    @Mock private CreatorPayoutSettingsService payoutSettingsService;
 
     private AuthorComicService service;
     private GenreEntity defaultGenre;
@@ -84,11 +87,18 @@ class AuthorComicServiceTest {
                 userRepository,
                 auditLogService,
                 comicCrudPlugin,
-                authorLicenseService
+                authorLicenseService,
+                payoutSettingsService
         );
 
         defaultGenre = genre("Action", "action");
         lenient().when(genreRepository.findAll()).thenReturn(List.of(defaultGenre));
+
+        CreatorPayoutSettingEntity payoutSettings = CreatorPayoutSettingEntity.builder()
+                .authorViewsPerUnit(1_000L)
+                .authorViewUnitRateUsd(new BigDecimal("40.00"))
+                .build();
+        lenient().when(payoutSettingsService.currentSettings()).thenReturn(payoutSettings);
     }
 
     @Test
@@ -1277,8 +1287,9 @@ class AuthorComicServiceTest {
     }
 
     @Test
-    void getComicMetricsDefaultsNullSnapshotRevenueToZeroAndKeepsSnapshotTime() {
+    void getComicMetricsFallsBackToConfiguredViewRevenueWhenSnapshotRevenueMissing() {
         ComicEntity comic = ownedComic(ComicModerationStatus.PUBLISHED);
+        comic.setViewCount(2_500L);
 
         ComicMetricSnapshotEntity snapshot = ComicMetricSnapshotEntity.builder()
                 .comicId(comic.getId())
@@ -1299,7 +1310,8 @@ class AuthorComicServiceTest {
         ComicMetricsResponse response =
                 service.getComicMetrics(comic.getId(), comic.getAuthorId());
 
-        assertEquals(BigDecimal.ZERO, response.getEstimatedRevenue());
+        // 2,500 views × (40 USD / 1,000 views) = 100.00 USD
+        assertEquals(new BigDecimal("100.00"), response.getEstimatedRevenue());
         assertEquals(Date.from(createdAt), response.getSnapshotAt());
         assertEquals(1, response.getChapterCount());
     }
