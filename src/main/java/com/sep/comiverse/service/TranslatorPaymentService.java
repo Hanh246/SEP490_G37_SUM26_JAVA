@@ -147,6 +147,7 @@ public class TranslatorPaymentService {
                 .acceptedPageCount(acceptedNumbers.size())
                 .reassignedPageCount(reassignedCount)
                 .acceptedPageNumbers(toJson(acceptedNumbers))
+                .reason(resolveHandoverReason(request.getReason()))
                 .build();
         handover.setDeleted(false);
         TaskHandoverEntity saved = handoverRepository.save(handover);
@@ -411,6 +412,13 @@ public class TranslatorPaymentService {
         } catch (RuntimeException ignored) {
             return ZoneId.of("Asia/Ho_Chi_Minh");
         }
+    }
+
+    private String resolveHandoverReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return "Reassigned";
+        }
+        return reason.trim();
     }
 
     private String toJson(Collection<Integer> pageNumbers) {

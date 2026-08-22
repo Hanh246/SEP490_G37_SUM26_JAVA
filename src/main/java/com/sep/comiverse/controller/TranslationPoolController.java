@@ -119,6 +119,7 @@ public class TranslationPoolController {
                     .notes(request.getNotes())
                     .cover("📚")
                     .description("Translation project for " + comicTitle + " from " + sourceLanguage + " to " + targetLang + ".")
+                    .isRecruiting(false)
                     .build();
 
             projectTeamRepository.save(team);

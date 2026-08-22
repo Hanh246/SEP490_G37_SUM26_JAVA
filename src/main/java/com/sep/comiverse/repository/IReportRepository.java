@@ -56,4 +56,18 @@ public interface IReportRepository extends JpaRepository<ReportEntity, UUID>, Jp
             Collection<UUID> targetIds,
             ReportStatus status
     );
+
+    List<ReportEntity> findByTargetTypeAndTargetIdAndStatusAndCategory_AssignedRoleAndDeletedFalse(
+            ReportTargetType targetType,
+            UUID targetId,
+            ReportStatus status,
+            ReportAssignedRole assignedRole
+    );
+
+    List<ReportEntity> findByTargetTypeAndTargetIdInAndStatusAndCategory_AssignedRoleAndDeletedFalseOrderByResolvedAtDesc(
+            ReportTargetType targetType,
+            Collection<UUID> targetIds,
+            ReportStatus status,
+            ReportAssignedRole assignedRole
+    );
 }

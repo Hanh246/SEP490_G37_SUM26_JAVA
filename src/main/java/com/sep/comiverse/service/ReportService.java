@@ -270,7 +270,7 @@ public class ReportService {
                 .filter(r -> !Boolean.TRUE.equals(r.getDeleted()))
                 .orElseThrow(() -> new CustomException(404, "Report not found", HttpStatus.NOT_FOUND));
 
-        if (report.getStatus() == ReportStatus.ACCEPTED || report.getStatus() == ReportStatus.REJECTED) {
+        if (isTerminalReportStatus(report.getStatus())) {
             throw new CustomException(400, "This report has already been resolved (" + report.getStatus() + ")", HttpStatus.BAD_REQUEST);
         }
 
@@ -369,6 +369,36 @@ public class ReportService {
         } else {
             throw new CustomException(400, "Invalid report action: " + request.getAction(), HttpStatus.BAD_REQUEST);
         }
+    }
+
+    @Transactional
+    public int markAcceptedLeaderTranslationReportsDone(UUID translationId) {
+        if (translationId == null) {
+            return 0;
+        }
+        List<ReportEntity> reports = reportRepository
+                .findByTargetTypeAndTargetIdAndStatusAndCategory_AssignedRoleAndDeletedFalse(
+                        ReportTargetType.CHAPTER_TRANSLATIONS,
+                        translationId,
+                        ReportStatus.ACCEPTED,
+                        ReportAssignedRole.PROJECT_LEADER
+                );
+        if (reports.isEmpty()) {
+            return 0;
+        }
+        for (ReportEntity report : reports) {
+            report.setStatus(ReportStatus.DONE);
+        }
+        reportRepository.saveAll(reports);
+        log.info("Marked {} leader translation report(s) DONE after revision publish: translationId={}",
+                reports.size(), translationId);
+        return reports.size();
+    }
+
+    private boolean isTerminalReportStatus(ReportStatus status) {
+        return status == ReportStatus.ACCEPTED
+                || status == ReportStatus.REJECTED
+                || status == ReportStatus.DONE;
     }
 
     private void revokeReportedTarget(ReportEntity report, String resolutionNote) {

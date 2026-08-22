@@ -16,4 +16,6 @@ public class HandoverTaskRequest {
     private List<Integer> completedPageNumbers = new ArrayList<>();
 
     private BigDecimal responsibilityFactor = BigDecimal.ONE;
+
+    private String reason;
 }
