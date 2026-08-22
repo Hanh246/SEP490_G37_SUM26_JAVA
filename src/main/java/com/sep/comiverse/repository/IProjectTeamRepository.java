@@ -25,6 +25,9 @@ public interface IProjectTeamRepository extends AbstractCrudRepository<ProjectTe
     @Query("SELECT pt FROM ProjectTeamEntity pt WHERE LOWER(pt.comicName) = LOWER(:comicName) AND pt.deleted = false")
     Optional<ProjectTeamEntity> findByComicNameIgnoreCase(@Param("comicName") String comicName);
 
+    @Query("SELECT CASE WHEN COUNT(pt) > 0 THEN true ELSE false END FROM ProjectTeamEntity pt WHERE LOWER(pt.comicName) = LOWER(:comicName) AND LOWER(pt.targetLang) = LOWER(:targetLang) AND pt.deleted = false")
+    boolean existsByComicNameAndTargetLangIgnoreCaseAndDeletedFalse(@Param("comicName") String comicName, @Param("targetLang") String targetLang);
+
     @Query("SELECT pt FROM ProjectTeamEntity pt WHERE LOWER(pt.comicName) = LOWER(:comicName) AND pt.deleted = false")
     List<ProjectTeamEntity> findAllByComicNameIgnoreCase(@Param("comicName") String comicName);
 

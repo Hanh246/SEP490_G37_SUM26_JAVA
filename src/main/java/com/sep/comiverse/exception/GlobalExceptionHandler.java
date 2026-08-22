@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -122,6 +123,16 @@ public class GlobalExceptionHandler {
                 .body(BaseResponse.builder()
                         .success(false)
                         .message(message)
+                        .build());
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<BaseResponse<Object>> handleDataIntegrityViolationException(DataIntegrityViolationException ex) {
+        log.warn("Data Integrity Violation: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(BaseResponse.builder()
+                        .success(false)
+                        .message("This record already exists or violates a data constraint.")
                         .build());
     }
 

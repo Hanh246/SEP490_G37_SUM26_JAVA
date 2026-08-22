@@ -49,6 +49,9 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
     private IUserRepository userRepository;
 
     @Autowired
+    private com.sep.comiverse.service.AuthorComicService authorComicService;
+
+    @Autowired
     private com.sep.comiverse.plugin.crud.ChapterCrudPlugin chapterCrudPlugin;
 
     @Autowired
@@ -304,6 +307,7 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
             }
             if (comic != null) {
                 if (comic.getModerationStatus() != ComicModerationStatus.PUBLISHED) {
+                    authorComicService.assertPublishedComicQuotaAvailable(comic);
                     comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
                     comic.setApprovedById(modId);
                     comic.setApprovedAt(java.time.Instant.now());
@@ -330,7 +334,10 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
                             "Comic with id " + submission.getComicId() + " not found"
                     ));
 
-            comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+            if (comic.getModerationStatus() != ComicModerationStatus.PUBLISHED) {
+                authorComicService.assertPublishedComicQuotaAvailable(comic);
+                comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+            }
             List<ChapterEntity> comicChapters = chapterRepository.findAllByComic_IdAndDeletedFalse(comic.getId());
             boolean anyNewChapterPublished = false;
             for (ChapterEntity ch : comicChapters) {
@@ -364,7 +371,10 @@ public class SubmissionController extends BaseController<SubmissionEntity, Submi
          */
         ComicEntity comic = resolveComic(submission);
         if (comic != null) {
-            comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+            if (comic.getModerationStatus() != ComicModerationStatus.PUBLISHED) {
+                authorComicService.assertPublishedComicQuotaAvailable(comic);
+                comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+            }
             List<ChapterEntity> comicChapters = chapterRepository.findAllByComic_IdAndDeletedFalse(comic.getId());
             for (ChapterEntity ch : comicChapters) {
                 if (ch.getModerationStatus() != ChapterStatus.PUBLISHED) {

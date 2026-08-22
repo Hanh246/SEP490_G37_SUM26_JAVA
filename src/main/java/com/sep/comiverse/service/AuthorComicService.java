@@ -13,6 +13,7 @@ import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.entity.enums.ComicPublicationStatus;
 import com.sep.comiverse.exception.CustomException;
+import com.sep.comiverse.repository.IAuthorRepository;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IComicMetricSnapshotRepository;
 import com.sep.comiverse.repository.IComicRepository;
@@ -20,7 +21,10 @@ import com.sep.comiverse.repository.IGenreRepository;
 import com.sep.comiverse.repository.ISubmissionRepository;
 import com.sep.comiverse.repository.projection.ComicChapterCountProjection;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +32,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.text.Normalizer;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.HashSet;
@@ -52,6 +57,38 @@ public class AuthorComicService {
     private final AuditLogService auditLogService;
     private final com.sep.comiverse.plugin.crud.ComicCrudPlugin comicCrudPlugin;
     private final AuthorLicenseService authorLicenseService;
+
+    /*
+     * Keep quota/rate-limit enforcement inside the existing comic service so the
+     * workflow does not gain a new service/entity. Field injection is deliberate
+     * here: it preserves the existing constructor used by the current unit tests.
+     */
+    @Autowired(required = false)
+    private IAuthorRepository authorRepository;
+
+    @Autowired(required = false)
+    private RedisTemplate<String, Object> redisTemplate;
+
+    @Value("${author.comic.max-active-work:30}")
+    private long maxActiveWorkComics = 30L;
+
+    @Value("${author.comic.max-pending-reviews:5}")
+    private long maxPendingComicReviews = 5L;
+
+    @Value("${author.comic.max-published:1000}")
+    private long maxPublishedComics = 1000L;
+
+    @Value("${author.comic.create-per-minute:3}")
+    private long createComicsPerMinute = 3L;
+
+    @Value("${author.comic.create-per-day:10}")
+    private long createComicsPerDay = 10L;
+
+    @Value("${author.comic.submit-per-minute:3}")
+    private long submitComicsPerMinute = 3L;
+
+    @Value("${author.comic.submit-per-day:5}")
+    private long submitComicsPerDay = 5L;
 
     @Transactional
     public void confirmModEdit(UUID comicId, UUID authorId) {
@@ -119,6 +156,14 @@ public class AuthorComicService {
     public AuthorComicResponse createComic(AuthorComicCreateRequest request) {
         validateCreateRequest(request);
         authorLicenseService.assertPublishingAllowed(request.getAuthorId());
+        enforceAuthorRateLimit(
+                request.getAuthorId(),
+                "create",
+                createComicsPerMinute,
+                createComicsPerDay
+        );
+        lockAuthorQuotaScope(request.getAuthorId());
+        enforceActiveWorkComicQuota(request.getAuthorId());
 
         Set<GenreEntity> genres = resolveGenres(request.getGenres());
         ComicPublicationStatus publicationStatus = request.getPublicationStatus() == null
@@ -250,6 +295,12 @@ public class AuthorComicService {
     public AuthorComicResponse submitForReview(UUID comicId, UUID authorId) {
         authorLicenseService.assertPublishingAllowed(authorId);
         ComicEntity comic = getOwnedComic(comicId, authorId);
+        enforceAuthorRateLimit(
+                authorId,
+                "submit-review",
+                submitComicsPerMinute,
+                submitComicsPerDay
+        );
 
         long chapterCount = chapterRepository.countByComic_IdAndDeletedFalse(comicId);
         if (chapterCount < 1) {
@@ -267,6 +318,9 @@ public class AuthorComicService {
                 || comic.getModerationStatus() == ComicModerationStatus.SUBMITTED_FOR_REVIEW) {
             throw new CustomException(409, "Comic has already been submitted for review", HttpStatus.CONFLICT);
         }
+
+        lockAuthorQuotaScope(authorId);
+        enforcePendingComicReviewQuota(authorId);
 
         createComicProfileReviewSubmission(comic);
         comic.setModerationStatus(ComicModerationStatus.SUBMITTED_FOR_REVIEW);
@@ -455,6 +509,149 @@ public class AuthorComicService {
                 .isModEdited(comic.getIsModEdited())
                 .previousStateSnapshot(comic.getPreviousStateSnapshot())
                 .build();
+    }
+
+    /**
+     * Shared publish guard used by every existing code path that can move a comic
+     * to PUBLISHED. Locking the Author row keeps the 1,000-comic cap safe under
+     * concurrent moderator approvals without introducing a quota entity.
+     */
+    @Transactional
+    public void assertPublishedComicQuotaAvailable(ComicEntity comic) {
+        if (comic == null
+                || comic.getModerationStatus() == ComicModerationStatus.PUBLISHED
+                || maxPublishedComics <= 0) {
+            return;
+        }
+
+        UUID authorUserId = comic.getAuthorId();
+        if (authorUserId == null) {
+            throw new CustomException(
+                    409,
+                    "Comic author is missing; the comic cannot be published safely.",
+                    HttpStatus.CONFLICT
+            );
+        }
+
+        lockAuthorQuotaScope(authorUserId);
+        long publishedCount = comicRepository.countByAuthorIdAndModerationStatusAndDeletedFalse(
+                authorUserId,
+                ComicModerationStatus.PUBLISHED
+        );
+        if (publishedCount >= maxPublishedComics) {
+            throw new CustomException(
+                    409,
+                    "Published comic limit reached (" + maxPublishedComics + ") for this author.",
+                    HttpStatus.CONFLICT
+            );
+        }
+    }
+
+    private void enforceActiveWorkComicQuota(UUID authorId) {
+        if (maxActiveWorkComics <= 0) {
+            return;
+        }
+        long activeWorkCount = comicRepository.countByAuthorIdAndModerationStatusInAndDeletedFalse(
+                authorId,
+                List.of(
+                        ComicModerationStatus.DRAFT,
+                        ComicModerationStatus.REJECTED,
+                        ComicModerationStatus.NEEDS_CHANGES,
+                        ComicModerationStatus.UNPUBLISHED
+                )
+        );
+        if (activeWorkCount >= maxActiveWorkComics) {
+            throw new CustomException(
+                    409,
+                    "Active comic draft/rework limit reached (" + maxActiveWorkComics + "). Finish, submit, or delete an existing comic before creating another.",
+                    HttpStatus.CONFLICT
+            );
+        }
+    }
+
+    private void enforcePendingComicReviewQuota(UUID authorId) {
+        if (maxPendingComicReviews <= 0) {
+            return;
+        }
+        long pendingCount = submissionRepository
+                .countByAuthorIdAndChapterIdIsNullAndQueueTypeIgnoreCaseAndStatusIgnoreCaseAndDeletedFalse(
+                        authorId,
+                        "author",
+                        "pending"
+                );
+        if (pendingCount >= maxPendingComicReviews) {
+            throw new CustomException(
+                    409,
+                    "Comic review queue limit reached (" + maxPendingComicReviews + "). Wait for a moderator to process an existing submission before submitting another comic.",
+                    HttpStatus.CONFLICT
+            );
+        }
+    }
+
+    private void lockAuthorQuotaScope(UUID authorUserId) {
+        if (authorRepository == null || authorUserId == null) {
+            return;
+        }
+        authorRepository.findByUserIdAndDeletedFalseForUpdate(authorUserId)
+                .orElseThrow(() -> new CustomException(
+                        404,
+                        "Author profile not found",
+                        HttpStatus.NOT_FOUND
+                ));
+    }
+
+    /**
+     * Redis-backed fixed-window protection for abuse bursts. If Redis is
+     * temporarily unavailable, normal business validation remains available
+     * instead of breaking comic creation/review flows.
+     */
+    private void enforceAuthorRateLimit(
+            UUID authorId,
+            String action,
+            long perMinuteLimit,
+            long perDayLimit
+    ) {
+        if (redisTemplate == null || authorId == null) {
+            return;
+        }
+        try {
+            long nowSeconds = Instant.now().getEpochSecond();
+            checkRateWindow(
+                    "author:comic:rate:" + action + ":" + authorId + ":minute:" + (nowSeconds / 60L),
+                    perMinuteLimit,
+                    Duration.ofMinutes(2),
+                    "Too many " + action + " requests. Please retry shortly."
+            );
+            checkRateWindow(
+                    "author:comic:rate:" + action + ":" + authorId + ":day:" + (nowSeconds / 86_400L),
+                    perDayLimit,
+                    Duration.ofDays(2),
+                    "Daily " + action + " limit reached. Please try again later."
+            );
+        } catch (CustomException error) {
+            throw error;
+        } catch (RuntimeException redisUnavailable) {
+            // Fail open only for Redis/infrastructure errors. Quota, ownership,
+            // license and moderation checks below still fail closed.
+        }
+    }
+
+    private void checkRateWindow(
+            String key,
+            long limit,
+            Duration ttl,
+            String message
+    ) {
+        if (limit <= 0) {
+            return;
+        }
+        Long count = redisTemplate.opsForValue().increment(key);
+        if (count != null && count == 1L) {
+            redisTemplate.expire(key, ttl);
+        }
+        if (count != null && count > limit) {
+            throw new CustomException(429, message, HttpStatus.TOO_MANY_REQUESTS);
+        }
     }
 
     private void validateCreateRequest(AuthorComicCreateRequest request) {

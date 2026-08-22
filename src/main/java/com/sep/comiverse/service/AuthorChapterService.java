@@ -96,10 +96,8 @@ public class AuthorChapterService {
             List<MultipartFile> files,
             List<String> relativePaths
     ) {
-        if (request != null) {
-            authorLicenseService.assertPublishingAllowed(request.getAuthorId());
-        }
         validateUploadRequest(request);
+        authorLicenseService.assertPublishingAllowed(request.getAuthorId());
         String chapterNumber = normalizeChapterNumber(request.getChapterNumber());
         if (!StringUtils.hasText(chapterNumber)) {
             throw new CustomException(400, "Chapter number is required", HttpStatus.BAD_REQUEST);

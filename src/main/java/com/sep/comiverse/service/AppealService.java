@@ -4,11 +4,9 @@ import com.sep.comiverse.dto.AppealResolveRequestDTO;
 import com.sep.comiverse.dto.AppealTicketRequestDTO;
 import com.sep.comiverse.dto.AppealTicketResponseDTO;
 import com.sep.comiverse.entity.AppealTicketEntity;
-import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.entity.enums.AppealStatus;
 import com.sep.comiverse.repository.IAppealTicketRepository;
 import com.sep.comiverse.repository.IUserRepository;
-import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.data.domain.Page;
@@ -49,6 +47,9 @@ public class AppealService {
     private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
     private final org.springframework.data.redis.core.RedisTemplate<String, Object> redisTemplate;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private AuthorComicService authorComicService;
 
     @Transactional
     public AppealTicketResponseDTO createAppeal(UUID authorId, AppealTicketRequestDTO requestDTO) {
@@ -183,6 +184,9 @@ public class AppealService {
                     log.info("[APPEAL RESTORE] Starting restore for comic {} from ticket {}", comic.getId(), entity.getId());
                     
                     if (comic.getModerationStatus() == ComicModerationStatus.REJECTED || comic.getModerationStatus() == ComicModerationStatus.NEEDS_CHANGES) {
+                        if (authorComicService != null) {
+                            authorComicService.assertPublishedComicQuotaAvailable(comic);
+                        }
                         comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
                     }
                     comic.setRejectionReason(null);

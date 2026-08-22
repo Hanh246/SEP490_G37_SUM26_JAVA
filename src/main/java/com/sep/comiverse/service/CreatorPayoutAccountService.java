@@ -364,18 +364,10 @@ public class CreatorPayoutAccountService {
         );
         profile.setAccountCountry(country);
 
-        String stripeCurrency = stripeAccount
-                .path("default_currency")
-                .asText(profile.getCurrency());
-        try {
-            CreatorPayoutSettingsService.ResolvedCurrency resolved =
-                    payoutSettingsService.resolveCurrency(stripeCurrency);
-            profile.setCurrency(resolved.code());
-        } catch (CustomException ex) {
-            if (!StringUtils.hasText(profile.getCurrency())) {
-                profile.setCurrency("USD");
-            }
-        }
+        // ComiVerse settles every creator payout in USD. A legacy connected
+        // account may still report another Stripe default currency, but that must
+        // never change the application's payout currency back from USD.
+        profile.setCurrency("USD");
 
         profile.setDetailsSubmitted(
                 stripeAccount.path("details_submitted").asBoolean(false)
