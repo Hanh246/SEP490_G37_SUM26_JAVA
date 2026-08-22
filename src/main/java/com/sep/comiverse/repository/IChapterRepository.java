@@ -94,6 +94,11 @@ public interface IChapterRepository extends AbstractCrudRepository<ChapterEntity
             ChapterStatus moderationStatus
     );
 
+    long countByComic_AuthorIdAndModerationStatusAndDeletedFalse(
+            UUID authorId,
+            ChapterStatus moderationStatus
+    );
+
     @Query("""
         SELECT new com.sep.comiverse.dto.ChapterLiteDTO(
             c.id,
