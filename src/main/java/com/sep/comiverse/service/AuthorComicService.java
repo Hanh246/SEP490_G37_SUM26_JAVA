@@ -361,9 +361,9 @@ public class AuthorComicService {
                 .chapterCount(Math.toIntExact(chapterRepository.countByComic_IdAndDeletedFalse(comicId)))
                 .ratingAverage(comic.getRatingAverage() == null ? 0.0 : comic.getRatingAverage())
                 .ratingCount(defaultInteger(comic.getRatingCount()))
-                .estimatedRevenue(snapshot == null || snapshot.getEstimatedRevenue() == null
-                        ? BigDecimal.ZERO
-                        : snapshot.getEstimatedRevenue())
+                .estimatedRevenue(snapshot != null && snapshot.getEstimatedRevenue() != null
+                        ? snapshot.getEstimatedRevenue()
+                        : BigDecimal.valueOf(defaultLong(comic.getViewCount()) * 0.01))
                 .snapshotAt(snapshot == null ? new Date() : toDate(snapshot.getCreatedAt()))
                 .build();
     }
