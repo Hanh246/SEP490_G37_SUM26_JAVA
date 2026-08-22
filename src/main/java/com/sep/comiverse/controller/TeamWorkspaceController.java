@@ -11,6 +11,7 @@ import com.sep.comiverse.dto.ChapterLiteDTO;
 import com.sep.comiverse.entity.*;
 import com.sep.comiverse.entity.enums.ChapterStatus;
 import com.sep.comiverse.entity.enums.ChapterTranslationStatus;
+import com.sep.comiverse.entity.enums.ReportAssignedRole;
 import com.sep.comiverse.entity.enums.ReportStatus;
 import com.sep.comiverse.entity.enums.ReportTargetType;
 import com.sep.comiverse.repository.*;
@@ -1877,10 +1878,11 @@ public class TeamWorkspaceController {
         if (translationIds.isEmpty()) {
             return Optional.empty();
         }
-        return reportRepository.findByTargetTypeAndTargetIdInAndStatusAndDeletedFalseOrderByResolvedAtDesc(
+        return reportRepository.findByTargetTypeAndTargetIdInAndStatusAndCategory_AssignedRoleAndDeletedFalseOrderByResolvedAtDesc(
                         ReportTargetType.CHAPTER_TRANSLATIONS,
                         translationIds,
-                        ReportStatus.ACCEPTED
+                        ReportStatus.ACCEPTED,
+                        ReportAssignedRole.PROJECT_LEADER
                 ).stream()
                 .findFirst();
     }
