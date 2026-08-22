@@ -1,6 +1,7 @@
 package com.sep.comiverse.repository;
 
 import com.sep.comiverse.entity.CreatorPayoutRequestEntity;
+import com.sep.comiverse.entity.enums.CreatorPayoutRole;
 import com.sep.comiverse.entity.enums.CreatorPayoutStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
@@ -36,6 +37,20 @@ public interface ICreatorPayoutRequestRepository extends AbstractCrudRepository<
             @Param("userId") UUID userId,
             @Param("throughMonth") String throughMonth,
             @Param("statuses") List<CreatorPayoutStatus> statuses
+    );
+
+    @Query("""
+            SELECT COALESCE(SUM(COALESCE(p.baseAmountUsd, p.amount)), 0)
+            FROM CreatorPayoutRequestEntity p
+            WHERE p.userId = :userId
+              AND p.role = :role
+              AND p.status = :status
+              AND p.deleted = false
+            """)
+    BigDecimal sumPaidAmountUsdByUserIdAndRole(
+            @Param("userId") UUID userId,
+            @Param("role") CreatorPayoutRole role,
+            @Param("status") CreatorPayoutStatus status
     );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

@@ -38,6 +38,7 @@ public class AuthorDashboardMetricsResponse {
         private Long pendingReviews;
         private Double approvedRate;
         private BigDecimal estimatedRevenue;
+        private BigDecimal totalPaid;
     }
 
     @Data
