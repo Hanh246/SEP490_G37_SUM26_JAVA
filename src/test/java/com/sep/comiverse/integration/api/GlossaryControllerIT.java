@@ -22,13 +22,13 @@ class GlossaryControllerIT extends AbstractBlackboxIT {
     private OcrService ocrService;
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-001 [UC-47]")
+    @DisplayName("TC-INT-GlossaryController-001")
     void listUnauthorized() throws Exception {
         getJson("/glossary/project/" + UUID.randomUUID()).andExpect(status().is4xxClientError());
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-002 [UC-47]")
+    @DisplayName("TC-INT-GlossaryController-002")
     void listAsLeader() throws Exception {
         getJson("/glossary/project/" + UUID.randomUUID(), fixedToken(LEADER_USER))
                 .andExpect(status().isOk())
@@ -36,13 +36,13 @@ class GlossaryControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-003 [UC-47]")
+    @DisplayName("TC-INT-GlossaryController-003")
     void createAsTranslator() throws Exception {
         createTerm(fixedToken(TRANS_USER), UUID.randomUUID(), "senpai", "đàn anh");
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-004 [UC-47]")
+    @DisplayName("TC-INT-GlossaryController-004")
     void missingSource() throws Exception {
         postJson("/glossary/project/" + UUID.randomUUID(), """
                 {"target":"đàn anh"}
@@ -51,7 +51,7 @@ class GlossaryControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-005 [UC-47]")
+    @DisplayName("TC-INT-GlossaryController-005")
     void missingTarget() throws Exception {
         postJson("/glossary/project/" + UUID.randomUUID(), """
                 {"source":"senpai"}
@@ -60,7 +60,7 @@ class GlossaryControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-006 [UC-47]")
+    @DisplayName("TC-INT-GlossaryController-006")
     void blankSource() throws Exception {
         postJson("/glossary/project/" + UUID.randomUUID(), """
                 {"source":"   ","target":"đàn anh"}
@@ -69,7 +69,7 @@ class GlossaryControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-007 [UC-47]")
+    @DisplayName("TC-INT-GlossaryController-007")
     void listAfterCreate() throws Exception {
         String translator = fixedToken(TRANS_USER);
         UUID comicId = UUID.randomUUID();
@@ -81,7 +81,7 @@ class GlossaryControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-008 [UC-47]")
+    @DisplayName("TC-INT-GlossaryController-008")
     void updateTerm() throws Exception {
         String translator = fixedToken(TRANS_USER);
         UUID termId = createTerm(translator, UUID.randomUUID(), "senpai", "đàn anh");
@@ -93,7 +93,7 @@ class GlossaryControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-009 [UC-47]")
+    @DisplayName("TC-INT-GlossaryController-009")
     void updateUnknown() throws Exception {
         putJson("/glossary/" + UUID.randomUUID(), """
                 {"target":"x"}
@@ -102,7 +102,7 @@ class GlossaryControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-010 [UC-47]")
+    @DisplayName("TC-INT-GlossaryController-010")
     void deleteTerm() throws Exception {
         String translator = fixedToken(TRANS_USER);
         UUID termId = createTerm(translator, UUID.randomUUID(), "delete-me", "xóa");
@@ -112,21 +112,21 @@ class GlossaryControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-011 [UC-47]")
+    @DisplayName("TC-INT-GlossaryController-011")
     void deleteUnknown() throws Exception {
         deleteJson("/glossary/" + UUID.randomUUID(), fixedToken(LEADER_USER))
                 .andExpect(status().isNotFound());
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-012 [UC-16]")
+    @DisplayName("TC-INT-GlossaryController-012")
     void suggestMissingInput() throws Exception {
         postJson("/glossary/project/" + UUID.randomUUID() + "/suggest", "{}", fixedToken(TRANS_USER))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-013 [UC-16]")
+    @DisplayName("TC-INT-GlossaryController-013")
     void suggestUnknownPage() throws Exception {
         postJson("/glossary/project/" + UUID.randomUUID() + "/suggest", """
                 {"pageId":"%s"}
@@ -135,7 +135,7 @@ class GlossaryControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-014 [UC-16]")
+    @DisplayName("TC-INT-GlossaryController-014")
     void suggestAsTranslator() throws Exception {
         when(ocrService.extractTextFromImageUrl(anyString())).thenReturn("Hello senpai");
         postJson("/glossary/project/" + UUID.randomUUID() + "/suggest", """
@@ -147,7 +147,7 @@ class GlossaryControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-015 [UC-16]")
+    @DisplayName("TC-INT-GlossaryController-015")
     void suggestMatchesTerm() throws Exception {
         String translator = fixedToken(TRANS_USER);
         UUID comicId = UUID.randomUUID();
@@ -162,14 +162,14 @@ class GlossaryControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-016 [UC-47]")
+    @DisplayName("TC-INT-GlossaryController-016")
     void listComicAlias() throws Exception {
         getJson("/glossary/comic/" + UUID.randomUUID(), fixedToken(TRANS_USER))
                 .andExpect(status().isOk());
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-017 [UC-47]")
+    @DisplayName("TC-INT-GlossaryController-017")
     void createAsLeader() throws Exception {
         postJson("/glossary/comic/" + UUID.randomUUID(), """
                 {"source":"kawaii","target":"dễ thương"}
@@ -178,7 +178,7 @@ class GlossaryControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-018 [UC-16]")
+    @DisplayName("TC-INT-GlossaryController-018")
     void suggestAsLeader() throws Exception {
         when(ocrService.extractTextFromImageUrl(anyString())).thenReturn("empty page");
         postJson("/glossary/project/" + UUID.randomUUID() + "/suggest", """
@@ -189,14 +189,14 @@ class GlossaryControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-019 [UC-47]")
+    @DisplayName("TC-INT-GlossaryController-019")
     void listAsTranslator() throws Exception {
         getJson("/glossary/project/" + UUID.randomUUID(), fixedToken(TRANS_USER))
                 .andExpect(status().isOk());
     }
 
     @Test
-    @DisplayName("TC-INT-GlossaryController-020 [UC-47]")
+    @DisplayName("TC-INT-GlossaryController-020")
     void updateNoteAsLeader() throws Exception {
         UUID termId = createTerm(fixedToken(TRANS_USER), UUID.randomUUID(), "sensei", "thầy");
         putJson("/glossary/" + termId, """

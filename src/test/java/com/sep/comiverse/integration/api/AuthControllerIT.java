@@ -12,7 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AuthControllerIT extends AbstractBlackboxIT {
 
     @Test
-    @DisplayName("TC-INT-AuthController-001 [UC-32]")
+    @DisplayName("TC-INT-AuthController-001")
     void registerValid() throws Exception {
         String username = "r" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 8);
         postJson("/auth/register", """
@@ -24,7 +24,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-002 [UC-32]")
+    @DisplayName("TC-INT-AuthController-002")
     void registerBlankUsername() throws Exception {
         postJson("/auth/register", """
                 {"username":"","password":"Test@1234","fullName":"Black Box User","email":"blankuser@example.com"}
@@ -34,7 +34,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-003 [UC-32]")
+    @DisplayName("TC-INT-AuthController-003")
     void registerInvalidEmail() throws Exception {
         postJson("/auth/register", """
                 {"username":"validuser1","password":"Test@1234","fullName":"Black Box User","email":"not-an-email"}
@@ -43,7 +43,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-004 [UC-32]")
+    @DisplayName("TC-INT-AuthController-004")
     void registerShortPassword() throws Exception {
         postJson("/auth/register", """
                 {"username":"validuser2","password":"123","fullName":"Black Box User","email":"shortpass@example.com"}
@@ -52,7 +52,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-005 [UC-32]")
+    @DisplayName("TC-INT-AuthController-005")
     void registerDuplicateUsername() throws Exception {
         SeededUser reader = fixedUser(READER_USER);
         postJson("/auth/register", """
@@ -62,7 +62,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-006 [UC-32]")
+    @DisplayName("TC-INT-AuthController-006")
     void registerDuplicateEmail() throws Exception {
         SeededUser reader = fixedUser(READER_USER);
         // Username must be new; colliding on reader_test's email is the case under test.
@@ -73,7 +73,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-007 [UC-01]")
+    @DisplayName("TC-INT-AuthController-007")
     void loginValid() throws Exception {
         postJson("/auth/login", """
                 {"username":"%s","password":"%s"}
@@ -83,7 +83,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-008 [UC-01]")
+    @DisplayName("TC-INT-AuthController-008")
     void loginWrongPassword() throws Exception {
         postJson("/auth/login", """
                 {"username":"%s","password":"WrongPass1!"}
@@ -92,7 +92,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-009 [UC-01]")
+    @DisplayName("TC-INT-AuthController-009")
     void loginUnknown() throws Exception {
         postJson("/auth/login", """
                 {"username":"nobody_here","password":"Test@1234"}
@@ -101,7 +101,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-010 [UC-01 / UC-04]")
+    @DisplayName("TC-INT-AuthController-010")
     void loginPending() throws Exception {
         postJson("/auth/login", """
                 {"username":"%s","password":"%s"}
@@ -110,7 +110,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-011 [UC-01]")
+    @DisplayName("TC-INT-AuthController-011")
     void loginBanned() throws Exception {
         postJson("/auth/login", """
                 {"username":"%s","password":"%s"}
@@ -119,13 +119,13 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-012 [UC-03]")
+    @DisplayName("TC-INT-AuthController-012")
     void meUnauthorized() throws Exception {
         getJson("/auth/me").andExpect(status().isUnauthorized());
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-013 [UC-03]")
+    @DisplayName("TC-INT-AuthController-013")
     void meAuthorized() throws Exception {
         getJson("/auth/me", fixedToken(READER_USER))
                 .andExpect(status().isOk())
@@ -133,7 +133,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-014 [UC-03]")
+    @DisplayName("TC-INT-AuthController-014")
     void changePasswordUnauthorized() throws Exception {
         postJson("/auth/change-password", """
                 {"currentPassword":"Test@1234","newPassword":"NewPass123!"}
@@ -142,7 +142,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-015 [UC-03]")
+    @DisplayName("TC-INT-AuthController-015")
     void changePasswordWrongCurrent() throws Exception {
         postJson("/auth/change-password", """
                 {"currentPassword":"WrongOld1!","newPassword":"NewPass123!"}
@@ -151,7 +151,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-016 [UC-03]")
+    @DisplayName("TC-INT-AuthController-016")
     void changePasswordValid() throws Exception {
         postJson("/auth/change-password", """
                 {"currentPassword":"%s","newPassword":"NewPass123!"}
@@ -161,7 +161,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-017 [UC-03]")
+    @DisplayName("TC-INT-AuthController-017")
     void profileUnauthorized() throws Exception {
         putJson("/auth/profile", """
                 {"fullName":"Updated Name"}
@@ -170,7 +170,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-018 [UC-03]")
+    @DisplayName("TC-INT-AuthController-018")
     void profileValid() throws Exception {
         putJson("/auth/profile", """
                 {"fullName":"Updated Black Box"}
@@ -180,7 +180,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-019 [UC-45]")
+    @DisplayName("TC-INT-AuthController-019")
     void forgotUnknownEmail() throws Exception {
         postJson("/auth/forgot-password", """
                 {"email":"missing@example.com"}
@@ -190,7 +190,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-020 [UC-45]")
+    @DisplayName("TC-INT-AuthController-020")
     void resetInvalidOtp() throws Exception {
         postJson("/auth/reset-password", """
                 {"email":"%s@example.com","otp":"000000","newPassword":"NewPass123!"}
@@ -199,7 +199,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-021 [UC-04]")
+    @DisplayName("TC-INT-AuthController-021")
     void verifyInvalidOtp() throws Exception {
         postJson("/auth/verify-email", """
                 {"email":"anyone@example.com","otp":"000000"}
@@ -208,7 +208,7 @@ class AuthControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthController-022 [UC-37]")
+    @DisplayName("TC-INT-AuthController-022")
     void registerStaffForbidden() throws Exception {
         postJson("/auth/register-staff", """
                 {"username":"staffone","password":"Test@1234","fullName":"Staff","email":"staffone@example.com","role":"MODERATOR"}

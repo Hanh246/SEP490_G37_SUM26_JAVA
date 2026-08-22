@@ -13,7 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AuthorComicControllerIT extends AbstractBlackboxIT {
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-001 [UC-17]")
+    @DisplayName("TC-INT-AuthorComicController-001")
     void createUnauthorized() throws Exception {
         postJson("/author/comics", """
                 {"title":"Draft","language":"en","cover":"https://cdn.example.com/c.png"}
@@ -22,22 +22,30 @@ class AuthorComicControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-002 [UC-17]")
+    @DisplayName("TC-INT-AuthorComicController-002")
     void createForbidden() throws Exception {
         postJson("/author/comics", """
-                {"title":"Draft","language":"en","cover":"https://cdn.example.com/c.png"}
+                {
+                  "title":"Draft",
+                  "language":"en",
+                  "cover":"https://cdn.example.com/c.png",
+                  "summary":"Reader should not create",
+                  "minimumAge":13,
+                  "genres":["Action"],
+                  "publicationStatus":"ONGOING"
+                }
                 """, fixedToken(READER_USER))
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-003 [UC-17]")
+    @DisplayName("TC-INT-AuthorComicController-003")
     void createAsAuthor() throws Exception {
         createAuthorComic(fixedToken(AUTHOR_USER), "Author Draft One");
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-004 [UC-17]")
+    @DisplayName("TC-INT-AuthorComicController-004")
     void missingTitle() throws Exception {
         postJson("/author/comics", """
                 {"language":"en","cover":"https://cdn.example.com/c.png"}
@@ -46,7 +54,7 @@ class AuthorComicControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-005 [UC-17]")
+    @DisplayName("TC-INT-AuthorComicController-005")
     void missingCover() throws Exception {
         postJson("/author/comics", """
                 {"title":"No Cover","language":"en"}
@@ -55,7 +63,7 @@ class AuthorComicControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-006 [UC-17]")
+    @DisplayName("TC-INT-AuthorComicController-006")
     void minAgeTooHigh() throws Exception {
         postJson("/author/comics", """
                 {"title":"Adult","language":"en","cover":"https://cdn.example.com/c.png","minimumAge":30}
@@ -64,7 +72,7 @@ class AuthorComicControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-007 [UC-17]")
+    @DisplayName("TC-INT-AuthorComicController-007")
     void listOwn() throws Exception {
         String authorToken = fixedToken(AUTHOR_USER);
         createAuthorComic(authorToken, "Listed Draft");
@@ -74,7 +82,7 @@ class AuthorComicControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-008 [UC-17]")
+    @DisplayName("TC-INT-AuthorComicController-008")
     void getOwn() throws Exception {
         String authorToken = fixedToken(AUTHOR_USER);
         UUID id = createAuthorComic(authorToken, "Owned Draft");
@@ -84,35 +92,51 @@ class AuthorComicControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-009 [UC-17]")
+    @DisplayName("TC-INT-AuthorComicController-009")
     void getForeign() throws Exception {
         UUID id = createAuthorComic(fixedToken(AUTHOR_USER), "Foreign Draft");
         getJson("/author/comics/" + id, fixedToken(TRANS_USER)).andExpect(status().isForbidden());
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-010 [UC-17]")
+    @DisplayName("TC-INT-AuthorComicController-010")
     void updateOwn() throws Exception {
         String authorToken = fixedToken(AUTHOR_USER);
         UUID id = createAuthorComic(authorToken, "Edit Me");
         putJson("/author/comics/" + id, """
-                {"title":"Edited Draft","language":"en","cover":"https://cdn.example.com/c.png","summary":"Edited"}
+                {
+                  "title":"Edited Draft",
+                  "language":"en",
+                  "cover":"https://cdn.example.com/c.png",
+                  "summary":"Edited",
+                  "minimumAge":13,
+                  "genres":["Action"],
+                  "publicationStatus":"ONGOING"
+                }
                 """, authorToken)
                 .andExpect(status().isOk());
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-011 [UC-17]")
+    @DisplayName("TC-INT-AuthorComicController-011")
     void updateForbidden() throws Exception {
         UUID id = createAuthorComic(fixedToken(AUTHOR_USER), "Reader Edit");
         putJson("/author/comics/" + id, """
-                {"title":"Hacked","language":"en","cover":"https://cdn.example.com/c.png"}
+                {
+                  "title":"Hacked",
+                  "language":"en",
+                  "cover":"https://cdn.example.com/c.png",
+                  "summary":"Hacked summary",
+                  "minimumAge":13,
+                  "genres":["Action"],
+                  "publicationStatus":"ONGOING"
+                }
                 """, fixedToken(READER_USER))
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-012 [UC-17]")
+    @DisplayName("TC-INT-AuthorComicController-012")
     void deleteOwn() throws Exception {
         String authorToken = fixedToken(AUTHOR_USER);
         UUID id = createAuthorComic(authorToken, "Delete Me");
@@ -120,7 +144,7 @@ class AuthorComicControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-013 [UC-19]")
+    @DisplayName("TC-INT-AuthorComicController-013")
     void submitWithoutChapters() throws Exception {
         String authorToken = fixedToken(AUTHOR_USER);
         UUID id = createAuthorComic(authorToken, "Empty Review");
@@ -129,7 +153,7 @@ class AuthorComicControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-014 [UC-19]")
+    @DisplayName("TC-INT-AuthorComicController-014")
     void submitWithChapter() throws Exception {
         String authorToken = fixedToken(AUTHOR_USER);
         String admin = fixedToken(ADMIN_USER);
@@ -140,7 +164,7 @@ class AuthorComicControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-015 [UC-19]")
+    @DisplayName("TC-INT-AuthorComicController-015")
     void submitTwice() throws Exception {
         String authorToken = fixedToken(AUTHOR_USER);
         String admin = fixedToken(ADMIN_USER);
@@ -151,7 +175,7 @@ class AuthorComicControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-016 [UC-54]")
+    @DisplayName("TC-INT-AuthorComicController-016")
     void appealTooShort() throws Exception {
         String authorToken = fixedToken(AUTHOR_USER);
         UUID id = createAuthorComic(authorToken, "Short Appeal");
@@ -162,7 +186,7 @@ class AuthorComicControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-017 [UC-54]")
+    @DisplayName("TC-INT-AuthorComicController-017")
     void appealValid() throws Exception {
         String authorToken = fixedToken(AUTHOR_USER);
         UUID id = createAuthorComic(authorToken, "Valid Appeal");
@@ -173,7 +197,7 @@ class AuthorComicControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-AuthorComicController-018 [UC-17]")
+    @DisplayName("TC-INT-AuthorComicController-018")
     void confirmEdit() throws Exception {
         String authorToken = fixedToken(AUTHOR_USER);
         UUID id = createAuthorComic(authorToken, "Confirm Edit");
