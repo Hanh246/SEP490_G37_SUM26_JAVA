@@ -167,16 +167,14 @@ class StripeGatewayServiceTest {
                 .expect(requestTo(API + "/v1/products"))
                 .andExpect(captureHeader("Idempotency-Key", keys))
                 .andRespond(withSuccess("{\"id\":\"prod_1\"}", MediaType.APPLICATION_JSON));
-
-        harness.service().createProduct(plan);
-
-        plan.setPrice(new BigDecimal("12.00"));
-
         harness.server()
                 .expect(requestTo(API + "/v1/products"))
                 .andExpect(captureHeader("Idempotency-Key", keys))
                 .andRespond(withSuccess("{\"id\":\"prod_2\"}", MediaType.APPLICATION_JSON));
 
+        harness.service().createProduct(plan);
+
+        plan.setPrice(new BigDecimal("12.00"));
         harness.service().createProduct(plan);
 
         assertEquals(2, keys.size());
@@ -675,7 +673,7 @@ class StripeGatewayServiceTest {
                 "author@example.com",
                 "fr",
                 null,
-                "EUR"
+                "USD"
         );
 
         assertEquals("acct_fr", response.path("id").asText());
@@ -829,17 +827,17 @@ class StripeGatewayServiceTest {
                 .expect(requestTo(API + "/v1/accounts/acct_123"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(formContains(Map.of(
-                        "default_currency", "eur",
-                        "metadata[payout_currency]", "EUR"
+                        "default_currency", "usd",
+                        "metadata[payout_currency]", "USD"
                 )))
                 .andExpect(header(
                         "Idempotency-Key",
-                        "creator-connect-currency-acct_123-EUR"
+                        "creator-connect-currency-acct_123-USD"
                 ))
-                .andRespond(withSuccess("{\"id\":\"acct_123\",\"default_currency\":\"eur\"}", MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess("{\"id\":\"acct_123\",\"default_currency\":\"usd\"}", MediaType.APPLICATION_JSON));
 
         JsonNode response =
-                harness.service().updateConnectedAccountDefaultCurrency("acct_123", "eur");
+                harness.service().updateConnectedAccountDefaultCurrency("acct_123", "usd");
 
         assertEquals("acct_123", response.path("id").asText());
         harness.server().verify();

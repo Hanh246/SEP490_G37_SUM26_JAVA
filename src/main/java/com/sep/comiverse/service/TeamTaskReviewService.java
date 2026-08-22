@@ -46,6 +46,7 @@ public class TeamTaskReviewService {
     private final IReviewCommentRepository reviewCommentRepository;
     private final ChapterCrudPlugin chapterCrudPlugin;
     private final ObjectMapper objectMapper;
+    private final ReportService reportService;
 
     @Transactional
     public TeamTaskEntity returnToInProgress(TeamTaskEntity task) {
@@ -78,15 +79,22 @@ public class TeamTaskReviewService {
         }
         pageTranslationRepository.saveAll(pages);
 
-        publishChapterFromTask(task, pages, reviewerId);
+        ChapterTranslationEntity published = publishChapterFromTask(task, pages, reviewerId);
+        if (isRevisionTask(task) && published != null && published.getId() != null) {
+            reportService.markAcceptedLeaderTranslationReportsDone(published.getId());
+        }
         return taskRepository.save(task);
     }
 
-    private void publishChapterFromTask(TeamTaskEntity task, List<PageTranslationEntity> pages, UUID modId) {
+    private boolean isRevisionTask(TeamTaskEntity task) {
+        return task != null && "REVISION".equalsIgnoreCase(task.getTaskType());
+    }
+
+    private ChapterTranslationEntity publishChapterFromTask(TeamTaskEntity task, List<PageTranslationEntity> pages, UUID modId) {
         ChapterEntity chapter = task.getChapter();
         if (chapter == null) {
             log.warn("[publishChapterFromTask] task {} has no chapter linked, skipping publish", task.getId());
-            return;
+            return null;
         }
 
         chapter.setModerationStatus(ChapterStatus.PUBLISHED);
@@ -126,7 +134,7 @@ public class TeamTaskReviewService {
         translation.setProjectTeamId(teamId);
         translation.setStatus(ChapterTranslationStatus.PUBLISHED);
         translation.setDeleted(false);
-        chapterTranslationRepository.save(translation);
+        ChapterTranslationEntity savedTranslation = chapterTranslationRepository.save(translation);
         log.info("[publishChapterFromTask] Saved ChapterTranslationEntity for chapterId={} languageCode={} teamId={}",
                 savedChapter.getId(), languageCode, teamId);
 
@@ -134,6 +142,7 @@ public class TeamTaskReviewService {
             chapterCrudPlugin.evictChaptersCache(comic.getId());
         }
         chapterCrudPlugin.evictChapterDetailCache(savedChapter.getId());
+        return savedTranslation;
     }
 
     private String buildPagesBubblesJson(List<PageTranslationEntity> pages) {

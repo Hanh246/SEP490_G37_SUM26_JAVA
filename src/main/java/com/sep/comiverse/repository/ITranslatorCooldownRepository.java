@@ -17,9 +17,12 @@ public interface ITranslatorCooldownRepository extends JpaRepository<TranslatorC
     @Query("SELECT c FROM TranslatorCooldownEntity c WHERE c.userId = :userId AND c.cooldownUntil > :now")
     List<TranslatorCooldownEntity> findActiveCooldowns(@Param("userId") UUID userId, @Param("now") Instant now);
 
-    /** Find the latest active cooldown for a user (global — relatedTeamId is null) */
-    @Query("SELECT c FROM TranslatorCooldownEntity c WHERE c.userId = :userId AND c.cooldownUntil > :now ORDER BY c.cooldownUntil DESC")
-    List<TranslatorCooldownEntity> findActiveGlobalCooldowns(@Param("userId") UUID userId, @Param("now") Instant now);
+    @Query("SELECT c FROM TranslatorCooldownEntity c WHERE c.userId = :userId AND c.relatedTeamId = :teamId AND c.cooldownUntil > :now")
+    List<TranslatorCooldownEntity> findActiveCooldownsForTeam(
+            @Param("userId") UUID userId,
+            @Param("teamId") UUID teamId,
+            @Param("now") Instant now
+    );
 
     /** Clean up expired cooldowns */
     @Query("DELETE FROM TranslatorCooldownEntity c WHERE c.cooldownUntil < :now")

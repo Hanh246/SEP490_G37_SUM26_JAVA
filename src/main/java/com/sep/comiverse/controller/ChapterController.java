@@ -6,11 +6,11 @@ import com.sep.comiverse.dto.pagination.PaginationMetadata;
 import com.sep.comiverse.dto.pagination.PaginationResponse;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.dto.response.BaseResponse;
-import com.sep.comiverse.dto.response.PageResponseDto;
 import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
 import com.sep.comiverse.entity.enums.ComicModerationStatus;
+import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.plugin.crud.ChapterCrudPlugin;
@@ -59,10 +59,7 @@ public class ChapterController {
     private com.sep.comiverse.service.NotificationService notificationService;
 
     @org.springframework.beans.factory.annotation.Autowired
-    private com.sep.comiverse.service.AuthorChapterService authorChapterService;
-
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.sep.comiverse.service.ImageScrambleService imageScrambleService;
+    private com.sep.comiverse.service.AuthorComicService authorComicService;
 
     public ChapterController(ChapterCrudPlugin chapterCrudPlugin, JwtTokenUtil jwtTokenUtil) {
         this.chapterCrudPlugin = chapterCrudPlugin;
@@ -233,6 +230,7 @@ public class ChapterController {
             }
             if (comic != null) {
                 if (comic.getModerationStatus() != ComicModerationStatus.PUBLISHED) {
+                    authorComicService.assertPublishedComicQuotaAvailable(comic);
                     comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
                     comic.setApprovedById(modId);
                     comic.setApprovedAt(java.time.Instant.now());
@@ -271,6 +269,10 @@ public class ChapterController {
                     .success(true)
                     .data(responseDto)
                     .build());
+        } catch (CustomException ex) {
+            // Preserve quota/business HTTP status and let @Transactional roll back
+            // chapter/submission updates already made in this request.
+            throw ex;
         } catch (Exception ex) {
             java.io.StringWriter sw = new java.io.StringWriter();
             ex.printStackTrace(new java.io.PrintWriter(sw));
@@ -347,63 +349,6 @@ public class ChapterController {
         return ResponseEntity.ok(BaseResponse.<List<ChapterLiteDTO>>builder()
                 .success(true)
                 .data(chapterCrudPlugin.getChaptersByComicId(comicId, includeUnpublished))
-                .build());
-    }
-
-    /**
-     * Reader/Frontend lấy danh sách các trang truyện được bảo vệ bằng Image Slicing.
-     * REST API Endpoint: GET /chapters/{chapterId}/pages
-     */
-    @GetMapping("/{chapterId}/pages")
-    @Operation(summary = "Get protected scrambled pages for a chapter")
-    public ResponseEntity<BaseResponse<List<PageResponseDto>>> getProtectedChapterPages(
-            @PathVariable UUID chapterId
-    ) {
-        ChapterEntity chapter = chapterRepository.findById(chapterId)
-                .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Chapter with id " + chapterId + " not found"));
-
-        List<PageResponseDto> pages = new java.util.ArrayList<>();
-        List<ChapterEntity.ScrambledPageData> scrambledPages = chapter.getScrambledPages();
-
-        if (scrambledPages != null && !scrambledPages.isEmpty()) {
-            for (ChapterEntity.ScrambledPageData data : scrambledPages) {
-                pages.add(PageResponseDto.builder()
-                        .pageNumber(data.getPageNumber() != null ? data.getPageNumber() : 1)
-                        .scrambledImageUrl(data.getScrambledImageUrl())
-                        .cols(data.getCols() != null ? data.getCols() : 4)
-                        .rows(data.getRows() != null ? data.getRows() : 4)
-                        .encryptedMapping(data.getEncryptedMapping())
-                        .token(UUID.randomUUID().toString())
-                        .build());
-            }
-        }
-
-        return ResponseEntity.ok(BaseResponse.<List<PageResponseDto>>builder()
-                .success(true)
-                .data(pages)
-                .build());
-    }
-
-    /**
-     * Endpoint thủ công / migration: Tạo/sinh lại mảng Scrambled Pages cho 1 chapter cụ thể theo chapterId.
-     * REST API Endpoint: POST /chapters/{chapterId}/scramble (hoặc /api/v1/chapters/{chapterId}/scramble)
-     */
-    @PostMapping({"/{chapterId}/scramble", "/api/v1/chapters/{chapterId}/scramble"})
-    @Operation(summary = "Generate scrambled pages for a specific chapter ID")
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'MODERATOR', 'AUTHOR')")
-    public ResponseEntity<BaseResponse<List<PageResponseDto>>> generateScramblePagesForChapter(
-            @PathVariable UUID chapterId,
-            @RequestParam(defaultValue = "4") int rows,
-            @RequestParam(defaultValue = "4") int cols,
-            @RequestParam(defaultValue = "false") boolean forceRegenerate
-    ) {
-        List<PageResponseDto> pages = imageScrambleService.generateScrambledPagesForChapter(
-                chapterId, rows, cols, forceRegenerate
-        );
-
-        return ResponseEntity.ok(BaseResponse.<List<PageResponseDto>>builder()
-                .success(true)
-                .data(pages)
                 .build());
     }
 

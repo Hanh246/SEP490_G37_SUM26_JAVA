@@ -71,6 +71,9 @@ public class AuthorChapterService {
     @Value("${author.chapter.max-total-upload-size-bytes:104857600}")
     private long maxTotalUploadSizeBytes;
 
+    @Value("${author.chapter.max-active-uploads:2}")
+    private long maxActiveUploads;
+
     private String computeContentHash(List<ImageCandidate> images) {
         if (images == null || images.isEmpty()) return null;
         try {
@@ -96,10 +99,9 @@ public class AuthorChapterService {
             List<MultipartFile> files,
             List<String> relativePaths
     ) {
-        if (request != null) {
-            authorLicenseService.assertPublishingAllowed(request.getAuthorId());
-        }
         validateUploadRequest(request);
+        authorLicenseService.assertPublishingAllowed(request.getAuthorId());
+        enforceActiveChapterUploadQuota(request.getAuthorId());
         String chapterNumber = normalizeChapterNumber(request.getChapterNumber());
         if (!StringUtils.hasText(chapterNumber)) {
             throw new CustomException(400, "Chapter number is required", HttpStatus.BAD_REQUEST);
@@ -426,6 +428,21 @@ public class AuthorChapterService {
         }
         return chapterRepository.findByIdAndComic_IdAndComic_AuthorIdAndDeletedFalse(chapterId, comicId, authorId)
                 .orElseThrow(() -> new CustomException(404, "Chapter not found or does not belong to this author", HttpStatus.NOT_FOUND));
+    }
+
+    private void enforceActiveChapterUploadQuota(UUID authorId) {
+        if (maxActiveUploads <= 0) return;
+        long count = chapterRepository.countByComic_AuthorIdAndModerationStatusAndDeletedFalse(
+                authorId,
+                ChapterStatus.PREVIEW_READY
+        );
+        if (count >= maxActiveUploads) {
+            throw new CustomException(
+                    409,
+                    "Active chapter upload limit reached (" + maxActiveUploads + "). Please submit or delete your existing drafted chapters before uploading new ones.",
+                    HttpStatus.CONFLICT
+            );
+        }
     }
 
     private void validateUploadRequest(ChapterUploadRequest request) {

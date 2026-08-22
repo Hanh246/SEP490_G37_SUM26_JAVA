@@ -75,7 +75,7 @@ public class CloudinaryStorageService {
                     ObjectUtils.asMap(
                             "folder", folder,
                             "public_id", publicId,
-                            "resource_type", "raw",
+                            "resource_type", "auto",
                             "overwrite", true
                     )
             );

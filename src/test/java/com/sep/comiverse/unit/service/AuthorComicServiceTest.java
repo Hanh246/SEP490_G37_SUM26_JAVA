@@ -70,6 +70,7 @@ class AuthorComicServiceTest {
     @Mock private AuthorLicenseService authorLicenseService;
 
     private AuthorComicService service;
+    private GenreEntity defaultGenre;
 
     @BeforeEach
     void setUp() {
@@ -85,6 +86,32 @@ class AuthorComicServiceTest {
                 comicCrudPlugin,
                 authorLicenseService
         );
+
+        defaultGenre = genre("Action", "action");
+        lenient().when(genreRepository.findAll()).thenReturn(List.of(defaultGenre));
+    }
+
+    @Test
+    void publishedComicQuotaRejectsTheOneThousandAndFirstPublicComic() {
+        UUID authorId = UUID.randomUUID();
+        ComicEntity comic = ComicEntity.builder()
+                .authorId(authorId)
+                .title("Quota Comic")
+                .moderationStatus(ComicModerationStatus.SUBMITTED_FOR_REVIEW)
+                .build();
+
+        when(comicRepository.countByAuthorIdAndModerationStatusAndDeletedFalse(
+                authorId,
+                ComicModerationStatus.PUBLISHED
+        )).thenReturn(1000L);
+
+        CustomException error = assertThrows(
+                CustomException.class,
+                () -> service.assertPublishedComicQuotaAvailable(comic)
+        );
+
+        assertEquals(409, error.getCode());
+        assertTrue(error.getMessage().contains("Published comic limit reached"));
     }
 
     // ===== createComic =====
@@ -124,6 +151,27 @@ class AuthorComicServiceTest {
         assertEquals(0, saved.getChapterCount());
         assertEquals(comicId, response.getId());
         assertEquals(0, response.getChapterCount());
+    }
+
+    @Test
+    void createComicRejectsWhenActiveDraftAndReworkQuotaIsFull() {
+        UUID authorId = UUID.randomUUID();
+        AuthorComicCreateRequest request = createRequest(authorId);
+
+        when(comicRepository.countByAuthorIdAndModerationStatusInAndDeletedFalse(
+                eq(authorId),
+                anyCollection()
+        )).thenReturn(30L);
+
+        CustomException error = assertThrows(
+                CustomException.class,
+                () -> service.createComic(request)
+        );
+
+        assertEquals(409, error.getCode());
+        assertTrue(error.getMessage().contains("Active comic draft/rework limit reached"));
+        verify(comicRepository, never()).save(any(ComicEntity.class));
+        verify(authorLicenseService).assertPublishingAllowed(authorId);
     }
 
     @Test
@@ -996,6 +1044,34 @@ class AuthorComicServiceTest {
     }
 
     @Test
+    void submitForReviewRejectsWhenAuthorAlreadyHasFivePendingComicReviews() {
+        ComicEntity comic = ownedComic(ComicModerationStatus.DRAFT);
+        stubOwnedComic(comic);
+        when(chapterRepository.countByComic_IdAndDeletedFalse(comic.getId()))
+                .thenReturn(1L);
+        when(submissionRepository
+                .findTopByComicIdAndAuthorIdAndChapterIdIsNullAndQueueTypeIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(
+                        comic.getId(), comic.getAuthorId(), "author"
+                ))
+                .thenReturn(Optional.empty());
+        when(submissionRepository
+                .countByAuthorIdAndChapterIdIsNullAndQueueTypeIgnoreCaseAndStatusIgnoreCaseAndDeletedFalse(
+                        comic.getAuthorId(), "author", "pending"
+                ))
+                .thenReturn(5L);
+
+        CustomException error = assertThrows(
+                CustomException.class,
+                () -> service.submitForReview(comic.getId(), comic.getAuthorId())
+        );
+
+        assertEquals(409, error.getCode());
+        assertTrue(error.getMessage().contains("Comic review queue limit reached"));
+        verify(submissionRepository, never()).save(any(SubmissionEntity.class));
+        verify(comicRepository, never()).save(any(ComicEntity.class));
+    }
+
+    @Test
     void submitForReviewCreatesModeratorQueueItemAndNotification() {
         ComicEntity comic = ownedComic(ComicModerationStatus.DRAFT);
         stubOwnedComic(comic);
@@ -1500,15 +1576,23 @@ class AuthorComicServiceTest {
         request.setTitle("  My Comic  ");
         request.setSummary("  A story summary  ");
         request.setLanguage("  English  ");
-        request.setMinimumAge(null);
+        request.setMinimumAge(13);
         request.setCover("  https://cdn.example/cover.jpg  ");
-        request.setGenres(List.of());
+        request.setGenres(List.of("Action"));
+        request.setPublicationStatus(ComicPublicationStatus.ONGOING);
         return request;
     }
 
     private AuthorComicUpdateRequest updateRequest(UUID authorId) {
         AuthorComicUpdateRequest request = new AuthorComicUpdateRequest();
         request.setAuthorId(authorId);
+        request.setTitle("My Comic");
+        request.setSummary("A story summary");
+        request.setLanguage("English");
+        request.setMinimumAge(13);
+        request.setCover("https://cdn.example/cover.jpg");
+        request.setGenres(List.of("Action"));
+        request.setPublicationStatus(ComicPublicationStatus.ONGOING);
         return request;
     }
 
@@ -1522,7 +1606,7 @@ class AuthorComicServiceTest {
                 .cover("https://cdn.example/cover.jpg")
                 .publicationStatus(ComicPublicationStatus.ONGOING)
                 .moderationStatus(moderationStatus)
-                .genres(Set.of())
+                .genres(Set.of(defaultGenre))
                 .chapterCount(1)
                 .build();
         comic.setId(UUID.randomUUID());

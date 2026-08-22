@@ -19,6 +19,7 @@ import com.sep.comiverse.repository.IPageTranslationRepository;
 import com.sep.comiverse.repository.IProjectTeamRepository;
 import com.sep.comiverse.repository.IReviewCommentRepository;
 import com.sep.comiverse.repository.ITeamTaskRepository;
+import com.sep.comiverse.service.ReportService;
 import com.sep.comiverse.service.TeamTaskReviewService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,7 @@ class TeamTaskReviewServiceTest {
     @Mock private IChapterTranslationRepository chapterTranslationRepository;
     @Mock private IReviewCommentRepository reviewCommentRepository;
     @Mock private ChapterCrudPlugin chapterCrudPlugin;
+    @Mock private ReportService reportService;
 
     private TeamTaskReviewService service;
 
@@ -63,7 +65,8 @@ class TeamTaskReviewServiceTest {
                 chapterTranslationRepository,
                 reviewCommentRepository,
                 chapterCrudPlugin,
-                new ObjectMapper()
+                new ObjectMapper(),
+                reportService
         );
 
         lenient().when(taskRepository.save(any(TeamTaskEntity.class)))
@@ -484,7 +487,8 @@ class TeamTaskReviewServiceTest {
                 chapterTranslationRepository,
                 reviewCommentRepository,
                 chapterCrudPlugin,
-                failingMapper
+                failingMapper,
+                reportService
         );
 
         Fixture f = fixture();

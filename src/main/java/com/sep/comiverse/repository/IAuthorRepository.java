@@ -1,6 +1,8 @@
 package com.sep.comiverse.repository;
 
+import jakarta.persistence.LockModeType;
 import com.sep.comiverse.entity.AuthorEntity;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -18,6 +20,15 @@ public interface IAuthorRepository extends AbstractCrudRepository<AuthorEntity, 
 
     @Query("SELECT a FROM AuthorEntity a JOIN FETCH a.user u WHERE u.id = :userId AND a.deleted = false")
     Optional<AuthorEntity> findByUserIdAndDeletedFalse(@Param("userId") UUID userId);
+
+    /**
+     * Serializes quota-sensitive operations for one Author without introducing
+     * a dedicated quota entity. The lock is held only inside the caller's
+     * transaction.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT a FROM AuthorEntity a WHERE a.user.id = :userId AND a.deleted = false")
+    Optional<AuthorEntity> findByUserIdAndDeletedFalseForUpdate(@Param("userId") UUID userId);
 
     Optional<AuthorEntity> findByIdAndDeletedFalse(UUID id);
 

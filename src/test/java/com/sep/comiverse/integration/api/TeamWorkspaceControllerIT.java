@@ -13,14 +13,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class TeamWorkspaceControllerIT extends AbstractBlackboxIT {
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-001 [UC-15]")
+    @DisplayName("TC-INT-TeamWorkspaceController-001")
     void tasksUnauthorized() throws Exception {
         UUID teamId = leaderTeam().teamId();
         getJson("/team-workspace/" + teamId + "/tasks").andExpect(status().is4xxClientError());
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-002 [UC-15]")
+    @DisplayName("TC-INT-TeamWorkspaceController-002")
     void taskBoard() throws Exception {
         TeamContext ctx = leaderTeam();
         getJson("/team-workspace/" + ctx.teamId() + "/tasks", ctx.token())
@@ -29,7 +29,7 @@ class TeamWorkspaceControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-003 [UC-41]")
+    @DisplayName("TC-INT-TeamWorkspaceController-003")
     void membersIncludeLeader() throws Exception {
         TeamContext ctx = leaderTeam();
         getJson("/team-workspace/" + ctx.teamId() + "/members", ctx.token())
@@ -38,14 +38,14 @@ class TeamWorkspaceControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-004 [UC-41]")
+    @DisplayName("TC-INT-TeamWorkspaceController-004")
     void membersUnknown() throws Exception {
         getJson("/team-workspace/" + UUID.randomUUID() + "/members", fixedToken(LEADER_USER))
                 .andExpect(status().isNotFound());
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-005 [UC-55]")
+    @DisplayName("TC-INT-TeamWorkspaceController-005")
     void listAnnouncements() throws Exception {
         TeamContext ctx = leaderTeam();
         getJson("/team-workspace/" + ctx.teamId() + "/announcements", ctx.token())
@@ -53,7 +53,7 @@ class TeamWorkspaceControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-006 [UC-55]")
+    @DisplayName("TC-INT-TeamWorkspaceController-006")
     void createAnnouncement() throws Exception {
         TeamContext ctx = leaderTeam();
         postJson("/team-workspace/" + ctx.teamId() + "/announcements", """
@@ -63,7 +63,7 @@ class TeamWorkspaceControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-007 [UC-40]")
+    @DisplayName("TC-INT-TeamWorkspaceController-007")
     void listMessages() throws Exception {
         TeamContext ctx = leaderTeam();
         getJson("/team-workspace/" + ctx.teamId() + "/messages", ctx.token())
@@ -71,7 +71,7 @@ class TeamWorkspaceControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-008 [UC-49]")
+    @DisplayName("TC-INT-TeamWorkspaceController-008")
     void listRequests() throws Exception {
         TeamContext ctx = leaderTeam();
         getJson("/team-workspace/" + ctx.teamId() + "/requests", ctx.token())
@@ -79,7 +79,7 @@ class TeamWorkspaceControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-009 [UC-49]")
+    @DisplayName("TC-INT-TeamWorkspaceController-009")
     void joinUnauthorized() throws Exception {
         TeamContext ctx = leaderTeam();
         postJson("/team-workspace/" + ctx.teamId() + "/requests", """
@@ -89,7 +89,7 @@ class TeamWorkspaceControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-010 [UC-49]")
+    @DisplayName("TC-INT-TeamWorkspaceController-010")
     void joinAsTranslator() throws Exception {
         TeamContext ctx = leaderTeam();
         postJson("/team-workspace/" + ctx.teamId() + "/requests", """
@@ -99,7 +99,7 @@ class TeamWorkspaceControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-011 [UC-49]")
+    @DisplayName("TC-INT-TeamWorkspaceController-011")
     void myApplicationStatus() throws Exception {
         getJson("/team-workspace/my-application-status", fixedToken(TRANS_USER))
                 .andExpect(status().isOk())
@@ -107,7 +107,7 @@ class TeamWorkspaceControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-012 [UC-42]")
+    @DisplayName("TC-INT-TeamWorkspaceController-012")
     void chapterBacklog() throws Exception {
         TeamContext ctx = leaderTeam();
         getJson("/team-workspace/" + ctx.teamId() + "/chapter-backlog", ctx.token())
@@ -115,7 +115,7 @@ class TeamWorkspaceControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-013 [UC-42]")
+    @DisplayName("TC-INT-TeamWorkspaceController-013")
     void teamChapters() throws Exception {
         TeamContext ctx = leaderTeam();
         getJson("/team-workspace/" + ctx.teamId() + "/chapters", ctx.token())
@@ -123,7 +123,7 @@ class TeamWorkspaceControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-014 [UC-15]")
+    @DisplayName("TC-INT-TeamWorkspaceController-014")
     void createTaskMissingChapter() throws Exception {
         TeamContext ctx = leaderTeam();
         postJson("/team-workspace/" + ctx.teamId() + "/tasks", """
@@ -133,7 +133,7 @@ class TeamWorkspaceControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-TeamWorkspaceController-015 [UC-15]")
+    @DisplayName("TC-INT-TeamWorkspaceController-015")
     void getUnknownTask() throws Exception {
         getJson("/team-workspace/tasks/" + UUID.randomUUID(), fixedToken(LEADER_USER))
                 .andExpect(status().isNotFound());

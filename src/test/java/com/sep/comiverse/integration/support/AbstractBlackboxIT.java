@@ -319,7 +319,10 @@ public abstract class AbstractBlackboxIT {
                   "title": "%s",
                   "language": "en",
                   "cover": "https://cdn.example.com/cover.png",
-                  "summary": "Author draft"
+                  "summary": "Author draft",
+                  "minimumAge": 13,
+                  "genres": ["Action"],
+                  "publicationStatus": "ONGOING"
                 }
                 """.formatted(title), authorToken)
                 .andExpect(status().isCreated())

@@ -33,7 +33,7 @@ public class ReportFilterDTO {
     private Integer size = 20;
 
     @JsonProperty("status")
-    @Schema(description = "Filter by report status", example = "PENDING", allowableValues = {"PENDING", "IN_PROGRESS", "ACCEPTED", "REJECTED"})
+    @Schema(description = "Filter by report status", example = "PENDING", allowableValues = {"PENDING", "IN_PROGRESS", "ACCEPTED", "DONE", "REJECTED"})
     private ReportStatus status;
 
     @JsonProperty("target_type")

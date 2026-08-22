@@ -997,6 +997,11 @@ public class DbInitializer implements CommandLineRunner {
                     DO $$
                     BEGIN
                         IF to_regclass('public.reports') IS NOT NULL THEN
+                            ALTER TABLE public.reports DROP CONSTRAINT IF EXISTS reports_status_check;
+                            ALTER TABLE public.reports
+                                ADD CONSTRAINT reports_status_check
+                                CHECK (status IN ('PENDING', 'IN_PROGRESS', 'ACCEPTED', 'DONE', 'REJECTED'));
+
                             IF NOT EXISTS (
                                 SELECT 1 FROM pg_indexes
                                 WHERE tablename = 'reports' AND indexname = 'uidx_reports_active_per_target'
@@ -1008,9 +1013,9 @@ public class DbInitializer implements CommandLineRunner {
                         END IF;
                     END $$;
                     """);
-            System.out.println("✅ Report partial unique index verified in PostgreSQL.");
+            System.out.println("✅ Report status check and partial unique index verified in PostgreSQL.");
         } catch (Exception e) {
-            System.out.println("⚠️ Could not create partial unique index on reports table (DB might still be initializing schema): " + e.getMessage());
+            System.out.println("⚠️ Could not update reports constraints (DB might still be initializing schema): " + e.getMessage());
         }
     }
 

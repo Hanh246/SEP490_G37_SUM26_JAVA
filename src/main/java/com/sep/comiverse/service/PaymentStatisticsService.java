@@ -49,7 +49,6 @@ public class PaymentStatisticsService {
         List<String> availableCurrencies = paymentRepository.findDistinctCurrencies().stream()
                 .filter(value -> value != null && !value.isBlank())
                 .map(value -> value.trim().toUpperCase(Locale.ROOT))
-                .filter(DEFAULT_CURRENCY::equals)
                 .distinct()
                 .sorted()
                 .toList();
@@ -254,10 +253,11 @@ public class PaymentStatisticsService {
         if (!CURRENCY_PATTERN.matcher(normalized).matches()) {
             throw badRequest("Currency must be a three-letter ISO code");
         }
-        if (!DEFAULT_CURRENCY.equals(normalized)) {
-            throw badRequest("ComiVerse payment statistics are available only in USD");
+        if (!availableCurrencies.isEmpty() && !availableCurrencies.contains(normalized)) {
+            throw badRequest("No payment data found for currency " + normalized
+                    + ". Available: " + String.join(", ", availableCurrencies));
         }
-        return DEFAULT_CURRENCY;
+        return normalized;
     }
 
     private ZoneId parseZoneId(String requestedZoneId) {

@@ -13,13 +13,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class SubmissionControllerIT extends AbstractBlackboxIT {
 
     @Test
-    @DisplayName("TC-INT-SubmissionController-001 [UC-19]")
+    @DisplayName("TC-INT-SubmissionController-001")
     void listUnauthorized() throws Exception {
         getJson("/submissions").andExpect(status().is4xxClientError());
     }
 
     @Test
-    @DisplayName("TC-INT-SubmissionController-002 [UC-19]")
+    @DisplayName("TC-INT-SubmissionController-002")
     void listAsAdmin() throws Exception {
         getJson("/submissions", fixedToken(ADMIN_USER))
                 .andExpect(status().isOk())
@@ -28,7 +28,7 @@ class SubmissionControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-SubmissionController-003 [UC-19]")
+    @DisplayName("TC-INT-SubmissionController-003")
     void listAllAsAdmin() throws Exception {
         getJson("/submissions/all", fixedToken(ADMIN_USER))
                 .andExpect(status().isOk())
@@ -36,13 +36,13 @@ class SubmissionControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-SubmissionController-004 [UC-19]")
+    @DisplayName("TC-INT-SubmissionController-004")
     void createAsAdmin() throws Exception {
         pendingSubmission();
     }
 
     @Test
-    @DisplayName("TC-INT-SubmissionController-005 [UC-19]")
+    @DisplayName("TC-INT-SubmissionController-005")
     void getById() throws Exception {
         UUID id = pendingSubmission();
         getJson("/submissions/" + id, fixedToken(ADMIN_USER))
@@ -51,14 +51,14 @@ class SubmissionControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-SubmissionController-006 [UC-19]")
+    @DisplayName("TC-INT-SubmissionController-006")
     void getUnknown() throws Exception {
         getJson("/submissions/" + UUID.randomUUID(), fixedToken(ADMIN_USER))
                 .andExpect(status().isNotFound());
     }
 
     @Test
-    @DisplayName("TC-INT-SubmissionController-007 [UC-19]")
+    @DisplayName("TC-INT-SubmissionController-007")
     void updateAsAdmin() throws Exception {
         UUID id = pendingSubmission();
         putJson("/submissions/" + id, """
@@ -68,14 +68,14 @@ class SubmissionControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-SubmissionController-008 [UC-19]")
+    @DisplayName("TC-INT-SubmissionController-008")
     void deleteAsAdmin() throws Exception {
         UUID id = pendingSubmission();
         deleteJson("/submissions/" + id, fixedToken(ADMIN_USER)).andExpect(status().isOk());
     }
 
     @Test
-    @DisplayName("TC-INT-SubmissionController-009 [UC-19]")
+    @DisplayName("TC-INT-SubmissionController-009")
     void claimForbidden() throws Exception {
         UUID id = pendingSubmission();
         putJson("/submissions/" + id + "/claim", "{}", fixedToken(READER_USER))
@@ -83,7 +83,7 @@ class SubmissionControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-SubmissionController-010 [UC-19]")
+    @DisplayName("TC-INT-SubmissionController-010")
     void claimAsModerator() throws Exception {
         UUID id = pendingSubmission();
         putJson("/submissions/" + id + "/claim", "{}", fixedToken(MOD_USER))
@@ -91,7 +91,7 @@ class SubmissionControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-SubmissionController-011 [UC-19]")
+    @DisplayName("TC-INT-SubmissionController-011")
     void releaseAsModerator() throws Exception {
         UUID id = pendingSubmission();
         String mod = fixedToken(MOD_USER);
@@ -100,7 +100,7 @@ class SubmissionControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-SubmissionController-012 [UC-19]")
+    @DisplayName("TC-INT-SubmissionController-012")
     void approveForbidden() throws Exception {
         UUID id = pendingSubmission();
         putJson("/submissions/" + id + "/approve", "{}", fixedToken(READER_USER))
@@ -108,7 +108,7 @@ class SubmissionControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-SubmissionController-013 [UC-19]")
+    @DisplayName("TC-INT-SubmissionController-013")
     void approveAsAdmin() throws Exception {
         UUID id = pendingSubmission();
         putJson("/submissions/" + id + "/approve", "{}", fixedToken(ADMIN_USER))
@@ -116,7 +116,7 @@ class SubmissionControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-SubmissionController-014 [UC-19]")
+    @DisplayName("TC-INT-SubmissionController-014")
     void rejectAsAdmin() throws Exception {
         UUID id = pendingSubmission();
         putJson("/submissions/" + id + "/reject", """
@@ -126,14 +126,14 @@ class SubmissionControllerIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-INT-SubmissionController-015 [UC-19]")
+    @DisplayName("TC-INT-SubmissionController-015")
     void claimUnknown() throws Exception {
         putJson("/submissions/" + UUID.randomUUID() + "/claim", "{}", fixedToken(MOD_USER))
                 .andExpect(status().isNotFound());
     }
 
     @Test
-    @DisplayName("TC-INT-SubmissionController-016 [UC-19]")
+    @DisplayName("TC-INT-SubmissionController-016")
     void invalidPageSize() throws Exception {
         getJson("/submissions?size=0", fixedToken(ADMIN_USER)).andExpect(status().isBadRequest());
     }

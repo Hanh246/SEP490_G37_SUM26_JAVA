@@ -13,6 +13,7 @@ import com.sep.comiverse.plugin.crud.SubmissionCrudPlugin;
 import com.sep.comiverse.repository.IProjectTeamRepository;
 import com.sep.comiverse.repository.IChapterRepository;
 import com.sep.comiverse.repository.IComicRepository;
+import com.sep.comiverse.service.AuthorComicService;
 import com.sep.comiverse.service.NotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,6 +47,8 @@ class SubmissionControllerNotificationTest {
     private IChapterRepository chapterRepository;
     @Mock
     private IComicRepository comicRepository;
+    @Mock
+    private AuthorComicService authorComicService;
 
     private SubmissionController controller;
 
@@ -56,6 +59,32 @@ class SubmissionControllerNotificationTest {
         ReflectionTestUtils.setField(controller, "projectTeamRepository", projectTeamRepository);
         ReflectionTestUtils.setField(controller, "chapterRepository", chapterRepository);
         ReflectionTestUtils.setField(controller, "comicRepository", comicRepository);
+        ReflectionTestUtils.setField(controller, "authorComicService", authorComicService);
+    }
+
+    @Test
+    void authorComicApprovalDelegatesPublishedQuotaCheck() {
+        UUID comicId = UUID.randomUUID();
+        UUID moderatorId = UUID.randomUUID();
+        ComicEntity comic = ComicEntity.builder()
+                .authorId(UUID.randomUUID())
+                .title("Quota Comic")
+                .moderationStatus(ComicModerationStatus.SUBMITTED_FOR_REVIEW)
+                .build();
+        comic.setId(comicId);
+        SubmissionEntity submission = SubmissionEntity.builder()
+                .comicId(comicId)
+                .queueType("author")
+                .build();
+
+        when(comicRepository.findById(comicId)).thenReturn(Optional.of(comic));
+        when(chapterRepository.findAllByComic_IdAndDeletedFalse(comicId)).thenReturn(List.of());
+        when(comicRepository.save(any(ComicEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ReflectionTestUtils.invokeMethod(controller, "handleAuthorApproval", submission, moderatorId);
+
+        verify(authorComicService).assertPublishedComicQuotaAvailable(comic);
+        assertEquals(ComicModerationStatus.PUBLISHED, comic.getModerationStatus());
     }
 
     @Test
