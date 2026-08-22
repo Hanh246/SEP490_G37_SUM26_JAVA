@@ -73,7 +73,6 @@ class AuthorComicServiceTest {
     @Mock private ComicCrudPlugin comicCrudPlugin;
     @Mock private AuthorLicenseService authorLicenseService;
     @Mock private CreatorPayoutSettingsService payoutSettingsService;
-    @Mock private CreatorPayoutSettingsService payoutSettingsService;
 
     private AuthorComicService service;
     private GenreEntity defaultGenre;
@@ -90,8 +89,6 @@ class AuthorComicServiceTest {
                 userRepository,
                 auditLogService,
                 comicCrudPlugin,
-                authorLicenseService,
-                payoutSettingsService
                 authorLicenseService,
                 payoutSettingsService
         );
