@@ -1322,6 +1322,12 @@ class CreatorPayoutServiceTest {
                 .thenAnswer(invocation ->
                         ((BigDecimal) invocation.getArgument(0)).setScale(2)
                 );
+        lenient().when(payoutSettingsService.convertUsdToCurrency(
+                        any(BigDecimal.class),
+                        any(CreatorPayoutSettingsService.ResolvedCurrency.class)))
+                .thenAnswer(invocation ->
+                        ((BigDecimal) invocation.getArgument(0)).setScale(2)
+                );
 
         lenient().when(translatorEarningRepository
                         .findAllByTranslatorIdAndEntryMonthOrderByCreatedAtAsc(

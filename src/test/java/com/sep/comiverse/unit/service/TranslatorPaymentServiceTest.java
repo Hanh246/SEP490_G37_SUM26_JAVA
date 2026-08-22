@@ -191,9 +191,7 @@ class TranslatorPaymentServiceTest {
         HandoverTaskRequest request = handoverRequest(
                 translatorB,
                 List.of(1, 2),
-                new BigDecimal("0.80"),
-                " Translator A stopped before finishing the chapter "
-        );
+                new BigDecimal("0.80"));
 
         UUID performedById = UUID.randomUUID();
         var response = service.handover(task, request, performedById);
@@ -202,7 +200,6 @@ class TranslatorPaymentServiceTest {
         assertEquals(List.of(1, 2), response.getCompletedPageNumbers());
         assertEquals(2, response.getAcceptedPageCount());
         assertEquals(2, response.getReassignedPageCount());
-        assertEquals("Translator A stopped before finishing the chapter", response.getReason());
 
         assertEquals(translatorA, pages.get(0).getAssignedTranslatorId());
         assertEquals(PageStatus.DONE, pages.get(0).getStatus());
@@ -235,7 +232,6 @@ class TranslatorPaymentServiceTest {
         assertEquals(new BigDecimal("0.80"), audit.getResponsibilityFactor());
         assertEquals(2, audit.getAcceptedPageCount());
         assertEquals(2, audit.getReassignedPageCount());
-        assertEquals("Translator A stopped before finishing the chapter", audit.getReason());
         assertNotNull(audit.getHandedOverAt());
         assertFalse(Boolean.TRUE.equals(audit.getDeleted()));
     }
@@ -245,9 +241,7 @@ class TranslatorPaymentServiceTest {
         HandoverTaskRequest request = handoverRequest(
                 UUID.randomUUID(),
                 List.of(),
-                BigDecimal.ONE,
-                "handover"
-        );
+                BigDecimal.ONE);
 
         CustomException error = assertThrows(
                 CustomException.class,
@@ -270,9 +264,7 @@ class TranslatorPaymentServiceTest {
                         handoverRequest(
                                 UUID.randomUUID(),
                                 List.of(),
-                                BigDecimal.ONE,
-                                "handover"
-                        ),
+                                BigDecimal.ONE),
                         UUID.randomUUID()
                 )
         );
@@ -295,9 +287,7 @@ class TranslatorPaymentServiceTest {
                         handoverRequest(
                                 UUID.randomUUID(),
                                 List.of(),
-                                BigDecimal.ONE,
-                                "handover"
-                        ),
+                                BigDecimal.ONE),
                         UUID.randomUUID()
                 )
         );
@@ -317,9 +307,7 @@ class TranslatorPaymentServiceTest {
                         handoverRequest(
                                 UUID.randomUUID(),
                                 List.of(),
-                                BigDecimal.ONE,
-                                "handover"
-                        ),
+                                BigDecimal.ONE),
                         UUID.randomUUID()
                 )
         );
@@ -340,34 +328,7 @@ class TranslatorPaymentServiceTest {
                         handoverRequest(
                                 translator,
                                 List.of(),
-                                BigDecimal.ONE,
-                                "handover"
-                        ),
-                        UUID.randomUUID()
-                )
-        );
-
-        assertEquals(400, error.getCode());
-        verifyNoInteractions(pageRepository, taskRepository, handoverRepository);
-    }
-
-    @ParameterizedTest
-    @NullAndEmptySource
-    @ValueSource(strings = {" ", "   "})
-    void handoverRejectsMissingOrBlankReason(String reason) {
-        UUID translatorA = UUID.randomUUID();
-        TeamTaskEntity task = handoverTask(translatorA);
-
-        CustomException error = assertThrows(
-                CustomException.class,
-                () -> service.handover(
-                        task,
-                        handoverRequest(
-                                UUID.randomUUID(),
-                                List.of(),
-                                BigDecimal.ONE,
-                                reason
-                        ),
+                                BigDecimal.ONE),
                         UUID.randomUUID()
                 )
         );
@@ -390,9 +351,7 @@ class TranslatorPaymentServiceTest {
                         handoverRequest(
                                 UUID.randomUUID(),
                                 List.of(),
-                                BigDecimal.ONE,
-                                "handover"
-                        ),
+                                BigDecimal.ONE),
                         UUID.randomUUID()
                 )
         );
@@ -416,9 +375,7 @@ class TranslatorPaymentServiceTest {
                         handoverRequest(
                                 UUID.randomUUID(),
                                 List.of(3),
-                                BigDecimal.ONE,
-                                "handover"
-                        ),
+                                BigDecimal.ONE),
                         UUID.randomUUID()
                 )
         );
@@ -450,9 +407,7 @@ class TranslatorPaymentServiceTest {
                         handoverRequest(
                                 translatorB,
                                 List.of(1),
-                                BigDecimal.ONE,
-                                "handover"
-                        ),
+                                BigDecimal.ONE),
                         UUID.randomUUID()
                 )
         );
@@ -479,9 +434,7 @@ class TranslatorPaymentServiceTest {
                         handoverRequest(
                                 UUID.randomUUID(),
                                 List.of(),
-                                new BigDecimal(factor),
-                                "handover"
-                        ),
+                                new BigDecimal(factor)),
                         UUID.randomUUID()
                 )
         );
@@ -507,9 +460,7 @@ class TranslatorPaymentServiceTest {
                 handoverRequest(
                         UUID.randomUUID(),
                         List.of(1),
-                        new BigDecimal(factor),
-                        "handover"
-                ),
+                        new BigDecimal(factor)),
                 UUID.randomUUID()
         );
 
@@ -534,9 +485,7 @@ class TranslatorPaymentServiceTest {
                 handoverRequest(
                         UUID.randomUUID(),
                         List.of(1),
-                        null,
-                        "handover"
-                ),
+                        null),
                 UUID.randomUUID()
         );
 
@@ -557,9 +506,7 @@ class TranslatorPaymentServiceTest {
         HandoverTaskRequest request = handoverRequest(
                 translatorB,
                 null,
-                BigDecimal.ONE,
-                "handover"
-        );
+                BigDecimal.ONE);
 
         var response = service.handover(task, request, UUID.randomUUID());
 
@@ -590,9 +537,7 @@ class TranslatorPaymentServiceTest {
                 handoverRequest(
                         translatorB,
                         List.of(),
-                        BigDecimal.ONE,
-                        "handover"
-                ),
+                        BigDecimal.ONE),
                 UUID.randomUUID()
         );
 
@@ -618,9 +563,7 @@ class TranslatorPaymentServiceTest {
                 handoverRequest(
                         UUID.randomUUID(),
                         List.of(1),
-                        new BigDecimal("0.75"),
-                        "handover"
-                ),
+                        new BigDecimal("0.75")),
                 UUID.randomUUID()
         );
 
@@ -646,9 +589,7 @@ class TranslatorPaymentServiceTest {
                 handoverRequest(
                         UUID.randomUUID(),
                         List.of(1),
-                        BigDecimal.ONE,
-                        "handover"
-                ),
+                        BigDecimal.ONE),
                 UUID.randomUUID()
         );
 
@@ -672,9 +613,7 @@ class TranslatorPaymentServiceTest {
                 handoverRequest(
                         translatorB,
                         List.of(3, 1, 2, 1, 3),
-                        new BigDecimal("0.90"),
-                        "handover"
-                ),
+                        new BigDecimal("0.90")),
                 UUID.randomUUID()
         );
 
@@ -732,9 +671,7 @@ class TranslatorPaymentServiceTest {
                         handoverRequest(
                                 UUID.randomUUID(),
                                 List.of(1),
-                                BigDecimal.ONE,
-                                "handover"
-                        ),
+                                BigDecimal.ONE),
                         UUID.randomUUID()
                 )
         );
@@ -1741,14 +1678,11 @@ class TranslatorPaymentServiceTest {
     private HandoverTaskRequest handoverRequest(
             UUID newAssigneeId,
             List<Integer> completedPageNumbers,
-            BigDecimal factor,
-            String reason
-    ) {
+            BigDecimal factor) {
         HandoverTaskRequest request = new HandoverTaskRequest();
         request.setNewAssigneeId(newAssigneeId);
         request.setCompletedPageNumbers(completedPageNumbers);
         request.setResponsibilityFactor(factor);
-        request.setReason(reason);
         return request;
     }
 

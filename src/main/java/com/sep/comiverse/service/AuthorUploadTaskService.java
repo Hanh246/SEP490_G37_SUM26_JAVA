@@ -3,6 +3,7 @@ package com.sep.comiverse.service;
 import com.sep.comiverse.dto.response.AuthorUploadTaskResponse;
 import com.sep.comiverse.dto.response.ChapterPreviewResponse;
 import com.sep.comiverse.exception.CustomException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -23,23 +24,40 @@ public class AuthorUploadTaskService {
 
     private final Map<UUID, UploadTaskState> tasks = new ConcurrentHashMap<>();
 
+    @Value("${author.upload.max-active-tasks-per-author:2}")
+    private int maxActiveTasksPerAuthor = 2;
+
     public AuthorUploadTaskResponse createTask(UUID authorId, String type, String message) {
         if (authorId == null) {
             throw new CustomException(400, "Author id is required", HttpStatus.BAD_REQUEST);
         }
-        UUID taskId = UUID.randomUUID();
-        Instant now = Instant.now();
-        UploadTaskState state = new UploadTaskState();
-        state.taskId = taskId;
-        state.authorId = authorId;
-        state.type = type;
-        state.status = STATUS_QUEUED;
-        state.progress = 0;
-        state.message = message;
-        state.createdAt = now;
-        state.updatedAt = now;
-        tasks.put(taskId, state);
-        return toResponse(state);
+        synchronized (tasks) {
+            long activeTasks = tasks.values().stream()
+                    .filter(state -> authorId.equals(state.authorId))
+                    .filter(state -> STATUS_QUEUED.equals(state.status) || STATUS_PROCESSING.equals(state.status))
+                    .count();
+            if (maxActiveTasksPerAuthor > 0 && activeTasks >= maxActiveTasksPerAuthor) {
+                throw new CustomException(
+                        429,
+                        "Too many active chapter uploads. Finish one of the current uploads before starting another.",
+                        HttpStatus.TOO_MANY_REQUESTS
+                );
+            }
+
+            UUID taskId = UUID.randomUUID();
+            Instant now = Instant.now();
+            UploadTaskState state = new UploadTaskState();
+            state.taskId = taskId;
+            state.authorId = authorId;
+            state.type = type;
+            state.status = STATUS_QUEUED;
+            state.progress = 0;
+            state.message = message;
+            state.createdAt = now;
+            state.updatedAt = now;
+            tasks.put(taskId, state);
+            return toResponse(state);
+        }
     }
 
     public AuthorUploadTaskResponse getTask(UUID taskId, UUID authorId) {

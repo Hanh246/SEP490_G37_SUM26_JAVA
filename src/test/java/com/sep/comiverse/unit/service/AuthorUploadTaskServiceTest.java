@@ -51,6 +51,23 @@ class AuthorUploadTaskServiceTest {
     }
 
     @Test
+    void createTaskLimitsOneAuthorToTwoConcurrentUploads() {
+        UUID authorId = UUID.randomUUID();
+        AuthorUploadTaskResponse first = service.createTask(authorId, "CHAPTER_FOLDER", "First");
+        service.createTask(authorId, "CHAPTER_FOLDER", "Second");
+
+        CustomException error = assertThrows(
+                CustomException.class,
+                () -> service.createTask(authorId, "CHAPTER_FOLDER", "Third")
+        );
+
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS, error.getHttpStatus());
+
+        service.completeChapter(first.getTaskId(), ChapterPreviewResponse.builder().build());
+        assertDoesNotThrow(() -> service.createTask(authorId, "CHAPTER_FOLDER", "Replacement"));
+    }
+
+    @Test
     void getTaskPreventsAnotherAuthorFromReadingUploadState() {
         UUID ownerId = UUID.randomUUID();
         UUID otherAuthorId = UUID.randomUUID();
