@@ -70,6 +70,7 @@ class AuthorComicServiceTest {
     @Mock private AuthorLicenseService authorLicenseService;
 
     private AuthorComicService service;
+    private GenreEntity defaultGenre;
 
     @BeforeEach
     void setUp() {
@@ -85,6 +86,9 @@ class AuthorComicServiceTest {
                 comicCrudPlugin,
                 authorLicenseService
         );
+
+        defaultGenre = genre("Action", "action");
+        lenient().when(genreRepository.findAll()).thenReturn(List.of(defaultGenre));
     }
 
     @Test
@@ -1572,15 +1576,23 @@ class AuthorComicServiceTest {
         request.setTitle("  My Comic  ");
         request.setSummary("  A story summary  ");
         request.setLanguage("  English  ");
-        request.setMinimumAge(null);
+        request.setMinimumAge(13);
         request.setCover("  https://cdn.example/cover.jpg  ");
-        request.setGenres(List.of());
+        request.setGenres(List.of("Action"));
+        request.setPublicationStatus(ComicPublicationStatus.ONGOING);
         return request;
     }
 
     private AuthorComicUpdateRequest updateRequest(UUID authorId) {
         AuthorComicUpdateRequest request = new AuthorComicUpdateRequest();
         request.setAuthorId(authorId);
+        request.setTitle("My Comic");
+        request.setSummary("A story summary");
+        request.setLanguage("English");
+        request.setMinimumAge(13);
+        request.setCover("https://cdn.example/cover.jpg");
+        request.setGenres(List.of("Action"));
+        request.setPublicationStatus(ComicPublicationStatus.ONGOING);
         return request;
     }
 
@@ -1594,7 +1606,7 @@ class AuthorComicServiceTest {
                 .cover("https://cdn.example/cover.jpg")
                 .publicationStatus(ComicPublicationStatus.ONGOING)
                 .moderationStatus(moderationStatus)
-                .genres(Set.of())
+                .genres(Set.of(defaultGenre))
                 .chapterCount(1)
                 .build();
         comic.setId(UUID.randomUUID());
