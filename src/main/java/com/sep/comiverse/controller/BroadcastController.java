@@ -1,6 +1,7 @@
 package com.sep.comiverse.controller;
 
 import com.sep.comiverse.dto.request.BroadcastRequest;
+import com.sep.comiverse.dto.response.BroadcastAudiencePreviewResponse;
 import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.dto.response.BroadcastResponse;
 import com.sep.comiverse.service.BroadcastService;
@@ -18,17 +19,17 @@ import java.util.List;
 @RequestMapping("/admin/broadcasts")
 @RequiredArgsConstructor
 @PreAuthorize("hasAuthority('ADMIN')")
-@Tag(name = "Admin - Broadcast", description = "APIs for sending system-wide broadcast announcements (ADMIN only)")
+@Tag(name = "Admin - Broadcast", description = "APIs for sending announcements to all users, roles, accounts, or project teams (ADMIN only)")
 public class BroadcastController {
 
     private final BroadcastService broadcastService;
 
     /**
      * POST /admin/broadcasts
-     * Send a broadcast announcement to targeted user roles.
+     * Send a broadcast announcement to the selected audience.
      */
     @PostMapping
-    @Operation(summary = "Send broadcast", description = "Create and send a broadcast announcement to users by role")
+    @Operation(summary = "Send broadcast", description = "Create and send a broadcast announcement to all users, roles, specific accounts, or project teams")
     public ResponseEntity<BaseResponse<BroadcastResponse>> sendBroadcast(
             @Valid @RequestBody BroadcastRequest request
     ) {
@@ -38,6 +39,19 @@ public class BroadcastController {
                         .success(true)
                         .message("Broadcast sent successfully to " + response.getRecipientCount() + " users.")
                         .data(response)
+                        .build()
+        );
+    }
+
+    @PostMapping("/preview")
+    @Operation(summary = "Preview broadcast audience", description = "Count matched recipients and notification opt-outs before sending")
+    public ResponseEntity<BaseResponse<BroadcastAudiencePreviewResponse>> previewAudience(
+            @Valid @RequestBody BroadcastRequest request
+    ) {
+        return ResponseEntity.ok(
+                BaseResponse.<BroadcastAudiencePreviewResponse>builder()
+                        .success(true)
+                        .data(broadcastService.previewAudience(request))
                         .build()
         );
     }

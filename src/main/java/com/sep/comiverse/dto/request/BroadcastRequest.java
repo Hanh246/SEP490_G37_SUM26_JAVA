@@ -1,11 +1,12 @@
 package com.sep.comiverse.dto.request;
 
+import com.sep.comiverse.entity.enums.BroadcastAudienceType;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.util.List;
+import java.util.UUID;
 
 @Data
 public class BroadcastRequest {
@@ -21,6 +22,14 @@ public class BroadcastRequest {
     @Size(max = 2000, message = "Message must be at most 2000 characters")
     private String message;
 
-    @NotEmpty(message = "Target roles cannot be empty")
+    private BroadcastAudienceType audienceType;
+
+    @Size(max = 10, message = "At most 10 roles can be selected")
     private List<String> targetRoles; // e.g. ["ALL"] or ["ADMIN", "STAFF"]
+
+    @Size(max = 100, message = "At most 100 users can be selected")
+    private List<UUID> targetUserIds;
+
+    @Size(max = 20, message = "At most 20 project teams can be selected")
+    private List<UUID> targetTeamIds;
 }
