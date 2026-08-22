@@ -101,8 +101,8 @@ public class AuthorDashboardMetricService {
                 ));
 
         return AuthorDashboardMetricsResponse.builder()
-                .summary(buildSummary(comics, chapters, submissions, latestSnapshotByComic, totalPaid))
-                .monthlyMetrics(buildChartMetrics(period, comics, chapters, submissions, snapshots))
+                .summary(buildSummary(comics, chapters, submissions, latestSnapshotByComic, totalPaid, ratePerView))
+                .monthlyMetrics(buildChartMetrics(period, comics, chapters, submissions, snapshots, ratePerView))
                 .topComics(buildTopComics(comics, chapterCountByComic, latestSnapshotByComic, ratePerView))
                 .recentActivities(buildRecentActivities(submissions))
                 .generatedAt(Instant.now())
@@ -114,7 +114,8 @@ public class AuthorDashboardMetricService {
             List<ChapterEntity> chapters,
             List<SubmissionEntity> submissions,
             Map<UUID, ComicMetricSnapshotEntity> latestSnapshotByComic,
-            BigDecimal totalPaid
+            BigDecimal totalPaid,
+            BigDecimal ratePerView
     ) {
         long totalViews = comics.stream().mapToLong(comic -> defaultLong(comic.getViewCount())).sum();
         long totalFollowers = comics.stream().mapToLong(comic -> defaultLong(comic.getSaveCount())).sum();
@@ -131,9 +132,14 @@ public class AuthorDashboardMetricService {
         long decidedReviews = approvedReviews + rejectedReviews;
         double approvedRate = decidedReviews == 0 ? 0.0 : (approvedReviews * 100.0) / decidedReviews;
 
-        BigDecimal estimatedRevenue = latestSnapshotByComic.values().stream()
-                .map(ComicMetricSnapshotEntity::getEstimatedRevenue)
-                .filter(Objects::nonNull)
+        BigDecimal estimatedRevenue = comics.stream()
+                .map(comic -> {
+                    ComicMetricSnapshotEntity snapshot = latestSnapshotByComic.get(comic.getId());
+                    if (snapshot != null && snapshot.getEstimatedRevenue() != null && snapshot.getEstimatedRevenue().compareTo(BigDecimal.ZERO) > 0) {
+                        return snapshot.getEstimatedRevenue();
+                    }
+                    return BigDecimal.valueOf(defaultLong(comic.getViewCount())).multiply(ratePerView).setScale(2, RoundingMode.HALF_UP);
+                })
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         return AuthorDashboardMetricsResponse.Summary.builder()
@@ -158,7 +164,8 @@ public class AuthorDashboardMetricService {
             List<ComicEntity> comics,
             List<ChapterEntity> chapters,
             List<SubmissionEntity> submissions,
-            List<ComicMetricSnapshotEntity> snapshots
+            List<ComicMetricSnapshotEntity> snapshots,
+            BigDecimal ratePerView
     ) {
         LocalDate endDate = LocalDate.now(ZoneOffset.UTC);
         int points = 7;
@@ -208,13 +215,26 @@ public class AuthorDashboardMetricService {
             long views = snapshotMap.values().stream().mapToLong(s -> defaultLong(s.getViewCount())).sum();
             long followers = snapshotMap.values().stream().mapToLong(s -> defaultLong(s.getSavedCount())).sum();
             BigDecimal revenue = snapshotMap.values().stream()
-                    .map(ComicMetricSnapshotEntity::getEstimatedRevenue)
-                    .filter(Objects::nonNull)
+                    .map(s -> {
+                        if (s != null && s.getEstimatedRevenue() != null && s.getEstimatedRevenue().compareTo(BigDecimal.ZERO) > 0) {
+                            return s.getEstimatedRevenue();
+                        }
+                        return BigDecimal.valueOf(defaultLong(s.getViewCount())).multiply(ratePerView).setScale(2, RoundingMode.HALF_UP);
+                    })
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
 
             if (i == 0) {
                 views = comics.stream().mapToLong(c -> defaultLong(c.getViewCount())).sum();
                 followers = comics.stream().mapToLong(c -> defaultLong(c.getSaveCount())).sum();
+                revenue = comics.stream()
+                        .map(comic -> {
+                            ComicMetricSnapshotEntity snapshot = snapshotMap.get(comic.getId());
+                            if (snapshot != null && snapshot.getEstimatedRevenue() != null && snapshot.getEstimatedRevenue().compareTo(BigDecimal.ZERO) > 0) {
+                                return snapshot.getEstimatedRevenue();
+                            }
+                            return BigDecimal.valueOf(defaultLong(comic.getViewCount())).multiply(ratePerView).setScale(2, RoundingMode.HALF_UP);
+                        })
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
             }
 
             long chaptersUploaded = chapters.stream()
