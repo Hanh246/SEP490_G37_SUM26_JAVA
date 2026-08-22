@@ -14,9 +14,6 @@ import com.sep.comiverse.repository.IComicMetricSnapshotRepository;
 import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.repository.ICreatorPayoutRequestRepository;
 import com.sep.comiverse.repository.ISubmissionRepository;
-import com.sep.comiverse.entity.CreatorPayoutRequestEntity;
-import com.sep.comiverse.entity.enums.CreatorPayoutStatus;
-import com.sep.comiverse.repository.ICreatorPayoutRequestRepository;
 import com.sep.comiverse.repository.projection.ComicChapterCountProjection;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -77,8 +74,6 @@ public class AuthorDashboardMetricService {
                 .findAllByAuthorIdAndQueueTypeIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(authorId, "author");
         List<ComicMetricSnapshotEntity> snapshots = metricSnapshotRepository
                 .findAllByAuthorIdAndDeletedFalseOrderByCreatedAtDesc(authorId);
-        List<CreatorPayoutRequestEntity> payouts = payoutRequestRepository
-                .findAllByUserIdAndDeletedFalseOrderByCreatedAtDesc(authorId);
         BigDecimal totalPaid = payoutRequestRepository.sumPaidAmountUsdByUserIdAndRole(
                 authorId,
                 CreatorPayoutRole.AUTHOR,
@@ -146,7 +141,6 @@ public class AuthorDashboardMetricService {
                     return BigDecimal.valueOf(defaultLong(comic.getViewCount())).multiply(ratePerView).setScale(2, RoundingMode.HALF_UP);
                 })
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-
 
         return AuthorDashboardMetricsResponse.Summary.builder()
                 .totalComics((long) comics.size())

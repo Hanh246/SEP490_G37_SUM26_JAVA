@@ -25,7 +25,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── NFR-20: Token expiration ─────────────────────────────────────────────
 
     @Test
-    @DisplayName("TC-SEC-001 [NFR-20]")
+    @DisplayName("TC-SEC-001")
     void expiredJwt() throws Exception {
         SecretKey key = Keys.hmacShaKeyFor(
                 "test-jwt-secret-for-comiverse-context-loads-1234567890".getBytes(StandardCharsets.UTF_8));
@@ -44,7 +44,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SEC-002 [NFR-20]")
+    @DisplayName("TC-SEC-002")
     void wrongSecret() throws Exception {
         SecretKey other = Keys.hmacShaKeyFor(
                 "wrong-secret-for-comiverse-tests-1234567890xxxx".getBytes(StandardCharsets.UTF_8));
@@ -62,7 +62,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SEC-003 [NFR-20]")
+    @DisplayName("TC-SEC-003")
     void malformedJwt() throws Exception {
         mockMvc.perform(get("/auth/me")
                         .header("Authorization", "Bearer not.a.valid.token")
@@ -71,7 +71,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SEC-004 [NFR-20]")
+    @DisplayName("TC-SEC-004")
     void emptyBearer() throws Exception {
         mockMvc.perform(get("/auth/me")
                         .header("Authorization", "Bearer ")
@@ -80,7 +80,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SEC-005 [NFR-20]")
+    @DisplayName("TC-SEC-005")
     void missingBearerPrefix() throws Exception {
         // Pass the raw JWT without the "Bearer " prefix — must be rejected
         String rawJwt = fixedToken(READER_USER);
@@ -93,20 +93,20 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── NFR-03: Protected resources require authentication ───────────────────
 
     @Test
-    @DisplayName("TC-SEC-006 [NFR-03]")
+    @DisplayName("TC-SEC-006")
     void protectedWithoutToken() throws Exception {
         getJson("/admin/settings/premium-plans").andExpect(status().isUnauthorized());
     }
 
     @Test
-    @DisplayName("TC-SEC-007 [NFR-03]")
+    @DisplayName("TC-SEC-007")
     void readerForbiddenOnAdmin() throws Exception {
         getJson("/admin/settings/premium-plans", fixedToken(READER_USER))
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    @DisplayName("TC-SEC-008 [NFR-03]")
+    @DisplayName("TC-SEC-008")
     void adminCanAccessAdmin() throws Exception {
         getJson("/admin/settings/premium-plans", fixedToken(ADMIN_USER))
                 .andExpect(status().isOk());
@@ -115,7 +115,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── NFR-10: Workflow enforcement (role-based access) ─────────────────────
 
     @Test
-    @DisplayName("TC-SEC-009 [NFR-10]")
+    @DisplayName("TC-SEC-009")
     void readerCannotCreateChapter() throws Exception {
         postJson("/chapters", """
                 {"title":"Ch","chapterNumber":"1","comicId":"00000000-0000-0000-0000-000000000000"}
@@ -124,7 +124,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SEC-010 [NFR-10]")
+    @DisplayName("TC-SEC-010")
     void translatorCannotApproveSubmission() throws Exception {
         putJson("/submissions/00000000-0000-0000-0000-000000000001/approve", "{}", fixedToken(TRANS_USER))
                 .andExpect(status().isForbidden());
@@ -133,7 +133,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── NFR-23: File upload constraints ─────────────────────────────────────
 
     @Test
-    @DisplayName("TC-SEC-011 [NFR-23]")
+    @DisplayName("TC-SEC-011")
     void uploadWithoutToken() throws Exception {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "page.png", "image/png", "img".getBytes());
@@ -144,7 +144,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── NFR-25: Stripe webhook on public whitelist ───────────────────────────
 
     @Test
-    @DisplayName("TC-SEC-012 [NFR-25]")
+    @DisplayName("TC-SEC-012")
     void stripeWebhookPublic() throws Exception {
         mockMvc.perform(post("/stripe/webhook")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -160,7 +160,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── NFR-29: WebSocket / subscription protected ──────────────────────────
 
     @Test
-    @DisplayName("TC-SEC-013 [NFR-29]")
+    @DisplayName("TC-SEC-013")
     void createComicWithoutToken() throws Exception {
         postJson("/comics", """
                 {"title":"X","language":"en","cover":"https://cdn.example.com/c.png"}
@@ -171,13 +171,13 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── NFR-32: Page-size guard ──────────────────────────────────────────────
 
     @Test
-    @DisplayName("TC-SEC-014 [NFR-32]")
+    @DisplayName("TC-SEC-014")
     void oversizedPage() throws Exception {
         getJson("/comics?size=200").andExpect(status().isBadRequest());
     }
 
     @Test
-    @DisplayName("TC-SEC-015 [NFR-32]")
+    @DisplayName("TC-SEC-015")
     void invalidPageNumber() throws Exception {
         getJson("/comics?page=0").andExpect(status().isBadRequest());
     }
@@ -185,7 +185,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── CORS (cross-cutting security) ────────────────────────────────────────
 
     @Test
-    @DisplayName("TC-SEC-016 [NFR-33]")
+    @DisplayName("TC-SEC-016")
     void corsAllowedOrigin() throws Exception {
         mockMvc.perform(options("/auth/login")
                         .header("Origin", "https://comi-verse.vercel.app")
@@ -197,7 +197,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     }
 
     @Test
-    @DisplayName("TC-SEC-017 [NFR-33]")
+    @DisplayName("TC-SEC-017")
     void corsDisallowedOrigin() throws Exception {
         mockMvc.perform(options("/auth/login")
                         .header("Origin", "https://evil.example.com")
@@ -214,13 +214,13 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── Public whitelist ─────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("TC-SEC-018 [NFR-03]")
+    @DisplayName("TC-SEC-018")
     void comicsPublic() throws Exception {
         getJson("/comics").andExpect(status().isOk());
     }
 
     @Test
-    @DisplayName("TC-SEC-019 [NFR-03]")
+    @DisplayName("TC-SEC-019")
     void openApiPublic() throws Exception {
         mockMvc.perform(get("/v3/api-docs").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk());
@@ -229,7 +229,7 @@ class SecurityFilterIT extends AbstractBlackboxIT {
     // ── CSRF disabled ────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("TC-SEC-020 [NFR-33]")
+    @DisplayName("TC-SEC-020")
     void csrfDisabled() throws Exception {
         // reader_test is pre-provisioned — login should succeed without any CSRF token header
         postJson("/auth/login", """

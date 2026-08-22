@@ -10,6 +10,7 @@ import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.ComicMetricSnapshotEntity;
 import com.sep.comiverse.entity.CreatorPayoutSettingEntity;
+import com.sep.comiverse.entity.CreatorPayoutSettingEntity;
 import com.sep.comiverse.entity.GenreEntity;
 import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.entity.UserEntity;
@@ -28,6 +29,7 @@ import com.sep.comiverse.repository.projection.ComicChapterCountProjection;
 import com.sep.comiverse.service.AuditLogService;
 import com.sep.comiverse.service.AuthorComicService;
 import com.sep.comiverse.service.AuthorLicenseService;
+import com.sep.comiverse.service.CreatorPayoutSettingsService;
 import com.sep.comiverse.service.CreatorPayoutSettingsService;
 import com.sep.comiverse.service.NotificationService;
 import org.junit.jupiter.api.BeforeEach;
@@ -71,6 +73,7 @@ class AuthorComicServiceTest {
     @Mock private ComicCrudPlugin comicCrudPlugin;
     @Mock private AuthorLicenseService authorLicenseService;
     @Mock private CreatorPayoutSettingsService payoutSettingsService;
+    @Mock private CreatorPayoutSettingsService payoutSettingsService;
 
     private AuthorComicService service;
     private GenreEntity defaultGenre;
@@ -87,6 +90,8 @@ class AuthorComicServiceTest {
                 userRepository,
                 auditLogService,
                 comicCrudPlugin,
+                authorLicenseService,
+                payoutSettingsService
                 authorLicenseService,
                 payoutSettingsService
         );
