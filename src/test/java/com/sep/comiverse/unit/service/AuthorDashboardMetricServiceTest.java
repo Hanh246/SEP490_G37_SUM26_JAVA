@@ -3,6 +3,7 @@ package com.sep.comiverse.unit.service;
 import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.ComicMetricSnapshotEntity;
+import com.sep.comiverse.entity.CreatorPayoutSettingEntity;
 import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.entity.enums.CreatorPayoutRole;
@@ -15,6 +16,7 @@ import com.sep.comiverse.repository.ICreatorPayoutRequestRepository;
 import com.sep.comiverse.repository.ISubmissionRepository;
 import com.sep.comiverse.repository.projection.ComicChapterCountProjection;
 import com.sep.comiverse.service.AuthorDashboardMetricService;
+import com.sep.comiverse.service.CreatorPayoutSettingsService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,6 +29,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -37,12 +40,20 @@ class AuthorDashboardMetricServiceTest {
     @Mock private ISubmissionRepository submissionRepository;
     @Mock private IComicMetricSnapshotRepository snapshotRepository;
     @Mock private ICreatorPayoutRequestRepository payoutRequestRepository;
+    @Mock private CreatorPayoutSettingsService payoutSettingsService;
     private AuthorDashboardMetricService service;
 
     @BeforeEach
     void setUp() {
         service = new AuthorDashboardMetricService(
-                comicRepository, chapterRepository, submissionRepository, snapshotRepository, payoutRequestRepository);
+                comicRepository,
+                chapterRepository,
+                submissionRepository,
+                snapshotRepository,
+                payoutRequestRepository,
+                payoutSettingsService);
+        lenient().when(payoutSettingsService.currentSettings())
+                .thenReturn(CreatorPayoutSettingEntity.builder().build());
     }
 
     @Test
