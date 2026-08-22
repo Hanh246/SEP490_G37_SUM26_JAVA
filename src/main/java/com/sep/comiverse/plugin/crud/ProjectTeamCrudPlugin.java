@@ -55,6 +55,12 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
                 if (dto.getLeaderName() == null) dto.setLeaderName(principal.getFullName() != null ? principal.getFullName() : principal.getUsername());
             }
         }
+        if (dto.getComicName() != null && dto.getTargetLang() != null) {
+            boolean exists = ((IProjectTeamRepository) repository).existsByComicNameAndTargetLangIgnoreCaseAndDeletedFalse(dto.getComicName(), dto.getTargetLang());
+            if (exists) {
+                throw new com.sep.comiverse.exception.CustomException(409, "A translation team for this comic in the selected language already exists.", org.springframework.http.HttpStatus.CONFLICT);
+            }
+        }
         if (dto.getStatus() == null || dto.getStatus().isBlank()) {
             dto.setStatus("ongoing");
         }
