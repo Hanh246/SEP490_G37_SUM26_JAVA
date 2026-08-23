@@ -100,7 +100,9 @@ public class AuthorChapterService {
             List<String> relativePaths
     ) {
         validateUploadRequest(request);
-        authorLicenseService.assertPublishingAllowed(request.getAuthorId());
+        // License verification is kept as a separate Author/Admin feature and does
+        // not block chapter upload. Chapter publication still requires moderation.
+        // authorLicenseService.assertPublishingAllowed(request.getAuthorId());
         enforceActiveChapterUploadQuota(request.getAuthorId());
         String chapterNumber = normalizeChapterNumber(request.getChapterNumber());
         if (!StringUtils.hasText(chapterNumber)) {
@@ -158,7 +160,8 @@ public class AuthorChapterService {
 
     @Transactional
     public SubmitChapterReviewResponse submitForReview(UUID comicId, UUID chapterId, UUID authorId) {
-        authorLicenseService.assertPublishingAllowed(authorId);
+        // License does not block submitting a chapter for moderation.
+        // authorLicenseService.assertPublishingAllowed(authorId);
         ComicEntity comic = authorComicService.getOwnedComic(comicId, authorId);
         ChapterEntity chapter = getOwnedChapter(comicId, chapterId, authorId);
 
@@ -313,7 +316,8 @@ public class AuthorChapterService {
             List<MultipartFile> files,
             List<String> relativePaths
     ) {
-        authorLicenseService.assertPublishingAllowed(authorId);
+        // License does not block replacing chapter content before moderation.
+        // authorLicenseService.assertPublishingAllowed(authorId);
         ComicEntity comic = authorComicService.getOwnedComic(comicId, authorId);
         ChapterEntity chapter = getOwnedChapter(comicId, chapterId, authorId);
 

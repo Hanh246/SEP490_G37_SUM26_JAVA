@@ -24,7 +24,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 
-import com.sep.comiverse.service.CreatorPayoutSettingsService;
 import com.sep.comiverse.entity.CreatorPayoutSettingEntity;
 import java.math.RoundingMode;
 import org.springframework.data.domain.Page;
@@ -160,7 +159,10 @@ public class AuthorComicService {
     @Transactional
     public AuthorComicResponse createComic(AuthorComicCreateRequest request) {
         validateCreateRequest(request);
-        authorLicenseService.assertPublishingAllowed(request.getAuthorId());
+        // Author license remains available for profile/admin verification, but it is
+        // no longer a prerequisite for creating a comic. Publication is still
+        // protected by the existing moderation review workflow.
+        // authorLicenseService.assertPublishingAllowed(request.getAuthorId());
         enforceAuthorRateLimit(
                 request.getAuthorId(),
                 "create",
@@ -288,7 +290,9 @@ public class AuthorComicService {
 
     @Transactional
     public AuthorComicResponse submitForReview(UUID comicId, UUID authorId) {
-        authorLicenseService.assertPublishingAllowed(authorId);
+        // License does not block comic submission. Moderator/Admin approval still
+        // decides whether the comic becomes PUBLISHED.
+        // authorLicenseService.assertPublishingAllowed(authorId);
         ComicEntity comic = getOwnedComic(comicId, authorId);
         enforceAuthorRateLimit(
                 authorId,
