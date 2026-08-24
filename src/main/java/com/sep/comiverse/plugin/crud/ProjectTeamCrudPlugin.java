@@ -17,6 +17,7 @@ import com.sep.comiverse.repository.ITeamTaskRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.entity.TeamTaskEntity;
+import com.sep.comiverse.util.ProjectTeamStatuses;
 import java.util.List;
 
 @Component
@@ -62,7 +63,9 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
             }
         }
         if (dto.getStatus() == null || dto.getStatus().isBlank()) {
-            dto.setStatus("ongoing");
+            dto.setStatus(ProjectTeamStatuses.ONGOING);
+        } else {
+            dto.setStatus(ProjectTeamStatuses.normalize(dto.getStatus()));
         }
         if (dto.getIsRecruiting() == null) {
             dto.setIsRecruiting(false);
@@ -120,6 +123,17 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
             if (dto.getPriority() == null) {
                 dto.setPriority(existing.getPriority());
             }
+        }
+        if (ProjectTeamStatuses.isCompleted(previousStatus)
+                && (dto.getStatus() == null || dto.getStatus().isBlank())) {
+            dto.setStatus(ProjectTeamStatuses.COMPLETED);
+        } else if (dto.getStatus() == null || dto.getStatus().isBlank()) {
+            dto.setStatus(previousStatus != null ? previousStatus : ProjectTeamStatuses.ONGOING);
+        } else {
+            dto.setStatus(ProjectTeamStatuses.normalize(dto.getStatus()));
+        }
+        if (ProjectTeamStatuses.isCompleted(dto.getStatus())) {
+            dto.setIsRecruiting(false);
         }
         if (dto.getLeaderId() != null && !dto.getLeaderId().equals(previousLeaderId)) {
             var newLeaderOpt = userRepository.findById(dto.getLeaderId());

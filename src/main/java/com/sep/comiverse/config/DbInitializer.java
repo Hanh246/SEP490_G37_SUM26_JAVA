@@ -54,6 +54,7 @@ public class DbInitializer implements CommandLineRunner {
         // Publication lifecycle is stored in `publication_status`.
         jdbcTemplate.execute("UPDATE comics SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
         jdbcTemplate.execute("UPDATE chapters SET moderation_status = 'PUBLISHED' WHERE moderation_status IS NULL");
+        canonicalizeCompletedProjectTeams();
         migrateAuthorLanguageToComics();
         migrateAuthorLicenseState();
         migrateLegacyChapterPagesIntoChapterImages();
@@ -147,6 +148,20 @@ public class DbInitializer implements CommandLineRunner {
         jdbcTemplate.execute("UPDATE comics SET language = 'Unknown' WHERE language IS NULL OR BTRIM(language) = ''");
         jdbcTemplate.execute("ALTER TABLE comics ALTER COLUMN language SET DEFAULT 'Unknown'");
         jdbcTemplate.execute("ALTER TABLE comics ALTER COLUMN language SET NOT NULL");
+    }
+
+    /**
+     * Projects already marked completed (any historical spelling) must stay
+     * completed and must not occupy concurrent-project slots.
+     */
+    private void canonicalizeCompletedProjectTeams() {
+        jdbcTemplate.execute("""
+                UPDATE project_teams
+                SET status = 'completed',
+                    is_recruiting = false
+                WHERE COALESCE(deleted, false) = false
+                  AND LOWER(BTRIM(COALESCE(status, ''))) IN ('completed', 'complete', 'done')
+                """);
     }
 
 

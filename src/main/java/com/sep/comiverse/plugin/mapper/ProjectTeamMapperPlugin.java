@@ -4,6 +4,7 @@ import com.sep.comiverse.dto.ProjectTeamDTO;
 import com.sep.comiverse.entity.ProjectTeamEntity;
 import com.sep.comiverse.plugin.AbstractMapperPlugin;
 import com.sep.comiverse.repository.ITeamTaskRepository;
+import com.sep.comiverse.util.ProjectTeamStatuses;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -36,6 +37,19 @@ public class ProjectTeamMapperPlugin extends AbstractMapperPlugin<ProjectTeamEnt
         dto.setCompletedTasksCount(completedCount);
         
         return dto;
+    }
+
+    @Override
+    protected void performCustomUpdate(ProjectTeamEntity existingModel, ProjectTeamDTO dto) {
+        if (dto == null || existingModel == null) {
+            return;
+        }
+        if (dto.getStatus() != null && !dto.getStatus().isBlank()) {
+            existingModel.setStatus(ProjectTeamStatuses.normalize(dto.getStatus()));
+        }
+        if (ProjectTeamStatuses.isCompleted(existingModel.getStatus())) {
+            existingModel.setIsRecruiting(false);
+        }
     }
 
     @Override

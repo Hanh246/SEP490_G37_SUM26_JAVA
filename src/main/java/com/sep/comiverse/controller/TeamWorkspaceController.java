@@ -651,12 +651,12 @@ public class TeamWorkspaceController {
                             .online(userPresenceService.isOnline(u.getId()))
                             .lastSeenAt(u.getLastSeenAt())
                             .joinDate(m.getCreatedAt())
-                            .activeTaskCount(activeTaskCountByUserId.getOrDefault(u.getId(), 0));
+                            .activeTaskCount(activeTaskCountByUserId.getOrDefault(u.getId(), 0))
+                            .joinedProjectCount((int) projectTeamRepository.countActiveTeamsByUserId(u.getId()));
                     if (translator != null) {
                         builder.cvUrl(translator.getCvUrl())
                                 .bio(translator.getBio())
                                 .experienceYears(translator.getExperienceYears())
-                                .joinedProjectCount(translator.getJoinedProjectCount())
                                 .phoneNumber(translator.getPhoneNumber())
                                 .facebookUrl(translator.getFacebookUrl())
                                 .specializations(translator.getSpecializations());
