@@ -2,9 +2,11 @@ package com.sep.comiverse.repository;
 
 import com.sep.comiverse.entity.NotificationEntity;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Date;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,6 +29,16 @@ public interface INotificationRepository extends AbstractCrudRepository<Notifica
 
     @Query("SELECT COUNT(n) FROM NotificationEntity n WHERE n.user.id = :userId AND n.isRead = false AND n.deleted = false")
     long countUnreadByUserId(UUID userId);
+
+    @Query("""
+            SELECT n.user.id, COUNT(n)
+            FROM NotificationEntity n
+            WHERE n.user.id IN :userIds
+              AND n.isRead = false
+              AND n.deleted = false
+            GROUP BY n.user.id
+            """)
+    List<Object[]> countUnreadByUserIds(@Param("userIds") Collection<UUID> userIds);
 
     @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true)
     @org.springframework.transaction.annotation.Transactional

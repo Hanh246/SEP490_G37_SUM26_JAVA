@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
 import java.util.UUID;
 
 import com.sep.comiverse.repository.IBannedKeywordRepository;
@@ -58,16 +59,24 @@ public class ChatService {
 
     @Transactional
     public MessageResponseDTO saveMessage(UUID senderId, MessageRequestDTO request) {
-        
         String content = request.getContent() != null ? request.getContent().trim() : "";
-        if (content.isEmpty()) {
-            throw new CustomException(400, "Message content cannot be empty", HttpStatus.BAD_REQUEST);
+        String imageUrl = normalizeImageUrl(request.getImageUrl());
+        if (content.isEmpty() && imageUrl == null) {
+            throw new CustomException(400, "Message must contain text or an image", HttpStatus.BAD_REQUEST);
+        }
+        if (content.length() > 2000) {
+            throw new CustomException(400, "Content length cannot exceed 2000 characters", HttpStatus.BAD_REQUEST);
+        }
+        if (request.getChatType() == null) {
+            throw new CustomException(400, "chatType is required", HttpStatus.BAD_REQUEST);
         }
 
         // Backend Banned Keyword Filter
-        BannedKeywordValidationResponseDTO validation = validateMessageContent(content);
-        if (validation.isBanned()) {
-            throw new CustomException(400, "Message blocked by Server Filter! Contains banned keyword: " + validation.getMatchedWord(), HttpStatus.BAD_REQUEST);
+        if (!content.isEmpty()) {
+            BannedKeywordValidationResponseDTO validation = validateMessageContent(content);
+            if (validation.isBanned()) {
+                throw new CustomException(400, "Message blocked by Server Filter! Contains banned keyword: " + validation.getMatchedWord(), HttpStatus.BAD_REQUEST);
+            }
         }
 
         if (ChatType.GROUP.equals(request.getChatType())) {
@@ -85,6 +94,7 @@ public class ChatService {
                 .chatType(request.getChatType())
                 .groupId(request.getGroupId())
                 .content(content)
+                .imageUrl(imageUrl)
                 .status("ACTIVE")
                 .build();
 
@@ -126,9 +136,29 @@ public class ChatService {
                 .chatType(entity.getChatType())
                 .groupId(entity.getGroupId())
                 .content(entity.getContent())
+                .imageUrl(entity.getImageUrl())
                 .status(entity.getStatus())
                 .createdAt(entity.getCreatedAt())
                 .build();
+    }
+
+    private String normalizeImageUrl(String rawImageUrl) {
+        if (rawImageUrl == null || rawImageUrl.isBlank()) return null;
+        String imageUrl = rawImageUrl.trim();
+        if (imageUrl.length() > 2048) {
+            throw new CustomException(400, "Image URL length cannot exceed 2048 characters", HttpStatus.BAD_REQUEST);
+        }
+        try {
+            URI uri = URI.create(imageUrl);
+            boolean supportedScheme = "https".equalsIgnoreCase(uri.getScheme())
+                    || "http".equalsIgnoreCase(uri.getScheme());
+            if (!supportedScheme || uri.getHost() == null || uri.getHost().isBlank()) {
+                throw new IllegalArgumentException("Unsupported image URL");
+            }
+            return imageUrl;
+        } catch (IllegalArgumentException ex) {
+            throw new CustomException(400, "Image URL must be a valid HTTP or HTTPS URL", HttpStatus.BAD_REQUEST);
+        }
     }
 
     private UserSnapshot getUserById(UUID userId){

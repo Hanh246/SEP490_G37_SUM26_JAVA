@@ -25,6 +25,16 @@ public interface IPushDeviceTokenRepository extends JpaRepository<PushDeviceToke
     List<PushDeviceTokenEntity> findActiveByUserId(@Param("userId") UUID userId);
 
     @Query("""
+            SELECT device
+            FROM PushDeviceTokenEntity device
+            JOIN FETCH device.user user
+            WHERE user.id IN :userIds
+              AND device.enabled = true
+              AND (device.deleted = false OR device.deleted IS NULL)
+            """)
+    List<PushDeviceTokenEntity> findActiveByUserIds(@Param("userIds") Collection<UUID> userIds);
+
+    @Query("""
             SELECT COUNT(device)
             FROM PushDeviceTokenEntity device
             WHERE device.user.id = :userId

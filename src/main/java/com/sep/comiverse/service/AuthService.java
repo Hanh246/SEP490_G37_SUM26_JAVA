@@ -5,6 +5,7 @@ import com.sep.comiverse.dto.request.RegisterRequest;
 import com.sep.comiverse.entity.RoleEntity;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.exception.CustomException;
+import com.sep.comiverse.exception.EmailVerificationRequiredException;
 import com.sep.comiverse.repository.IRoleRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.util.EmailUtil;
@@ -54,9 +55,36 @@ public class AuthService {
             throw new CustomException(403, "Your account has been banned!", HttpStatus.FORBIDDEN);
         }
         if ("PENDING_VERIFICATION".equals(user.getStatus())) {
-            throw new CustomException(403, "Please verify your email before signing in.", HttpStatus.FORBIDDEN);
+            throw new EmailVerificationRequiredException();
         }
         return user;
+    }
+
+    @Transactional
+    public UserEntity linkVerifiedGoogleIdentity(UserEntity user, String providerId, String picture) {
+        String status = user.getStatus() == null ? "" : user.getStatus().trim().toUpperCase();
+        if ("INACTIVE".equals(status) || "BANNED".equals(status)) {
+            throw new CustomException(403, "Your account has been banned!", HttpStatus.FORBIDDEN);
+        }
+        if (!"ACTIVE".equals(status) && !"PENDING_VERIFICATION".equals(status)) {
+            throw new CustomException(403, "This account cannot sign in.", HttpStatus.FORBIDDEN);
+        }
+
+        if ("PENDING_VERIFICATION".equals(status)) {
+            user.setStatus("ACTIVE");
+            user.setEmailVerificationToken(null);
+            user.setEmailVerificationExpiresAt(null);
+            if (user.getEmail() != null) {
+                clearEmailVerificationFailures(user.getEmail().trim().toLowerCase());
+            }
+        }
+
+        user.setProviderId(providerId);
+        if (picture != null && !picture.isBlank()
+                && (user.getAvatarUrl() == null || user.getAvatarUrl().isBlank())) {
+            user.setAvatarUrl(picture);
+        }
+        return userRepository.save(user);
     }
 
     @Transactional

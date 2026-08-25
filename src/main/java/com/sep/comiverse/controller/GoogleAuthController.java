@@ -7,6 +7,7 @@ import com.sep.comiverse.repository.IRoleRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.security.JwtTokenUtil;
 import com.sep.comiverse.dto.request.AuthRequest;
+import com.sep.comiverse.service.AuthService;
 import com.sep.comiverse.service.LoginDeviceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +15,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,6 +37,7 @@ public class GoogleAuthController {
     private final IRoleRepository roleRepository;
     private final JwtTokenUtil jwtTokenUtil;
     private final LoginDeviceService loginDeviceService;
+    private final AuthService authService;
     private final RestTemplate restTemplate = new RestTemplate();
 
     /**
@@ -68,19 +71,16 @@ public class GoogleAuthController {
         String sub     = (String) tokenInfo.get("sub");
         String picture = (String) tokenInfo.get("picture");
 
-        if (!StringUtils.hasText(email) || !StringUtils.hasText(sub)) {
+        if (!StringUtils.hasText(email) || !StringUtils.hasText(sub)
+                || !isTrue(tokenInfo.get("email_verified"))) {
             return ResponseEntity.status(401).build();
         }
+        email = email.trim().toLowerCase(Locale.ROOT);
 
         Optional<UserEntity> existing = userRepository.findByEmail(email);
         UserEntity user;
         if (existing.isPresent()) {
-            user = existing.get();
-            user.setProviderId(sub);
-            if (StringUtils.hasText(picture) && !StringUtils.hasText(user.getAvatarUrl())) {
-                user.setAvatarUrl(picture);
-            }
-            userRepository.save(user);
+            user = authService.linkVerifiedGoogleIdentity(existing.get(), sub, picture);
         } else {
             RoleEntity readerRole = roleRepository.findByRoleName("READER")
                     .orElseThrow(() -> new RuntimeException("Default role 'READER' not found"));
@@ -123,5 +123,9 @@ public class GoogleAuthController {
         String token        = jwtTokenUtil.generateToken(user, decision.deviceId());
         String refreshToken = jwtTokenUtil.generateRefreshToken(user, decision.deviceId());
         return ResponseEntity.ok(new AuthResponse(token, refreshToken));
+    }
+
+    private boolean isTrue(Object value) {
+        return Boolean.TRUE.equals(value) || "true".equalsIgnoreCase(String.valueOf(value));
     }
 }

@@ -4,6 +4,7 @@ import com.sep.comiverse.dto.request.RegisterRequest;
 import com.sep.comiverse.entity.RoleEntity;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.exception.CustomException;
+import com.sep.comiverse.exception.EmailVerificationRequiredException;
 import com.sep.comiverse.repository.IRoleRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.service.AuthService;
@@ -140,6 +141,55 @@ class AuthServiceTest {
 
         assertEquals("Please verify your email before signing in.", error.getMessage());
         assertEquals(HttpStatus.FORBIDDEN, error.getHttpStatus());
+        assertTrue(error instanceof EmailVerificationRequiredException);
+    }
+
+    @Test
+    void linkVerifiedGoogleIdentityActivatesPendingLocalAccountWithoutRemovingPasswordLogin() {
+        UserEntity user = localUser("reader@example.com", "PENDING_VERIFICATION");
+        user.setEmailVerificationToken("hashed-otp");
+        user.setEmailVerificationExpiresAt(LocalDateTime.now().plusMinutes(2));
+        user.setAvatarUrl("custom-avatar.png");
+        when(userRepository.save(user)).thenReturn(user);
+
+        UserEntity result = service.linkVerifiedGoogleIdentity(user, "google-sub", "google-avatar.png");
+
+        assertSame(user, result);
+        assertEquals("ACTIVE", user.getStatus());
+        assertEquals("LOCAL", user.getProvider());
+        assertEquals("encoded-old-password", user.getPassword());
+        assertEquals("google-sub", user.getProviderId());
+        assertEquals("custom-avatar.png", user.getAvatarUrl());
+        assertNull(user.getEmailVerificationToken());
+        assertNull(user.getEmailVerificationExpiresAt());
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void linkVerifiedGoogleIdentityFillsMissingAvatarForActiveAccount() {
+        UserEntity user = localUser("reader@example.com", "ACTIVE");
+        user.setAvatarUrl(null);
+        when(userRepository.save(user)).thenReturn(user);
+
+        service.linkVerifiedGoogleIdentity(user, "google-sub", "google-avatar.png");
+
+        assertEquals("ACTIVE", user.getStatus());
+        assertEquals("google-avatar.png", user.getAvatarUrl());
+        assertEquals("google-sub", user.getProviderId());
+    }
+
+    @Test
+    void linkVerifiedGoogleIdentityRejectsInactiveAccount() {
+        UserEntity user = localUser("reader@example.com", "INACTIVE");
+
+        CustomException error = assertThrows(
+                CustomException.class,
+                () -> service.linkVerifiedGoogleIdentity(user, "google-sub", "google-avatar.png")
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, error.getHttpStatus());
+        assertEquals("Your account has been banned!", error.getMessage());
+        verify(userRepository, never()).save(any());
     }
 
     // ===== register =====

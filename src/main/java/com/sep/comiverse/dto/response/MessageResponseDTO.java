@@ -37,6 +37,9 @@ public class MessageResponseDTO {
     @JsonProperty("content")
     private String content;
 
+    @JsonProperty("imageUrl")
+    private String imageUrl;
+
     @JsonProperty("status")
     private String status;
 

@@ -86,6 +86,36 @@ public class NotificationPreferenceService {
                 .orElse(true);
     }
 
+    @Transactional(readOnly = true)
+    public List<UserEntity> filterEnabled(Collection<UserEntity> users, NotificationPreferenceKey key) {
+        if (users == null || users.isEmpty() || key == null) {
+            return List.of();
+        }
+
+        List<UserEntity> eligibleUsers = users.stream()
+                .filter(Objects::nonNull)
+                .filter(user -> user.getId() != null)
+                .filter(user -> availableKeys(user).contains(key))
+                .toList();
+        if (eligibleUsers.isEmpty()) {
+            return List.of();
+        }
+
+        Set<UUID> disabledUserIds = preferenceRepository
+                .findByUser_IdInAndPreferenceKeyAndDeletedFalse(
+                        eligibleUsers.stream().map(UserEntity::getId).toList(),
+                        key
+                )
+                .stream()
+                .filter(preference -> !Boolean.TRUE.equals(preference.getEnabled()))
+                .map(preference -> preference.getUser().getId())
+                .collect(java.util.stream.Collectors.toSet());
+
+        return eligibleUsers.stream()
+                .filter(user -> !disabledUserIds.contains(user.getId()))
+                .toList();
+    }
+
     private Map<NotificationPreferenceKey, Boolean> loadSavedPreferences(UUID userId) {
         Map<NotificationPreferenceKey, Boolean> saved = new EnumMap<>(NotificationPreferenceKey.class);
         preferenceRepository.findByUser_IdAndDeletedFalse(userId)

@@ -164,6 +164,34 @@ class NotificationPreferenceServiceTest {
         assertFalse(service.isEnabled(null, NotificationPreferenceKey.SUBMISSION_STATUS));
     }
 
+    @ParameterizedTest(name = "system broadcast bulk filter: {0} / enabled={1}")
+    @MethodSource("systemBroadcastDeliveryMatrix")
+    void bulkFilterHonorsSystemBroadcastToggleForEveryRole(String roleName, boolean enabled) {
+        RoleEntity role = RoleEntity.builder().roleName(roleName).build();
+        UserEntity user = UserEntity.builder()
+                .role(role)
+                .email(roleName.toLowerCase() + "@example.com")
+                .build();
+        user.setId(UUID.randomUUID());
+        NotificationPreferenceEntity preference = NotificationPreferenceEntity.builder()
+                .user(user)
+                .preferenceKey(NotificationPreferenceKey.SYSTEM_BROADCASTS)
+                .enabled(enabled)
+                .build();
+        preference.setDeleted(false);
+        when(preferenceRepository.findByUser_IdInAndPreferenceKeyAndDeletedFalse(
+                any(),
+                org.mockito.ArgumentMatchers.eq(NotificationPreferenceKey.SYSTEM_BROADCASTS)
+        )).thenReturn(List.of(preference));
+
+        List<UserEntity> recipients = service.filterEnabled(
+                List.of(user),
+                NotificationPreferenceKey.SYSTEM_BROADCASTS
+        );
+
+        assertEquals(enabled ? List.of(user) : List.of(), recipients);
+    }
+
     private static Stream<Arguments> rolePreferenceMatrix() {
         Set<String> common = Set.of("SYSTEM_BROADCASTS", "COMMENT_REPLIES", "FORUM_ACTIVITY");
         return Stream.of(
@@ -196,6 +224,21 @@ class NotificationPreferenceServiceTest {
                 .flatMap(pair -> Stream.of(
                         Arguments.of(pair[0], pair[1], true),
                         Arguments.of(pair[0], pair[1], false)
+                ));
+    }
+
+    private static Stream<Arguments> systemBroadcastDeliveryMatrix() {
+        return Stream.of(
+                        "READER",
+                        "ADMIN",
+                        "MODERATOR",
+                        "AUTHOR",
+                        "TRANSLATOR",
+                        "PROJECT_LEADER"
+                )
+                .flatMap(role -> Stream.of(
+                        Arguments.of(role, true),
+                        Arguments.of(role, false)
                 ));
     }
 }

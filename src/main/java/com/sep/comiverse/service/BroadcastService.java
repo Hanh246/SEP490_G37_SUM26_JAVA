@@ -14,12 +14,12 @@ import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.INotificationRepository;
 import com.sep.comiverse.repository.IProjectTeamRepository;
 import com.sep.comiverse.repository.IUserRepository;
+import com.sep.comiverse.service.push.NotificationPushBatchEvent;
 import com.sep.comiverse.service.push.NotificationPushEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,15 +42,12 @@ public class BroadcastService {
     private final IUserRepository userRepository;
     private final IProjectTeamRepository projectTeamRepository;
     private final NotificationPreferenceService notificationPreferenceService;
-    private final SimpMessagingTemplate messagingTemplate;
     private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(readOnly = true)
     public BroadcastAudiencePreviewResponse previewAudience(BroadcastRequest request) {
         AudienceSelection selection = resolveAudience(request);
-        long enabledCount = selection.recipients().stream()
-                .filter(this::acceptsSystemBroadcasts)
-                .count();
+        long enabledCount = enabledRecipients(selection.recipients()).size();
         return BroadcastAudiencePreviewResponse.builder()
                 .audienceType(selection.type())
                 .audienceLabel(selection.label())
@@ -69,9 +66,7 @@ public class BroadcastService {
         String title = request.getTitle().trim();
         String message = request.getMessage().trim();
 
-        List<UserEntity> enabledRecipients = selection.recipients().stream()
-                .filter(this::acceptsSystemBroadcasts)
-                .toList();
+        List<UserEntity> enabledRecipients = enabledRecipients(selection.recipients());
         requireRecipients(
                 enabledRecipients,
                 "No selected recipient currently allows system broadcasts."
@@ -90,14 +85,13 @@ public class BroadcastService {
                 .toList();
 
         List<NotificationEntity> savedNotifications = notificationRepository.saveAll(notifications);
-        for (NotificationEntity notification : savedNotifications) {
-            NotificationResponse response = toNotificationResponse(notification);
-            messagingTemplate.convertAndSend(
-                    "/topic/notifications/" + notification.getUser().getId(),
-                    response
-            );
-            eventPublisher.publishEvent(new NotificationPushEvent(notification.getUser().getId(), response));
-        }
+        List<NotificationPushEvent> deliveries = savedNotifications.stream()
+                .map(notification -> new NotificationPushEvent(
+                        notification.getUser().getId(),
+                        toNotificationResponse(notification)
+                ))
+                .toList();
+        eventPublisher.publishEvent(new NotificationPushBatchEvent(deliveries));
 
         return BroadcastResponse.builder()
                 .id(broadcastId)
@@ -162,7 +156,7 @@ public class BroadcastService {
             throw badRequest("Select at least one specific role, or use All users.");
         }
         List<UserEntity> recipients = findActiveUsers((root, query, cb) ->
-                root.get("role").get("roleName").in(roles));
+                cb.upper(root.get("role").get("roleName")).in(roles));
         requireRecipients(recipients, "No active users found for the selected roles.");
         return new AudienceSelection(recipients, BroadcastAudienceType.ROLES, String.join(", ", roles));
     }
@@ -217,7 +211,7 @@ public class BroadcastService {
 
     private List<UserEntity> findActiveUsers(Specification<UserEntity> audienceSpec) {
         Specification<UserEntity> activeSpec = (root, query, cb) -> cb.and(
-                cb.equal(root.get("deleted"), false),
+                cb.or(cb.isNull(root.get("deleted")), cb.isFalse(root.get("deleted"))),
                 cb.equal(cb.upper(root.get("status")), "ACTIVE")
         );
         if (audienceSpec != null) {
@@ -226,8 +220,11 @@ public class BroadcastService {
         return userRepository.findAll(activeSpec);
     }
 
-    private boolean acceptsSystemBroadcasts(UserEntity user) {
-        return notificationPreferenceService.isEnabled(user, NotificationPreferenceKey.SYSTEM_BROADCASTS);
+    private List<UserEntity> enabledRecipients(List<UserEntity> recipients) {
+        return notificationPreferenceService.filterEnabled(
+                recipients,
+                NotificationPreferenceKey.SYSTEM_BROADCASTS
+        );
     }
 
     private void validateAnnouncementType(String rawType) {
@@ -243,7 +240,10 @@ public class BroadcastService {
         }
         return rawRoles.stream()
                 .filter(roles -> roles != null && !roles.isBlank())
-                .map(role -> role.trim().toUpperCase(Locale.ROOT))
+                .map(role -> role.trim()
+                        .toUpperCase(Locale.ROOT)
+                        .replace('-', '_')
+                        .replace(' ', '_'))
                 .distinct()
                 .toList();
     }

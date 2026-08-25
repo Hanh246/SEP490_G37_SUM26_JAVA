@@ -86,6 +86,41 @@ class ChatServiceTest {
     }
 
     @Test
+    void saveMessage_imageOnlyPersistsAndReturnsUploadedImageUrl() {
+        UUID senderId = UUID.randomUUID();
+        MessageRequestDTO request = MessageRequestDTO.builder()
+                .chatType(ChatType.GLOBAL)
+                .content("   ")
+                .imageUrl(" https://res.cloudinary.com/comiverse/chat/image.png ")
+                .build();
+        when(userService.findUserById(senderId))
+                .thenReturn(new UserSnapshot(senderId, "Reader", "avatar.png"));
+
+        var response = service.saveMessage(senderId, request);
+
+        ArgumentCaptor<MessageEntity> captor = ArgumentCaptor.forClass(MessageEntity.class);
+        verify(messageRepository).save(captor.capture());
+        assertEquals("", captor.getValue().getContent());
+        assertEquals("https://res.cloudinary.com/comiverse/chat/image.png", captor.getValue().getImageUrl());
+        assertEquals("https://res.cloudinary.com/comiverse/chat/image.png", response.getImageUrl());
+        verifyNoInteractions(bannedKeywordRepository);
+    }
+
+    @Test
+    void saveMessage_rejectsBase64OrMalformedImageUrl() {
+        UUID senderId = UUID.randomUUID();
+
+        CustomException error = assertThrows(CustomException.class, () ->
+                service.saveMessage(senderId, MessageRequestDTO.builder()
+                        .chatType(ChatType.GLOBAL)
+                        .imageUrl("data:image/png;base64,AAAA")
+                        .build()));
+
+        assertEquals(400, error.getCode());
+        verify(messageRepository, never()).save(any());
+    }
+
+    @Test
     void saveMessage_rejectsBlankBannedAndInvalidGroupMembership() {
         UUID senderId = UUID.randomUUID();
         assertEquals(400, assertThrows(CustomException.class, () ->

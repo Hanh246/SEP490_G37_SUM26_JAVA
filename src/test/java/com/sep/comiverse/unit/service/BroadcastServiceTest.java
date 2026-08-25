@@ -17,6 +17,7 @@ import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.INotificationRepository;
 import com.sep.comiverse.repository.IProjectTeamRepository;
 import com.sep.comiverse.repository.IUserRepository;
+import com.sep.comiverse.service.push.NotificationPushBatchEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,7 +26,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.util.List;
 import java.util.UUID;
@@ -33,10 +33,8 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -52,8 +50,6 @@ class BroadcastServiceTest {
     @Mock
     private NotificationPreferenceService preferenceService;
     @Mock
-    private SimpMessagingTemplate messagingTemplate;
-    @Mock
     private ApplicationEventPublisher eventPublisher;
 
     private BroadcastService broadcastService;
@@ -65,20 +61,21 @@ class BroadcastServiceTest {
                 userRepository,
                 projectTeamRepository,
                 preferenceService,
-                messagingTemplate,
                 eventPublisher
         );
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void sendsDatabaseAndWebSocketNotificationOnlyToUsersWhoOptedIn() {
+    void savesAndQueuesDeliveryOnlyForUsersWhoOptedIn() {
         UserEntity enabledReader = activeUser("READER");
         UserEntity disabledReader = activeUser("READER");
         when(userRepository.findAll(any(Specification.class)))
                 .thenReturn(List.of(enabledReader, disabledReader));
-        when(preferenceService.isEnabled(enabledReader, NotificationPreferenceKey.SYSTEM_BROADCASTS)).thenReturn(true);
-        when(preferenceService.isEnabled(disabledReader, NotificationPreferenceKey.SYSTEM_BROADCASTS)).thenReturn(false);
+        when(preferenceService.filterEnabled(
+                any(),
+                eq(NotificationPreferenceKey.SYSTEM_BROADCASTS)
+        )).thenReturn(List.of(enabledReader));
         when(notificationRepository.saveAll(any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -90,15 +87,11 @@ class BroadcastServiceTest {
         List<NotificationEntity> saved = (List<NotificationEntity>) captor.getValue();
         assertEquals(1, saved.size());
         assertEquals(enabledReader.getId(), saved.getFirst().getUser().getId());
-        verify(messagingTemplate).convertAndSend(
-                eq("/topic/notifications/" + enabledReader.getId()),
-                any(Object.class)
-        );
-        verify(messagingTemplate, never()).convertAndSend(
-                eq("/topic/notifications/" + disabledReader.getId()),
-                any(Object.class)
-        );
-        verify(eventPublisher).publishEvent(any(Object.class));
+        ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        NotificationPushBatchEvent event = (NotificationPushBatchEvent) eventCaptor.getValue();
+        assertEquals(1, event.deliveries().size());
+        assertEquals(enabledReader.getId(), event.deliveries().getFirst().userId());
     }
 
     @Test
@@ -106,7 +99,10 @@ class BroadcastServiceTest {
     void rejectsSendWhenEveryRecipientOptedOut() {
         UserEntity disabledReader = activeUser("READER");
         when(userRepository.findAll(any(Specification.class))).thenReturn(List.of(disabledReader));
-        when(preferenceService.isEnabled(disabledReader, NotificationPreferenceKey.SYSTEM_BROADCASTS)).thenReturn(false);
+        when(preferenceService.filterEnabled(
+                any(),
+                eq(NotificationPreferenceKey.SYSTEM_BROADCASTS)
+        )).thenReturn(List.of());
 
         CustomException exception = assertThrows(
                 CustomException.class,
@@ -115,7 +111,7 @@ class BroadcastServiceTest {
 
         assertEquals("No selected recipient currently allows system broadcasts.", exception.getMessage());
         verify(notificationRepository, never()).saveAll(any());
-        verify(messagingTemplate, never()).convertAndSend(anyString(), any(Object.class));
+        verify(eventPublisher, never()).publishEvent(any(Object.class));
     }
 
     @Test
@@ -125,8 +121,10 @@ class BroadcastServiceTest {
         UserEntity optedOutUser = activeUser("TRANSLATOR");
         when(userRepository.findAll(any(Specification.class)))
                 .thenReturn(List.of(enabledUser, optedOutUser));
-        when(preferenceService.isEnabled(enabledUser, NotificationPreferenceKey.SYSTEM_BROADCASTS)).thenReturn(true);
-        when(preferenceService.isEnabled(optedOutUser, NotificationPreferenceKey.SYSTEM_BROADCASTS)).thenReturn(false);
+        when(preferenceService.filterEnabled(
+                any(),
+                eq(NotificationPreferenceKey.SYSTEM_BROADCASTS)
+        )).thenReturn(List.of(enabledUser));
 
         BroadcastRequest request = request();
         request.setAudienceType(BroadcastAudienceType.USERS);
@@ -161,8 +159,10 @@ class BroadcastServiceTest {
         when(projectTeamRepository.findAllWithMembersByIdIn(List.of(team.getId())))
                 .thenReturn(List.of(team));
         when(userRepository.findAll(any(Specification.class))).thenReturn(List.of(leader, translator));
-        when(preferenceService.isEnabled(any(UserEntity.class), eq(NotificationPreferenceKey.SYSTEM_BROADCASTS)))
-                .thenReturn(true);
+        when(preferenceService.filterEnabled(
+                any(),
+                eq(NotificationPreferenceKey.SYSTEM_BROADCASTS)
+        )).thenAnswer(invocation -> invocation.getArgument(0));
         when(notificationRepository.saveAll(any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -179,8 +179,10 @@ class BroadcastServiceTest {
         verify(notificationRepository).saveAll(captor.capture());
         List<NotificationEntity> saved = (List<NotificationEntity>) captor.getValue();
         assertEquals(2, saved.stream().map(item -> item.getUser().getId()).distinct().count());
-        verify(messagingTemplate, times(2)).convertAndSend(anyString(), any(Object.class));
-        verify(eventPublisher, times(2)).publishEvent(any(Object.class));
+        ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        NotificationPushBatchEvent event = (NotificationPushBatchEvent) eventCaptor.getValue();
+        assertEquals(2, event.deliveries().size());
     }
 
     @Test
@@ -203,6 +205,40 @@ class BroadcastServiceTest {
                 "One or more selected users are no longer active. Refresh the selection and try again.",
                 exception.getMessage()
         );
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allAudienceCreatesOnePrivateDeliveryForEverySupportedRole() {
+        List<UserEntity> users = List.of(
+                activeUser("ADMIN"),
+                activeUser("MODERATOR"),
+                activeUser("AUTHOR"),
+                activeUser("PROJECT_LEADER"),
+                activeUser("TRANSLATOR"),
+                activeUser("READER")
+        );
+        when(userRepository.findAll(any(Specification.class))).thenReturn(users);
+        when(preferenceService.filterEnabled(
+                any(),
+                eq(NotificationPreferenceKey.SYSTEM_BROADCASTS)
+        )).thenAnswer(invocation -> invocation.getArgument(0));
+        when(notificationRepository.saveAll(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        BroadcastResponse response = broadcastService.sendBroadcast(request());
+
+        assertEquals(users.size(), response.getRecipientCount());
+        ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        NotificationPushBatchEvent event = (NotificationPushBatchEvent) eventCaptor.getValue();
+        assertEquals(
+                users.stream().map(UserEntity::getId).collect(java.util.stream.Collectors.toSet()),
+                event.deliveries().stream()
+                        .map(delivery -> delivery.userId())
+                        .collect(java.util.stream.Collectors.toSet())
+        );
+        assertEquals(users.size(), event.deliveries().size());
     }
 
     private static BroadcastRequest request() {

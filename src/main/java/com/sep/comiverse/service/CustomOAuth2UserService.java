@@ -11,6 +11,7 @@ import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.repository.IRoleRepository;
 import com.sep.comiverse.repository.IUserRepository;
 
+import java.util.Locale;
 import java.util.Optional;
 
 @Service
@@ -19,6 +20,7 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
 
     private final IUserRepository userRepository;
     private final IRoleRepository roleRepository;
+    private final AuthService authService;
 
     @Override
     public OAuth2User loadUser(OAuth2UserRequest userRequest) throws OAuth2AuthenticationException {
@@ -31,16 +33,20 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
         String name = oAuth2User.getAttribute("name");
         String googleId = oAuth2User.getAttribute("sub");
         String picture = oAuth2User.getAttribute("picture");
+        Object emailVerified = oAuth2User.getAttribute("email_verified");
+
+        if (email == null || email.isBlank() || googleId == null || googleId.isBlank()
+                || (emailVerified != null
+                && !Boolean.TRUE.equals(emailVerified)
+                && !"true".equalsIgnoreCase(String.valueOf(emailVerified)))) {
+            throw new OAuth2AuthenticationException("Google account email is not verified");
+        }
+        email = email.trim().toLowerCase(Locale.ROOT);
 
         Optional<UserEntity> userOptional = userRepository.findByEmail(email);
         UserEntity user;
         if (userOptional.isPresent()) {
-            user = userOptional.get();
-            user.setProviderId(googleId);
-            if (picture != null) {
-                user.setAvatarUrl(picture);
-            }
-            userRepository.save(user);
+            user = authService.linkVerifiedGoogleIdentity(userOptional.get(), googleId, picture);
         } else {
             RoleEntity userRole = roleRepository.findByRoleName("READER")
                     .orElseThrow(() -> new RuntimeException("Default role 'READER' not found"));

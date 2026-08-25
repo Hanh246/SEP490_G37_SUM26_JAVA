@@ -106,7 +106,8 @@ class AuthControllerIT extends AbstractBlackboxIT {
         postJson("/auth/login", """
                 {"username":"%s","password":"%s"}
                 """.formatted(PENDING_USER, FIXED_PASSWORD))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.errors.code").value("EMAIL_VERIFICATION_REQUIRED"));
     }
 
     @Test

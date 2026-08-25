@@ -4,6 +4,7 @@ import com.sep.comiverse.entity.RoleEntity;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.repository.IRoleRepository;
 import com.sep.comiverse.repository.IUserRepository;
+import com.sep.comiverse.service.AuthService;
 import com.sep.comiverse.service.CustomOAuth2UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,15 +29,16 @@ class CustomOAuth2UserServiceTest {
 
     @Mock private IUserRepository userRepository;
     @Mock private IRoleRepository roleRepository;
+    @Mock private AuthService authService;
     private CustomOAuth2UserService service;
 
     @BeforeEach
     void setUp() {
-        service = new CustomOAuth2UserService(userRepository, roleRepository);
+        service = new CustomOAuth2UserService(userRepository, roleRepository, authService);
     }
 
     @Test
-    void processOAuth2User_existingUser_refreshesProviderAndAvatar() {
+    void processOAuth2User_existingUser_linksVerifiedGoogleIdentity() {
         UserEntity existing = UserEntity.builder()
                 .email("reader@example.com")
                 .provider("GOOGLE")
@@ -45,13 +47,13 @@ class CustomOAuth2UserServiceTest {
                 .build();
         OAuth2User oauth = oauthUser("reader@example.com", "Reader", "new-sub", "new.png");
         when(userRepository.findByEmail("reader@example.com")).thenReturn(Optional.of(existing));
+        when(authService.linkVerifiedGoogleIdentity(existing, "new-sub", "new.png")).thenReturn(existing);
 
         OAuth2User result = ReflectionTestUtils.invokeMethod(service, "processOAuth2User", oauth);
 
         assertSame(oauth, result);
-        assertEquals("new-sub", existing.getProviderId());
-        assertEquals("new.png", existing.getAvatarUrl());
-        verify(userRepository).save(existing);
+        verify(authService).linkVerifiedGoogleIdentity(existing, "new-sub", "new.png");
+        verify(userRepository, never()).save(existing);
         verifyNoInteractions(roleRepository);
     }
 
@@ -63,10 +65,11 @@ class CustomOAuth2UserServiceTest {
                 .build();
         OAuth2User oauth = oauthUser("reader@example.com", "Reader", "sub", null);
         when(userRepository.findByEmail("reader@example.com")).thenReturn(Optional.of(existing));
+        when(authService.linkVerifiedGoogleIdentity(existing, "sub", null)).thenReturn(existing);
 
         ReflectionTestUtils.invokeMethod(service, "processOAuth2User", oauth);
 
-        assertEquals("keep.png", existing.getAvatarUrl());
+        verify(authService).linkVerifiedGoogleIdentity(existing, "sub", null);
     }
 
     @Test
@@ -89,6 +92,24 @@ class CustomOAuth2UserServiceTest {
         assertEquals("sub-1", saved.getProviderId());
         assertEquals("ACTIVE", saved.getStatus());
         assertSame(reader, saved.getRole());
+        verifyNoInteractions(authService);
+    }
+
+    @Test
+    void processOAuth2User_rejectsExplicitlyUnverifiedGoogleEmail() {
+        Map<String, Object> attrs = new java.util.HashMap<>();
+        attrs.put("email", "reader@example.com");
+        attrs.put("name", "Reader");
+        attrs.put("sub", "sub");
+        attrs.put("email_verified", false);
+        OAuth2User oauth = new DefaultOAuth2User(List.of(), attrs, "sub");
+
+        assertThrows(
+                org.springframework.security.oauth2.core.OAuth2AuthenticationException.class,
+                () -> ReflectionTestUtils.invokeMethod(service, "processOAuth2User", oauth)
+        );
+
+        verifyNoInteractions(userRepository, roleRepository, authService);
     }
 
     @Test

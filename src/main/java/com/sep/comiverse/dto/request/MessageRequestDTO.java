@@ -3,7 +3,6 @@ package com.sep.comiverse.dto.request;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.sep.comiverse.entity.enums.ChatType;
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
@@ -29,8 +28,12 @@ public class MessageRequestDTO {
     private UUID groupId;
 
     @Schema(description = "Message content", example = "Hello everyone!")
-    @NotBlank(message = "Content cannot be empty")
     @Size(max = 2000, message = "Content length cannot exceed 2000 characters")
     @JsonProperty("content")
     private String content;
+
+    @Schema(description = "HTTPS URL of an optional uploaded chat image")
+    @Size(max = 2048, message = "Image URL length cannot exceed 2048 characters")
+    @JsonProperty("imageUrl")
+    private String imageUrl;
 }

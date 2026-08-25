@@ -32,6 +32,18 @@ public class GlobalExceptionHandler {
         log.debug("Client disconnected before response completed: {}", ex.getMessage());
     }
 
+    @ExceptionHandler(EmailVerificationRequiredException.class)
+    public ResponseEntity<BaseResponse<Object>> handleEmailVerificationRequired(
+            EmailVerificationRequiredException ex
+    ) {
+        return ResponseEntity.status(ex.getHttpStatus())
+                .body(BaseResponse.builder()
+                        .success(false)
+                        .message(ex.getMessage())
+                        .errors(Map.of("code", EmailVerificationRequiredException.ERROR_CODE))
+                        .build());
+    }
+
     @ExceptionHandler(CustomException.class)
     public ResponseEntity<BaseResponse<Object>> handleCustomException(CustomException ex) {
         return ResponseEntity.status(ex.getHttpStatus())

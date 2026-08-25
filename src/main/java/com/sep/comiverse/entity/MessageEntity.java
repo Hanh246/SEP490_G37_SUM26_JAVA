@@ -28,6 +28,9 @@ public class MessageEntity extends BaseEntity {
     @Column(name = "content", nullable = false, columnDefinition = "TEXT")
     private String content;
 
+    @Column(name = "image_url", length = 2048)
+    private String imageUrl;
+
     @Builder.Default
     @Column(name = "status", nullable = false, length = 20)
     private String status = "ACTIVE";

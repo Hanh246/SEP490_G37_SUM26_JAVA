@@ -24,7 +24,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -42,39 +44,84 @@ public class PushNotificationSender {
     @Async("pushNotificationExecutor")
     @Transactional
     public void sendToUser(UUID userId, NotificationResponse notification) {
+        sendToUsersNow(List.of(new NotificationPushEvent(userId, notification)));
+    }
+
+    @Transactional
+    public void sendToUsers(List<NotificationPushEvent> deliveries) {
+        sendToUsersNow(deliveries);
+    }
+
+    private void sendToUsersNow(List<NotificationPushEvent> deliveries) {
         FirebaseMessaging messaging = firebaseMessagingProvider.getIfAvailable();
-        if (messaging == null || userId == null || notification == null) {
-            if (messaging == null) {
-                log.warn("FCM push skipped: Firebase push is not configured. " +
-                        "Set FIREBASE_PUSH_ENABLED=true and provide service-account credentials.");
-            }
+        if (messaging == null) {
+            log.warn("FCM push skipped: Firebase push is not configured. " +
+                    "Set FIREBASE_PUSH_ENABLED=true and provide service-account credentials.");
+            return;
+        }
+        if (deliveries == null || deliveries.isEmpty()) {
             return;
         }
 
-        List<PushDeviceTokenEntity> devices = pushDeviceTokenRepository.findActiveByUserId(userId);
+        Map<UUID, NotificationResponse> notificationsByUser = new LinkedHashMap<>();
+        for (NotificationPushEvent delivery : deliveries) {
+            if (delivery != null && delivery.userId() != null && delivery.notification() != null) {
+                notificationsByUser.put(delivery.userId(), delivery.notification());
+            }
+        }
+        if (notificationsByUser.isEmpty()) {
+            return;
+        }
+
+        List<PushDeviceTokenEntity> devices = pushDeviceTokenRepository
+                .findActiveByUserIds(notificationsByUser.keySet());
         if (devices.isEmpty()) {
             return;
         }
-        int unreadBadge = toBadgeCount(notificationRepository.countUnreadByUserId(userId));
 
-        for (int start = 0; start < devices.size(); start += MAX_BATCH_SIZE) {
-            int end = Math.min(start + MAX_BATCH_SIZE, devices.size());
-            sendBatch(messaging, devices.subList(start, end), notification, unreadBadge);
+        Map<UUID, Integer> unreadBadges = new LinkedHashMap<>();
+        List<Object[]> unreadRows = notificationRepository.countUnreadByUserIds(notificationsByUser.keySet());
+        if (unreadRows != null) {
+            for (Object[] row : unreadRows) {
+                if (row != null && row.length >= 2 && row[0] instanceof UUID userId && row[1] instanceof Number count) {
+                    unreadBadges.put(userId, toBadgeCount(count.longValue()));
+                }
+            }
+        }
+
+        List<PushTarget> targets = new ArrayList<>();
+        for (PushDeviceTokenEntity device : devices) {
+            UUID userId = device.getUser() == null ? null : device.getUser().getId();
+            NotificationResponse notification = notificationsByUser.get(userId);
+            if (notification != null && device.getToken() != null && !device.getToken().isBlank()) {
+                targets.add(new PushTarget(
+                        device,
+                        notification,
+                        unreadBadges.getOrDefault(userId, 0)
+                ));
+            }
+        }
+
+        for (int start = 0; start < targets.size(); start += MAX_BATCH_SIZE) {
+            int end = Math.min(start + MAX_BATCH_SIZE, targets.size());
+            sendBatch(messaging, targets.subList(start, end));
         }
     }
 
-    private void sendBatch(
-            FirebaseMessaging messaging,
-            List<PushDeviceTokenEntity> devices,
-            NotificationResponse notification,
-            int unreadBadge
-    ) {
-        List<Message> messages = devices.stream()
-                .map(device -> buildMessage(device.getToken(), notification, unreadBadge))
+    private void sendBatch(FirebaseMessaging messaging, List<PushTarget> targets) {
+        List<Message> messages = targets.stream()
+                .map(target -> buildMessage(
+                        target.device().getToken(),
+                        target.notification(),
+                        target.unreadBadge()
+                ))
                 .toList();
         try {
             BatchResponse response = messaging.sendEach(messages);
-            removeUnregisteredTokens(devices, response.getResponses());
+            removeUnregisteredTokens(
+                    targets.stream().map(PushTarget::device).toList(),
+                    response.getResponses()
+            );
             if (response.getFailureCount() > 0) {
                 log.warn("FCM delivered {} push messages and failed to deliver {}",
                         response.getSuccessCount(), response.getFailureCount());
@@ -152,5 +199,12 @@ public class PushNotificationSender {
             return 0;
         }
         return unreadCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) unreadCount;
+    }
+
+    private record PushTarget(
+            PushDeviceTokenEntity device,
+            NotificationResponse notification,
+            int unreadBadge
+    ) {
     }
 }
