@@ -20,7 +20,9 @@ public class ChapterLiteDTO {
     private ChapterStatus moderationStatus;
     private String rejectionReason;
     private UUID rejectedById;
+    private String rejectedBy;
     private UUID approvedById;
+    private String approvedBy;
     private Instant approvedAt;
     private Integer pageCount;
     
