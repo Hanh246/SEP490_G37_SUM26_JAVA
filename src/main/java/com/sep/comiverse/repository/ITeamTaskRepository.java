@@ -22,6 +22,16 @@ public interface ITeamTaskRepository extends JpaRepository<TeamTaskEntity, UUID>
     @Query("SELECT COUNT(t) FROM TeamTaskEntity t WHERE t.projectTeamId = :teamId AND LOWER(t.status) IN ('todo', 'in_progress', 'pending_review')")
     long countIncompleteTasksByTeam(@Param("teamId") UUID teamId);
 
+    @Query("""
+            SELECT COUNT(t) FROM TeamTaskEntity t
+            WHERE t.projectTeamId = :teamId
+              AND (
+                t.status IS NULL
+                OR LOWER(t.status) NOT IN ('completed', 'complete', 'done', 'published', 'superseded')
+              )
+            """)
+    long countNonCompletedTasksByTeam(@Param("teamId") UUID teamId);
+
     @Query("SELECT COUNT(t) FROM TeamTaskEntity t WHERE t.projectTeamId = :teamId AND LOWER(t.status) IN ('completed', 'published')")
     long countCompletedTasksByTeam(@Param("teamId") UUID teamId);
 

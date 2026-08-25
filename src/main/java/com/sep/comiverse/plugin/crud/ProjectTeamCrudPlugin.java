@@ -135,6 +135,18 @@ public class ProjectTeamCrudPlugin extends AbstractCrudPlugin<ProjectTeamEntity,
         if (ProjectTeamStatuses.isCompleted(dto.getStatus())) {
             dto.setIsRecruiting(false);
         }
+        boolean becomingCompleted = ProjectTeamStatuses.isCompleted(dto.getStatus())
+                && !ProjectTeamStatuses.isCompleted(previousStatus);
+        if (becomingCompleted) {
+            long openTaskCount = teamTaskRepository.countNonCompletedTasksByTeam(id);
+            if (openTaskCount > 0) {
+                throw new com.sep.comiverse.exception.CustomException(
+                        400,
+                        "Cannot mark this project as completed. " + openTaskCount
+                                + " task(s) are still incomplete. Complete all tasks first.",
+                        org.springframework.http.HttpStatus.BAD_REQUEST);
+            }
+        }
         if (dto.getLeaderId() != null && !dto.getLeaderId().equals(previousLeaderId)) {
             var newLeaderOpt = userRepository.findById(dto.getLeaderId());
             if (newLeaderOpt.isPresent()) {
