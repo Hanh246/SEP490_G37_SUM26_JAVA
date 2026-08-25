@@ -61,6 +61,8 @@ class AppealServiceTest {
                 redisTemplate
 
         );
+        lenient().when(comicRepository.save(any(ComicEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         lenient().when(modelMapper.map(any(AppealTicketEntity.class), eq(AppealTicketResponseDTO.class)))
                 .thenAnswer(invocation -> {
                     AppealTicketEntity entity = invocation.getArgument(0);

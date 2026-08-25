@@ -138,7 +138,7 @@ class AuthorChapterServiceTest {
         );
 
         assertEquals(400, error.getCode());
-        verify(authorLicenseService).assertPublishingAllowed(authorId);
+        verifyNoInteractions(authorLicenseService);
         verifyNoInteractions(authorComicService, cloudinaryStorageService);
     }
 
@@ -154,29 +154,35 @@ class AuthorChapterServiceTest {
         );
 
         assertEquals(400, error.getCode());
-        verify(authorLicenseService).assertPublishingAllowed(authorId);
+        verifyNoInteractions(authorLicenseService);
         verifyNoInteractions(authorComicService, cloudinaryStorageService);
     }
 
     @Test
-    void uploadChapterFolderEnforcesAuthorLicenseBeforeOwnershipOrStorage() {
+    void uploadChapterFolderDoesNotRequireAuthorLicense() {
         UUID comicId = UUID.randomUUID();
         UUID authorId = UUID.randomUUID();
+        ComicEntity comic = comic(comicId, authorId);
         ChapterUploadRequest request = new ChapterUploadRequest(authorId, "1", "Title");
 
-        doThrow(new CustomException(
-                403,
-                "license inactive",
-                org.springframework.http.HttpStatus.FORBIDDEN
-        )).when(authorLicenseService).assertPublishingAllowed(authorId);
+        when(authorComicService.getOwnedComic(comicId, authorId)).thenReturn(comic);
+        when(chapterRepository.existsByComic_IdAndChapterNumberAndDeletedFalse(comicId, "1"))
+                .thenReturn(false);
+        when(chapterRepository.existsByContentHashAndModerationStatus(anyString(), eq(ChapterStatus.REJECTED)))
+                .thenReturn(false);
+        when(cloudinaryStorageService.uploadImage(any(), anyString(), anyString()))
+                .thenReturn(CloudinaryUploadResult.builder().secureUrl("https://cdn.test/001.png").build());
 
-        CustomException error = assertThrows(
-                CustomException.class,
-                () -> service.uploadChapterFolder(comicId, request, List.of(), List.of())
+        var response = service.uploadChapterFolder(
+                comicId,
+                request,
+                List.of(png("01.png")),
+                List.of("Chapter 1/01.png")
         );
 
-        assertEquals(403, error.getCode());
-        verifyNoInteractions(authorComicService, cloudinaryStorageService);
+        assertEquals(ChapterStatus.PREVIEW_READY, response.getStatus());
+        verifyNoInteractions(authorLicenseService);
+        verify(cloudinaryStorageService).uploadImage(any(), anyString(), anyString());
     }
 
     @Test
@@ -809,24 +815,25 @@ class AuthorChapterServiceTest {
     // ===== submitForReview =====
 
     @Test
-    void submitForReviewEnforcesAuthorLicenseFirst() {
+    void submitForReviewDoesNotRequireAuthorLicense() {
         UUID comicId = UUID.randomUUID();
         UUID chapterId = UUID.randomUUID();
         UUID authorId = UUID.randomUUID();
-
-        doThrow(new CustomException(
-                403,
-                "license inactive",
-                org.springframework.http.HttpStatus.FORBIDDEN
-        )).when(authorLicenseService).assertPublishingAllowed(authorId);
-
-        CustomException error = assertThrows(
-                CustomException.class,
-                () -> service.submitForReview(comicId, chapterId, authorId)
+        ComicEntity comic = comic(comicId, authorId);
+        ChapterEntity chapter = chapter(
+                comic,
+                chapterId,
+                "1",
+                ChapterStatus.PREVIEW_READY,
+                List.of("a")
         );
+        stubSubmitOwnership(comicId, chapterId, authorId, comic, chapter);
 
-        assertEquals(403, error.getCode());
-        verifyNoInteractions(authorComicService, chapterRepository, submissionRepository);
+        var response = service.submitForReview(comicId, chapterId, authorId);
+
+        assertEquals(ChapterStatus.SUBMITTED_FOR_REVIEW, response.getStatus());
+        verifyNoInteractions(authorLicenseService);
+        verify(submissionRepository).save(any(SubmissionEntity.class));
     }
 
     @Test
@@ -1165,30 +1172,37 @@ class AuthorChapterServiceTest {
     // ===== replaceChapterFolder =====
 
     @Test
-    void replaceChapterFolderEnforcesAuthorLicenseBeforeOwnership() {
+    void replaceChapterFolderDoesNotRequireAuthorLicense() {
         UUID comicId = UUID.randomUUID();
         UUID chapterId = UUID.randomUUID();
         UUID authorId = UUID.randomUUID();
-
-        doThrow(new CustomException(
-                403,
-                "license inactive",
-                org.springframework.http.HttpStatus.FORBIDDEN
-        )).when(authorLicenseService).assertPublishingAllowed(authorId);
-
-        CustomException error = assertThrows(
-                CustomException.class,
-                () -> service.replaceChapterFolder(
-                        comicId,
-                        chapterId,
-                        authorId,
-                        List.of(png("01.png")),
-                        List.of("Chapter 1/01.png")
-                )
+        ComicEntity comic = comic(comicId, authorId);
+        ChapterEntity chapter = chapter(
+                comic,
+                chapterId,
+                "1",
+                ChapterStatus.REJECTED,
+                List.of("old")
         );
 
-        assertEquals(403, error.getCode());
-        verifyNoInteractions(authorComicService, chapterRepository, cloudinaryStorageService);
+        when(authorComicService.getOwnedComic(comicId, authorId)).thenReturn(comic);
+        stubOwnedChapter(comicId, chapterId, authorId, chapter);
+        when(chapterRepository.existsByContentHashAndModerationStatus(anyString(), eq(ChapterStatus.REJECTED)))
+                .thenReturn(false);
+        when(cloudinaryStorageService.uploadImage(any(), anyString(), anyString()))
+                .thenReturn(CloudinaryUploadResult.builder().secureUrl("https://cdn.test/new.png").build());
+
+        var response = service.replaceChapterFolder(
+                comicId,
+                chapterId,
+                authorId,
+                List.of(png("01.png")),
+                List.of("Chapter 1/01.png")
+        );
+
+        assertEquals(ChapterStatus.PREVIEW_READY, response.getStatus());
+        verifyNoInteractions(authorLicenseService);
+        verify(cloudinaryStorageService).uploadImage(any(), anyString(), anyString());
     }
 
     @Test
