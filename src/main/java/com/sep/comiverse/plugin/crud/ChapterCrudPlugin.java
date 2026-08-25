@@ -185,9 +185,9 @@ public class ChapterCrudPlugin
             responseDto.setProtectedPages(protectedPages);
         }
 
-        if (hasContentAccess && chapter.getModerationStatus() == ChapterStatus.PUBLISHED && !isStaffOrPrivileged) {
+        if (hasContentAccess && chapter.getModerationStatus() == ChapterStatus.PUBLISHED) {
             try {
-                trackAndIncrementView(responseDto.getComicId(), chapterId, userId, clientIp);
+                trackAndIncrementView(responseDto.getComicId(), chapterId, userId, clientIp, isStaffOrPrivileged);
             } catch (Exception ignored) {
                 // Redis view tracking must not block reading.
             }
@@ -206,7 +206,7 @@ public class ChapterCrudPlugin
         return responseDto;
     }
 
-    private void trackAndIncrementView(UUID comicId, UUID chapterId, UUID userId, String clientIp) {
+    private void trackAndIncrementView(UUID comicId, UUID chapterId, UUID userId, String clientIp, boolean isStaffOrPrivileged) {
         if (comicId == null || chapterId == null) return;
         try {
             String userIdentity = (userId != null) ? "user:" + userId : "guest:ip:" + clientIp;
@@ -216,8 +216,10 @@ public class ChapterCrudPlugin
                     .setIfAbsent(lockKey, "1", Duration.ofMinutes(10));
 
             if (Boolean.TRUE.equals(isFirstTimeIn10Mins)) {
-                redisTemplate.opsForHash().increment(ViewSyncScheduler.COMIC_VIEW_HASH, comicId.toString(), 1);
-                redisTemplate.opsForHash().increment(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString(), 1);
+                if (!isStaffOrPrivileged) {
+                    redisTemplate.opsForHash().increment(ViewSyncScheduler.COMIC_VIEW_HASH, comicId.toString(), 1);
+                    redisTemplate.opsForHash().increment(ViewSyncScheduler.CHAPTER_VIEW_HASH, chapterId.toString(), 1);
+                }
                 if (userId != null) {
                     ReadingHistoryCacheDTO historyDto = ReadingHistoryCacheDTO.builder()
                             .comicId(comicId)
