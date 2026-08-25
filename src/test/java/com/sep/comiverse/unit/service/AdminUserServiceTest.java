@@ -102,6 +102,19 @@ class AdminUserServiceTest {
     }
 
     @Test
+    void banUserRejectsPendingVerificationAccount() {
+        UUID userId = UUID.randomUUID();
+        UserEntity reader = user(userId, "READER", "PENDING_VERIFICATION");
+        when(userRepository.findById(userId)).thenReturn(Optional.of(reader));
+
+        CustomException error = assertThrows(CustomException.class, () -> service.banUser(userId));
+
+        assertEquals("Cannot ban an account pending email verification", error.getMessage());
+        assertEquals("PENDING_VERIFICATION", reader.getStatus());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
     void unbanUserRestoresActiveStatus() {
         UUID userId = UUID.randomUUID();
         UserEntity reader = user(userId, "READER", "INACTIVE");
@@ -112,6 +125,19 @@ class AdminUserServiceTest {
         assertEquals("ACTIVE", reader.getStatus());
         assertEquals("Active", response.getStatus());
         verify(userRepository).save(reader);
+    }
+
+    @Test
+    void unbanUserCannotActivatePendingVerificationAccount() {
+        UUID userId = UUID.randomUUID();
+        UserEntity reader = user(userId, "READER", "PENDING_VERIFICATION");
+        when(userRepository.findById(userId)).thenReturn(Optional.of(reader));
+
+        CustomException error = assertThrows(CustomException.class, () -> service.unbanUser(userId));
+
+        assertEquals("Only banned accounts can be unbanned", error.getMessage());
+        assertEquals("PENDING_VERIFICATION", reader.getStatus());
+        verify(userRepository, never()).save(any());
     }
 
     @Test
@@ -228,6 +254,17 @@ class AdminUserServiceTest {
         assertEquals("Project Leader", response.getRole());
         assertEquals(List.of("Vietnamese", "English"), response.getAssignedLanguages());
         assertEquals("USR-" + userId.toString().substring(0, 8).toUpperCase(), response.getUserId());
+    }
+
+    @Test
+    void getUserByIdKeepsPendingVerificationDistinctFromActive() {
+        UUID userId = UUID.randomUUID();
+        UserEntity reader = user(userId, "READER", "PENDING_VERIFICATION");
+        when(userRepository.findById(userId)).thenReturn(Optional.of(reader));
+
+        AdminUserResponse response = service.getUserById(userId);
+
+        assertEquals("Pending Verification", response.getStatus());
     }
 
     @Test

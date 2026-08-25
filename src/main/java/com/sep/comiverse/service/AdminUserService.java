@@ -57,7 +57,15 @@ public class AdminUserService {
             throw new CustomException(400, "Cannot ban an Admin account", HttpStatus.BAD_REQUEST);
         }
 
-        if ("INACTIVE".equals(user.getStatus())) {
+        if ("PENDING_VERIFICATION".equalsIgnoreCase(user.getStatus())) {
+            throw new CustomException(
+                    400,
+                    "Cannot ban an account pending email verification",
+                    HttpStatus.BAD_REQUEST
+            );
+        }
+
+        if ("INACTIVE".equalsIgnoreCase(user.getStatus())) {
             throw new CustomException(400, "User is already banned", HttpStatus.BAD_REQUEST);
         }
 
@@ -74,8 +82,16 @@ public class AdminUserService {
     public AdminUserResponse unbanUser(UUID userId) {
         UserEntity user = findUserOrThrow(userId);
 
-        if ("ACTIVE".equals(user.getStatus())) {
+        if ("ACTIVE".equalsIgnoreCase(user.getStatus())) {
             throw new CustomException(400, "User is already active", HttpStatus.BAD_REQUEST);
+        }
+
+        if (!"INACTIVE".equalsIgnoreCase(user.getStatus())) {
+            throw new CustomException(
+                    400,
+                    "Only banned accounts can be unbanned",
+                    HttpStatus.BAD_REQUEST
+            );
         }
 
         user.setStatus("ACTIVE");
@@ -204,13 +220,7 @@ public class AdminUserService {
     private AdminUserResponse toAdminUserResponse(UserEntity user) {
         String roleName = user.getRole() != null ? user.getRole().getRoleName() : "READER";
 
-        // Map INACTIVE -> Banned, ACTIVE -> Active for frontend display
-        String displayStatus;
-        if ("INACTIVE".equalsIgnoreCase(user.getStatus())) {
-            displayStatus = "Banned";
-        } else {
-            displayStatus = "Active";
-        }
+        String displayStatus = formatAccountStatus(user.getStatus());
 
         java.util.List<String> parsedLangs = new java.util.ArrayList<>();
         if (user.getAssignedLanguages() != null && !user.getAssignedLanguages().isBlank()) {
@@ -271,6 +281,17 @@ public class AdminUserService {
             formatted.append(part.substring(0, 1).toUpperCase()).append(part.substring(1));
         }
         return formatted.isEmpty() ? "Reader" : formatted.toString();
+    }
+
+    private String formatAccountStatus(String status) {
+        if (status == null || status.isBlank()) return "Unknown";
+
+        return switch (status.trim().toUpperCase()) {
+            case "ACTIVE" -> "Active";
+            case "INACTIVE", "BANNED" -> "Banned";
+            case "PENDING_VERIFICATION" -> "Pending Verification";
+            default -> status.trim();
+        };
     }
 
     private String generateTempPassword() {
