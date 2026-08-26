@@ -63,6 +63,17 @@ public class AdminStatisticsService {
             }
         });
 
+        List<com.sep.comiverse.dto.response.TopAuthorDTO> topAuthors = new java.util.ArrayList<>();
+        comicRepository.findTopAuthorsByPublishedComics(PageRequest.of(0, 6)).forEach(row -> {
+            if (row[0] != null) {
+                java.util.UUID authorId = (java.util.UUID) row[0];
+                long count = ((Number) row[1]).longValue();
+                userRepository.findUserSnapshotById(authorId).ifPresent(snapshot -> {
+                    topAuthors.add(new com.sep.comiverse.dto.response.TopAuthorDTO(authorId, snapshot.getUserName(), snapshot.getAvatarURL(), count));
+                });
+            }
+        });
+
         List<GenreDTO> genres = genreRepository
                 .findAll(PageRequest.of(0, 8, Sort.by(Sort.Direction.ASC, "name")))
                 .getContent()
@@ -88,6 +99,7 @@ public class AdminStatisticsService {
                 .newBookmarksToday(userSaveRepository.countByCreatedAtGreaterThanEqualAndDeletedFalse(startOfToday))
                 .roleCounts(roleCounts)
                 .comicStatusCounts(comicStatusCounts)
+                .topAuthors(topAuthors)
                 .genres(genres)
                 .generatedAt(Instant.now())
                 .build();
