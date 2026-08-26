@@ -57,6 +57,7 @@ public class AdminStatisticsService {
         for (com.sep.comiverse.entity.enums.ComicPublicationStatus status : com.sep.comiverse.entity.enums.ComicPublicationStatus.values()) {
             comicStatusCounts.put(status.name(), 0L);
         }
+        comicStatusCounts.put("SUSPENDED", 0L);
         
         List<com.sep.comiverse.entity.ComicEntity> publishedComics = comicRepository.findByModerationStatusInAndDeletedFalse(
                 List.of(ComicModerationStatus.PUBLISHED, ComicModerationStatus.UNPUBLISHED));
@@ -70,6 +71,10 @@ public class AdminStatisticsService {
         for (com.sep.comiverse.entity.ComicEntity c : uniqueComics.values()) {
             String status = c.getPublicationStatus() != null ? c.getPublicationStatus().name() : "ONGOING";
             comicStatusCounts.put(status, comicStatusCounts.getOrDefault(status, 0L) + 1L);
+            
+            if (c.getModerationStatus() == ComicModerationStatus.UNPUBLISHED) {
+                comicStatusCounts.put("SUSPENDED", comicStatusCounts.get("SUSPENDED") + 1L);
+            }
         }
 
         List<com.sep.comiverse.dto.response.TopAuthorDTO> topAuthors = new java.util.ArrayList<>();
