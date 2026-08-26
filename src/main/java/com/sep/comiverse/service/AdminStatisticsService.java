@@ -67,7 +67,7 @@ public class AdminStatisticsService {
                 .totalGenres(genreRepository.count())
                 .pendingSubmissions(submissionRepository.countByStatusIgnoreCaseAndDeletedFalse("pending"))
                 .newUsersToday(userRepository.countByCreatedAtGreaterThanEqualAndDeletedFalse(startOfToday))
-                .newComicsToday(comicRepository.countByCreatedAtGreaterThanEqualAndDeletedFalse(startOfToday))
+                .newComicsToday(comicRepository.countByUpdatedAtGreaterThanEqualAndModerationStatusAndDeletedFalse(startOfToday, ComicModerationStatus.PUBLISHED))
                 .activeUsersToday(userRepository.countByLastSeenAtGreaterThanEqualAndDeletedFalse(startOfToday))
                 .onlineUsersNow(userRepository.countByLastSeenAtGreaterThanEqualAndDeletedFalse(fifteenMinsAgo))
                 .roleCounts(roleCounts)
