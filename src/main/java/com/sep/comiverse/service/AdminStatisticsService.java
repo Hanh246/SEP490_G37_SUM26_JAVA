@@ -57,11 +57,19 @@ public class AdminStatisticsService {
         for (com.sep.comiverse.entity.enums.ComicPublicationStatus status : com.sep.comiverse.entity.enums.ComicPublicationStatus.values()) {
             comicStatusCounts.put(status.name(), 0L);
         }
-        comicRepository.countComicsByPublicationStatus().forEach(row -> {
-            if (row[0] != null) {
-                comicStatusCounts.put(row[0].toString(), ((Number) row[1]).longValue());
-            }
-        });
+        
+        List<com.sep.comiverse.entity.ComicEntity> publishedComics = comicRepository.findByModerationStatusAndDeletedFalse(ComicModerationStatus.PUBLISHED);
+        Map<String, com.sep.comiverse.entity.ComicEntity> uniqueComics = new java.util.HashMap<>();
+        for (com.sep.comiverse.entity.ComicEntity c : publishedComics) {
+            String cleanTitle = (c.getTitle() != null ? c.getTitle() : "").toLowerCase().replaceAll("[^a-z0-9]", "").replaceAll("s$", "");
+            uniqueComics.putIfAbsent(cleanTitle, c);
+        }
+        long realTotalPublished = uniqueComics.size();
+        
+        for (com.sep.comiverse.entity.ComicEntity c : uniqueComics.values()) {
+            String status = c.getPublicationStatus() != null ? c.getPublicationStatus().name() : "ONGOING";
+            comicStatusCounts.put(status, comicStatusCounts.getOrDefault(status, 0L) + 1L);
+        }
 
         List<com.sep.comiverse.dto.response.TopAuthorDTO> topAuthors = new java.util.ArrayList<>();
         comicRepository.findTopAuthorsByPublishedComics(PageRequest.of(0, 6)).forEach(row -> {
@@ -88,7 +96,7 @@ public class AdminStatisticsService {
                 .totalUsers(userRepository.count())
                 .activeUsers(userRepository.countByStatusIgnoreCaseAndDeletedFalse("ACTIVE"))
                 .bannedUsers(userRepository.countByStatusIgnoreCaseAndDeletedFalse("INACTIVE"))
-                .totalPublishedComics(comicRepository.countByModerationStatusAndDeletedFalse(ComicModerationStatus.PUBLISHED))
+                .totalPublishedComics(realTotalPublished)
                 .totalGenres(genreRepository.count())
                 .pendingSubmissions(submissionRepository.countByStatusIgnoreCaseAndDeletedFalse("pending"))
                 .newUsersToday(userRepository.countByCreatedAtGreaterThanEqualAndDeletedFalse(startOfToday))
