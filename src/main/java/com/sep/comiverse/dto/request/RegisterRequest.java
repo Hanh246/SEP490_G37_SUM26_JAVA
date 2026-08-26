@@ -1,5 +1,6 @@
 package com.sep.comiverse.dto.request;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.*;
 import lombok.Data;
 import java.time.LocalDate;
@@ -32,4 +33,10 @@ public class RegisterRequest {
     private LocalDate dateOfBirth;
 
     private java.util.List<String> assignedLanguages;
+
+    @JsonIgnore
+    @AssertTrue(message = "User must be at least 13 years old")
+    public boolean isDateOfBirthEligible() {
+        return dateOfBirth == null || !dateOfBirth.isAfter(LocalDate.now().minusYears(13));
+    }
 }

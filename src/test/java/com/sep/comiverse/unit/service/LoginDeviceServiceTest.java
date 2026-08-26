@@ -141,6 +141,51 @@ class LoginDeviceServiceTest {
         verify(offlineDeviceService, never()).revokeMatchingDevice(any(), any());
     }
 
+    @Test
+    void requestingDeviceRevocationSendsEmailOtpForOwnedActiveDevice() {
+        UserEntity user = user();
+        LoginDeviceEntity target = device(user, "old-device-hash", "Old phone");
+        when(userRepository.findByIdWithRole(user.getId())).thenReturn(Optional.of(user));
+        when(deviceRepository.findByIdAndUserIdAndDeletedFalse(target.getId(), user.getId()))
+                .thenReturn(Optional.of(target));
+        when(challengeRepository.countByUserIdAndCreatedAtAfterAndDeletedFalse(eq(user.getId()), any()))
+                .thenReturn(0L);
+        when(challengeRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var challenge = service.requestRevocation(user.getId(), target.getId());
+
+        assertTrue(challenge.getChallengeId() != null);
+        assertTrue(challenge.getExpiresAt().isAfter(Instant.now()));
+        verify(emailUtil).sendDeviceVerificationOtp(
+                eq(user.getEmail()), any(), eq(user.getFullName()), eq(null)
+        );
+    }
+
+    @Test
+    void correctOtpRevokesOwnedLoginDeviceAndItsOfflineAccess() {
+        UserEntity user = user();
+        LoginDeviceEntity target = device(user, "old-device-hash", "Old phone");
+        UUID challengeId = UUID.randomUUID();
+        LoginDeviceChallengeEntity challenge = revocationChallenge(
+                user,
+                challengeId,
+                target.getId(),
+                "123456"
+        );
+        when(challengeRepository.findByChallengeIdAndConsumedFalseAndDeletedFalse(challengeId))
+                .thenReturn(Optional.of(challenge));
+        when(deviceRepository.findByIdAndUserIdAndDeletedFalse(target.getId(), user.getId()))
+                .thenReturn(Optional.of(target));
+        when(deviceRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UUID removedId = service.confirmRevocation(user.getId(), challengeId, "123456");
+
+        assertEquals(target.getId(), removedId);
+        assertTrue(target.getRevoked());
+        assertTrue(challenge.getConsumed());
+        verify(offlineDeviceService).revokeMatchingDevice(user.getId(), "old-device-hash");
+    }
+
     private UserEntity user() {
         UserEntity user = UserEntity.builder()
                 .email("reader@example.com")
@@ -185,6 +230,26 @@ class LoginDeviceServiceTest {
                 .deviceIdHash("new-device-hash")
                 .deviceName("New phone")
                 .platform("android")
+                .otpHash(passwordEncoder.encode(otp))
+                .expiresAt(Instant.now().plusSeconds(300))
+                .attemptCount(0)
+                .consumed(false)
+                .build();
+        challenge.setDeleted(false);
+        return challenge;
+    }
+
+    private LoginDeviceChallengeEntity revocationChallenge(
+            UserEntity user,
+            UUID challengeId,
+            UUID targetDeviceId,
+            String otp
+    ) {
+        LoginDeviceChallengeEntity challenge = LoginDeviceChallengeEntity.builder()
+                .challengeId(challengeId)
+                .userId(user.getId())
+                .operation("REVOKE")
+                .targetDeviceId(targetDeviceId)
                 .otpHash(passwordEncoder.encode(otp))
                 .expiresAt(Instant.now().plusSeconds(300))
                 .attemptCount(0)

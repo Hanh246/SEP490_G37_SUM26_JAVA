@@ -9,6 +9,8 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDate;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class AuthRequestValidationTest {
@@ -34,6 +36,7 @@ class AuthRequestValidationTest {
         request.setFullName("Nguyễn-Anh O'Neil");
         request.setEmail("reader@example.com");
         request.setPassword("12345678");
+        request.setDateOfBirth(LocalDate.now().minusYears(13));
 
         assertThat(validator.validate(request)).isEmpty();
 
@@ -41,6 +44,12 @@ class AuthRequestValidationTest {
         assertThat(validator.validate(request))
                 .extracting(violation -> violation.getPropertyPath().toString())
                 .contains("password");
+
+        request.setPassword("12345678");
+        request.setDateOfBirth(LocalDate.now().minusYears(13).plusDays(1));
+        assertThat(validator.validate(request))
+                .extracting(violation -> violation.getPropertyPath().toString())
+                .contains("dateOfBirthEligible");
     }
 
     @Test
