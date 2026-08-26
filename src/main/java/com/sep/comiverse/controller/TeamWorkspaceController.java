@@ -592,6 +592,17 @@ public class TeamWorkspaceController {
         }
         iPageTranslationRepository.saveAll(pages);
 
+        if (primaryAssigneeId != null) {
+            notificationService.notifyUser(
+                    primaryAssigneeId,
+                    "New Task Assigned",
+                    "You have been assigned to task: " + created.getTitle() + " in project " + (team != null ? team.getTitle() : "") + ".",
+                    "INFO",
+                    "/translator/tasks?teamId=" + teamId,
+                    NotificationPreferenceKey.TEAM_UPDATES
+            );
+        }
+
         return ResponseEntity.status(HttpStatus.CREATED).body(toTaskResponse(created));
     }
     @GetMapping("/{teamId}/members")
@@ -1364,6 +1375,17 @@ public class TeamWorkspaceController {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", assigneeError));
         }
         TaskHandoverResponse response = translatorPaymentService.handover(task, request, principal.getId());
+        
+        ProjectTeamEntity team = projectTeamRepository.findById(task.getProjectTeamId()).orElse(null);
+        notificationService.notifyUser(
+                request.getNewAssigneeId(),
+                "Task Reassigned",
+                "You have been handed over the task: " + task.getTitle() + " in project " + (team != null ? team.getTitle() : "") + ".",
+                "INFO",
+                "/translator/tasks?teamId=" + task.getProjectTeamId(),
+                NotificationPreferenceKey.TEAM_UPDATES
+        );
+
         return ResponseEntity.ok(response);
     }
 
