@@ -151,25 +151,10 @@ public class StripeSubscriptionService {
             throw new CustomException(403, "You cannot view this payment session", HttpStatus.FORBIDDEN);
         }
 
-        // Webhook remains the primary source of truth. This reconciliation is a safe fallback
-        // for local development or temporary webhook-delivery failures.
         if (transaction.getStatus() == PaymentTransactionStatus.PENDING) {
-            try {
-                JsonNode stripeSession = stripeGatewayService.retrieveCheckoutSession(sessionId);
-                String checkoutStatus = stripeSession.path("status").asText("");
-                String paymentStatus = stripeSession.path("payment_status").asText("");
-                if ("complete".equalsIgnoreCase(checkoutStatus)
-                        && ("paid".equalsIgnoreCase(paymentStatus)
-                        || "no_payment_required".equalsIgnoreCase(paymentStatus))) {
-                    handleCheckoutCompleted(stripeSession);
-                    transaction = paymentRepository.findByStripeCheckoutSessionIdAndDeletedFalse(sessionId)
-                            .orElse(transaction);
-                }
-            } catch (RuntimeException ex) {
-                // Do not fail the reader result page merely because Stripe reconciliation is unavailable.
-                // Stripe will still retry the signed webhook.
-                log.warn("Unable to reconcile pending Stripe Checkout session {}: {}", sessionId, ex.getMessage());
-            }
+            reconcilePendingCheckout(transaction);
+            transaction = paymentRepository.findByStripeCheckoutSessionIdAndDeletedFalse(sessionId)
+                    .orElse(transaction);
         }
 
         ReaderSubscriptionEntity subscription = subscriptionRepository.findByUserIdAndDeletedFalse(userId).orElse(null);
@@ -263,13 +248,16 @@ public class StripeSubscriptionService {
                 .build();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ReaderPaymentHistoryPageResponse getPaymentHistory(UUID userId, int page, int size) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 50);
         Pageable pageable = PageRequest.of(safePage, safeSize);
         Page<PaymentTransactionEntity> result =
                 paymentRepository.findAllByUserIdAndDeletedFalseOrderByCreatedAtDesc(userId, pageable);
+        result.getContent().stream()
+                .filter(transaction -> transaction.getStatus() == PaymentTransactionStatus.PENDING)
+                .forEach(this::reconcilePendingCheckout);
         return ReaderPaymentHistoryPageResponse.builder()
                 .content(result.getContent().stream().map(this::toReaderPaymentHistoryResponse).toList())
                 .page(result.getNumber())
@@ -277,6 +265,29 @@ public class StripeSubscriptionService {
                 .totalElements(result.getTotalElements())
                 .totalPages(result.getTotalPages())
                 .build();
+    }
+
+    private void reconcilePendingCheckout(PaymentTransactionEntity transaction) {
+        String sessionId = transaction.getStripeCheckoutSessionId();
+        if (sessionId == null || sessionId.isBlank()) return;
+        try {
+            JsonNode stripeSession = stripeGatewayService.retrieveCheckoutSession(sessionId);
+            String checkoutStatus = stripeSession.path("status").asText("");
+            String paymentStatus = stripeSession.path("payment_status").asText("");
+            if ("expired".equalsIgnoreCase(checkoutStatus)) {
+                handleCheckoutExpired(stripeSession);
+                return;
+            }
+            if ("complete".equalsIgnoreCase(checkoutStatus)
+                    && ("paid".equalsIgnoreCase(paymentStatus)
+                    || "no_payment_required".equalsIgnoreCase(paymentStatus))) {
+                handleCheckoutCompleted(stripeSession);
+            }
+        } catch (RuntimeException ex) {
+            // Webhook remains authoritative. A temporary Stripe outage must not
+            // prevent readers from opening their locally stored payment history.
+            log.warn("Unable to reconcile pending Stripe Checkout session {}: {}", sessionId, ex.getMessage());
+        }
     }
 
     private void handleCheckoutCompleted(JsonNode session) {

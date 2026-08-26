@@ -238,6 +238,47 @@ class StripeSubscriptionServiceTest {
     }
 
     @Test
+    void paymentHistoryReconcilesAnAbandonedCheckoutAsExpired() throws Exception {
+        UUID userId = UUID.randomUUID();
+        String sessionId = "cs_expired_history";
+        PaymentTransactionEntity payment = PaymentTransactionEntity.builder()
+                .userId(userId)
+                .userEmail("reader@example.com")
+                .planId(UUID.randomUUID())
+                .planCode("MONTHLY")
+                .planName("Premium Monthly")
+                .amount(new BigDecimal("79000"))
+                .currency("VND")
+                .status(PaymentTransactionStatus.PENDING)
+                .provider("STRIPE")
+                .stripeCheckoutSessionId(sessionId)
+                .build();
+        payment.setId(UUID.randomUUID());
+        payment.setCreatedAt(Instant.parse("2026-08-20T10:15:30Z"));
+        when(paymentRepository.findAllByUserIdAndDeletedFalseOrderByCreatedAtDesc(
+                eq(userId), any(Pageable.class)
+        )).thenReturn(new PageImpl<>(List.of(payment)));
+        when(paymentRepository.findByStripeCheckoutSessionIdAndDeletedFalse(sessionId))
+                .thenReturn(Optional.of(payment));
+        when(gateway.retrieveCheckoutSession(sessionId)).thenReturn(objectMapper.readTree("""
+                {
+                  "id": "cs_expired_history",
+                  "status": "expired",
+                  "payment_status": "unpaid"
+                }
+                """));
+        when(paymentRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var history = service.getPaymentHistory(userId, 0, 20);
+
+        assertEquals(PaymentTransactionStatus.EXPIRED, history.getContent().getFirst().getStatus());
+        assertEquals(
+                "Stripe Checkout session expired before payment was completed",
+                history.getContent().getFirst().getFailureReason()
+        );
+    }
+
+    @Test
     void legacyActivePremiumAccountCannotStartAnotherCheckout() {
         UUID userId = UUID.randomUUID();
         UserEntity user = UserEntity.builder()
