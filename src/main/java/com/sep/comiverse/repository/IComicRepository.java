@@ -27,6 +27,8 @@ public interface IComicRepository
 
     List<ComicEntity> findByModerationStatusAndDeletedFalse(com.sep.comiverse.entity.enums.ComicModerationStatus status);
 
+    List<ComicEntity> findByModerationStatusInAndDeletedFalse(Collection<com.sep.comiverse.entity.enums.ComicModerationStatus> statuses);
+
     @Query("SELECT c.publicationStatus, COUNT(c) FROM ComicEntity c WHERE c.deleted = false AND c.moderationStatus = 'PUBLISHED' GROUP BY c.publicationStatus")
     List<Object[]> countComicsByPublicationStatus();
 
