@@ -79,15 +79,17 @@ public interface IUserRepository extends AbstractCrudRepository<UserEntity, UUID
     @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM UserEntity u WHERE u.phone = :phone AND u.deleted = false")
     boolean existsByPhone(@Param("phone") String phone);
 
-    @Query(value = "SELECT DISTINCT u.id FROM users u " +
-                   "WHERE u.deleted = false " +
-                   "AND (" +
-                   "  u.user_vector IS NULL OR " +
-                   "  u.vector_updated_at IS NULL OR " +
-                   "  EXISTS (SELECT 1 FROM user_likes l WHERE l.user_id = u.id AND l.update_at > u.vector_updated_at) OR " +
-                   "  EXISTS (SELECT 1 FROM user_saves s WHERE s.user_id = u.id AND s.update_at > u.vector_updated_at) OR " +
-                   "  EXISTS (SELECT 1 FROM reading_histories r WHERE r.user_id = u.id AND r.update_at > u.vector_updated_at)" +
-                   ")", nativeQuery = true)
+    @SuppressWarnings("JpaQlInspection")
+    @Query("""
+            SELECT DISTINCT u.id FROM UserEntity u
+            WHERE u.deleted = false AND (
+                u.userVector IS NULL OR
+                u.vectorUpdatedAt IS NULL OR
+                EXISTS (SELECT 1 FROM UserLikeEntity l WHERE l.userId = u.id AND l.updatedAt > u.vectorUpdatedAt) OR
+                EXISTS (SELECT 1 FROM UserSaveEntity s WHERE s.userId = u.id AND s.updatedAt > u.vectorUpdatedAt) OR
+                EXISTS (SELECT 1 FROM ReadingHistoryEntity r WHERE r.userId = u.id AND r.updatedAt > u.vectorUpdatedAt)
+            )
+            """)
     List<UUID> findUserIdsWithPendingVectorUpdate();
 
     @Query("SELECT u FROM UserEntity u WHERE (LOWER(u.username) = LOWER(:lookup) OR LOWER(u.fullName) = LOWER(:lookup)) AND u.deleted = false")
