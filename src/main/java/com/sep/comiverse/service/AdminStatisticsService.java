@@ -56,6 +56,9 @@ public class AdminStatisticsService {
                 .map(genre -> new GenreDTO(genre.getId(), genre.getName(), genre.getSlug()))
                 .toList();
 
+        Instant startOfToday = java.time.LocalDate.now().atStartOfDay(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).toInstant();
+        Instant fifteenMinsAgo = Instant.now().minus(15, java.time.temporal.ChronoUnit.MINUTES);
+
         return AdminStatisticsResponse.builder()
                 .totalUsers(userRepository.count())
                 .activeUsers(userRepository.countByStatusIgnoreCaseAndDeletedFalse("ACTIVE"))
@@ -63,6 +66,10 @@ public class AdminStatisticsService {
                 .totalPublishedComics(comicRepository.countByModerationStatusAndDeletedFalse(ComicModerationStatus.PUBLISHED))
                 .totalGenres(genreRepository.count())
                 .pendingSubmissions(submissionRepository.countByStatusIgnoreCaseAndDeletedFalse("pending"))
+                .newUsersToday(userRepository.countByCreatedAtGreaterThanEqualAndDeletedFalse(startOfToday))
+                .newComicsToday(comicRepository.countByCreatedAtGreaterThanEqualAndDeletedFalse(startOfToday))
+                .activeUsersToday(userRepository.countByLastSeenAtGreaterThanEqualAndDeletedFalse(startOfToday))
+                .onlineUsersNow(userRepository.countByLastSeenAtGreaterThanEqualAndDeletedFalse(fifteenMinsAgo))
                 .roleCounts(roleCounts)
                 .genres(genres)
                 .generatedAt(Instant.now())
