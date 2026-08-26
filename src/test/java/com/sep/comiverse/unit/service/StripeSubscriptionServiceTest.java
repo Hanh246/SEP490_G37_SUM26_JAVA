@@ -8,11 +8,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sep.comiverse.entity.PaymentTransactionEntity;
 import com.sep.comiverse.entity.ReaderSubscriptionEntity;
+import com.sep.comiverse.entity.RoleEntity;
 import com.sep.comiverse.entity.SubscriptionPlanEntity;
 import com.sep.comiverse.entity.UserEntity;
 import com.sep.comiverse.entity.enums.BillingInterval;
 import com.sep.comiverse.entity.enums.PaymentTransactionStatus;
 import com.sep.comiverse.entity.enums.ReaderSubscriptionStatus;
+import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IPaymentTransactionRepository;
 import com.sep.comiverse.repository.IReaderSubscriptionRepository;
 import com.sep.comiverse.repository.IStripeWebhookEventRepository;
@@ -23,16 +25,23 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -61,12 +70,12 @@ class StripeSubscriptionServiceTest {
                 webhookEventRepository,
                 userRepository
         );
-        when(subscriptionRepository.save(any()))
-                .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
     void failedRenewalCreatesInvoiceTransactionWithoutOverwritingPreviousPayment() throws Exception {
+        when(subscriptionRepository.save(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         UUID userId = UUID.randomUUID();
         UUID planId = UUID.randomUUID();
         String subscriptionId = "sub_123";
@@ -132,6 +141,8 @@ class StripeSubscriptionServiceTest {
     }
     @Test
     void paidCheckoutStatusReconcilesSubscriptionBeforeReportingPremiumActive() throws Exception {
+        when(subscriptionRepository.save(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         UUID userId = UUID.randomUUID();
         UUID planId = UUID.randomUUID();
         String sessionId = "cs_test_paid";
@@ -189,6 +200,63 @@ class StripeSubscriptionServiceTest {
         assertTrue(response.getPremiumActive());
         assertEquals("MONTHLY", user.getPremiumPlan());
         assertEquals(subscriptionId, transaction.getStripeSubscriptionId());
+    }
+
+    @Test
+    void paymentHistoryIsLoadedOnlyForTheAuthenticatedReader() {
+        UUID userId = UUID.randomUUID();
+        UUID paymentId = UUID.randomUUID();
+        Instant createdAt = Instant.parse("2026-08-20T10:15:30Z");
+        PaymentTransactionEntity payment = PaymentTransactionEntity.builder()
+                .userId(userId)
+                .userEmail("reader@example.com")
+                .planId(UUID.randomUUID())
+                .planCode("MONTHLY")
+                .planName("Premium Monthly")
+                .amount(new BigDecimal("79000"))
+                .currency("VND")
+                .status(PaymentTransactionStatus.PAID)
+                .provider("STRIPE")
+                .stripeCheckoutSessionId("cs_private")
+                .build();
+        payment.setId(paymentId);
+        payment.setCreatedAt(createdAt);
+        when(paymentRepository.findAllByUserIdAndDeletedFalseOrderByCreatedAtDesc(
+                eq(userId), any(Pageable.class)
+        )).thenReturn(new PageImpl<>(List.of(payment)));
+
+        var history = service.getPaymentHistory(userId, 0, 20);
+
+        assertEquals(1, history.getContent().size());
+        assertEquals(paymentId, history.getContent().getFirst().getId());
+        assertEquals("MONTHLY", history.getContent().getFirst().getPlanCode());
+        assertEquals(PaymentTransactionStatus.PAID, history.getContent().getFirst().getStatus());
+        assertEquals(createdAt, history.getContent().getFirst().getCreatedAt());
+        verify(paymentRepository).findAllByUserIdAndDeletedFalseOrderByCreatedAtDesc(
+                eq(userId), any(Pageable.class)
+        );
+    }
+
+    @Test
+    void legacyActivePremiumAccountCannotStartAnotherCheckout() {
+        UUID userId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder()
+                .email("legacy@example.com")
+                .role(RoleEntity.builder().roleName("READER").build())
+                .premiumPlan("MONTHLY")
+                .premiumExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusDays(10))
+                .build();
+        user.setId(userId);
+        when(userRepository.findByIdWithRole(userId)).thenReturn(Optional.of(user));
+        when(subscriptionRepository.findByUserIdAndDeletedFalse(userId)).thenReturn(Optional.empty());
+
+        CustomException exception = assertThrows(
+                CustomException.class,
+                () -> service.createCheckoutSession(userId, UUID.randomUUID())
+        );
+
+        assertEquals(409, exception.getCode());
+        verify(gateway, never()).createCheckoutSession(any(), any(), any(), any());
     }
 
 }

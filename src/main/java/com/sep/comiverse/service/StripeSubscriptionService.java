@@ -6,6 +6,8 @@ import com.sep.comiverse.dto.response.CheckoutStatusResponse;
 import com.sep.comiverse.dto.response.PaymentLogPageResponse;
 import com.sep.comiverse.dto.response.PaymentLogResponse;
 import com.sep.comiverse.dto.response.PortalSessionResponse;
+import com.sep.comiverse.dto.response.ReaderPaymentHistoryPageResponse;
+import com.sep.comiverse.dto.response.ReaderPaymentHistoryResponse;
 import com.sep.comiverse.dto.response.ReaderSubscriptionResponse;
 import com.sep.comiverse.entity.PaymentTransactionEntity;
 import com.sep.comiverse.entity.ReaderSubscriptionEntity;
@@ -67,6 +69,15 @@ public class StripeSubscriptionService {
 
         Optional<ReaderSubscriptionEntity> existingSubscription =
                 subscriptionRepository.findByUserIdAndDeletedFalse(userId);
+        if (existingSubscription.isEmpty()
+                && user.getPremiumExpiresAt() != null
+                && user.getPremiumExpiresAt().isAfter(LocalDateTime.now(ZoneOffset.UTC))) {
+            throw new CustomException(
+                    409,
+                    "Premium is already active for this account.",
+                    HttpStatus.CONFLICT
+            );
+        }
         existingSubscription
                 .filter(this::requiresBillingPortalBeforeNewCheckout)
                 .ifPresent(active -> {
@@ -245,6 +256,22 @@ public class StripeSubscriptionService {
         Page<PaymentTransactionEntity> result = paymentRepository.searchAdminLogs(status, normalizeQuery(query), pageable);
         return PaymentLogPageResponse.builder()
                 .content(result.getContent().stream().map(this::toPaymentLogResponse).toList())
+                .page(result.getNumber())
+                .size(result.getSize())
+                .totalElements(result.getTotalElements())
+                .totalPages(result.getTotalPages())
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public ReaderPaymentHistoryPageResponse getPaymentHistory(UUID userId, int page, int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), 50);
+        Pageable pageable = PageRequest.of(safePage, safeSize);
+        Page<PaymentTransactionEntity> result =
+                paymentRepository.findAllByUserIdAndDeletedFalseOrderByCreatedAtDesc(userId, pageable);
+        return ReaderPaymentHistoryPageResponse.builder()
+                .content(result.getContent().stream().map(this::toReaderPaymentHistoryResponse).toList())
                 .page(result.getNumber())
                 .size(result.getSize())
                 .totalElements(result.getTotalElements())
@@ -593,6 +620,9 @@ public class StripeSubscriptionService {
                 .currentPeriodEnd(subscription.getCurrentPeriodEnd())
                 .cancelAtPeriodEnd(subscription.getCancelAtPeriodEnd())
                 .premiumActive(isSubscriptionCurrentlyActive(subscription))
+                .requiresBillingManagement(requiresBillingPortalBeforeNewCheckout(subscription))
+                .billingPortalAvailable(subscription.getStripeCustomerId() != null
+                        && !subscription.getStripeCustomerId().isBlank())
                 .build();
     }
 
@@ -615,6 +645,21 @@ public class StripeSubscriptionService {
                 .paidAt(transaction.getPaidAt())
                 .createdAt(transaction.getCreatedAt())
                 .updatedAt(transaction.getUpdatedAt())
+                .build();
+    }
+
+    private ReaderPaymentHistoryResponse toReaderPaymentHistoryResponse(PaymentTransactionEntity transaction) {
+        return ReaderPaymentHistoryResponse.builder()
+                .id(transaction.getId())
+                .planCode(transaction.getPlanCode())
+                .planName(transaction.getPlanName())
+                .amount(transaction.getAmount())
+                .currency(transaction.getCurrency())
+                .status(transaction.getStatus())
+                .provider(transaction.getProvider())
+                .failureReason(transaction.getFailureReason())
+                .paidAt(transaction.getPaidAt())
+                .createdAt(transaction.getCreatedAt())
                 .build();
     }
 

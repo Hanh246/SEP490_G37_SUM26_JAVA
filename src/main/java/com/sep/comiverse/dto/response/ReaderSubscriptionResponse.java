@@ -23,4 +23,6 @@ public class ReaderSubscriptionResponse {
     private Instant currentPeriodEnd;
     private Boolean cancelAtPeriodEnd;
     private Boolean premiumActive;
+    private Boolean requiresBillingManagement;
+    private Boolean billingPortalAvailable;
 }
