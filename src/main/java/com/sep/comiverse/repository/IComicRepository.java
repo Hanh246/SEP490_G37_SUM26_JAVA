@@ -23,7 +23,7 @@ import java.util.UUID;
 @Repository
 public interface IComicRepository
         extends AbstractCrudRepository<ComicEntity, UUID> {
-    long countByCreatedAtGreaterThanEqualAndDeletedFalse(java.time.Instant threshold);
+    long countByUpdatedAtGreaterThanEqualAndModerationStatusAndDeletedFalse(java.time.Instant threshold, com.sep.comiverse.entity.enums.ComicModerationStatus status);
 
     @Override
     default Specification<ComicEntity> contains(

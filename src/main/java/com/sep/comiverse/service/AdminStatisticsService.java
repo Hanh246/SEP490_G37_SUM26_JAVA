@@ -7,6 +7,8 @@ import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.repository.IGenreRepository;
 import com.sep.comiverse.repository.ISubmissionRepository;
 import com.sep.comiverse.repository.IUserRepository;
+import com.sep.comiverse.repository.IUserLikeRepository;
+import com.sep.comiverse.repository.IUserSaveRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -36,6 +38,8 @@ public class AdminStatisticsService {
     private final IComicRepository comicRepository;
     private final IGenreRepository genreRepository;
     private final ISubmissionRepository submissionRepository;
+    private final IUserLikeRepository userLikeRepository;
+    private final IUserSaveRepository userSaveRepository;
 
     @Transactional(readOnly = true)
     public AdminStatisticsResponse getStatistics() {
@@ -67,9 +71,11 @@ public class AdminStatisticsService {
                 .totalGenres(genreRepository.count())
                 .pendingSubmissions(submissionRepository.countByStatusIgnoreCaseAndDeletedFalse("pending"))
                 .newUsersToday(userRepository.countByCreatedAtGreaterThanEqualAndDeletedFalse(startOfToday))
-                .newComicsToday(comicRepository.countByCreatedAtGreaterThanEqualAndDeletedFalse(startOfToday))
+                .newComicsToday(comicRepository.countByUpdatedAtGreaterThanEqualAndModerationStatusAndDeletedFalse(startOfToday, ComicModerationStatus.PUBLISHED))
                 .activeUsersToday(userRepository.countByLastSeenAtGreaterThanEqualAndDeletedFalse(startOfToday))
                 .onlineUsersNow(userRepository.countByLastSeenAtGreaterThanEqualAndDeletedFalse(fifteenMinsAgo))
+                .newLikesToday(userLikeRepository.countByCreatedAtGreaterThanEqualAndDeletedFalse(startOfToday))
+                .newBookmarksToday(userSaveRepository.countByCreatedAtGreaterThanEqualAndDeletedFalse(startOfToday))
                 .roleCounts(roleCounts)
                 .genres(genres)
                 .generatedAt(Instant.now())
