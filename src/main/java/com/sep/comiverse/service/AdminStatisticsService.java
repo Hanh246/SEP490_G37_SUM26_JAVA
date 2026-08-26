@@ -53,6 +53,16 @@ public class AdminStatisticsService {
             roleCounts.merge(role, ((Number) row[1]).longValue(), Long::sum);
         });
 
+        Map<String, Long> comicStatusCounts = new LinkedHashMap<>();
+        for (com.sep.comiverse.entity.enums.ComicPublicationStatus status : com.sep.comiverse.entity.enums.ComicPublicationStatus.values()) {
+            comicStatusCounts.put(status.name(), 0L);
+        }
+        comicRepository.countComicsByPublicationStatus().forEach(row -> {
+            if (row[0] != null) {
+                comicStatusCounts.put(row[0].toString(), ((Number) row[1]).longValue());
+            }
+        });
+
         List<GenreDTO> genres = genreRepository
                 .findAll(PageRequest.of(0, 8, Sort.by(Sort.Direction.ASC, "name")))
                 .getContent()
@@ -77,6 +87,7 @@ public class AdminStatisticsService {
                 .newLikesToday(userLikeRepository.countByCreatedAtGreaterThanEqualAndDeletedFalse(startOfToday))
                 .newBookmarksToday(userSaveRepository.countByCreatedAtGreaterThanEqualAndDeletedFalse(startOfToday))
                 .roleCounts(roleCounts)
+                .comicStatusCounts(comicStatusCounts)
                 .genres(genres)
                 .generatedAt(Instant.now())
                 .build();

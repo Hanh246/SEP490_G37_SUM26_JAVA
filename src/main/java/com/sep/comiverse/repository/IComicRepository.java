@@ -25,6 +25,9 @@ public interface IComicRepository
         extends AbstractCrudRepository<ComicEntity, UUID> {
     long countByUpdatedAtGreaterThanEqualAndModerationStatusAndDeletedFalse(java.time.Instant threshold, com.sep.comiverse.entity.enums.ComicModerationStatus status);
 
+    @Query("SELECT c.publicationStatus, COUNT(c) FROM ComicEntity c WHERE c.deleted = false GROUP BY c.publicationStatus")
+    List<Object[]> countComicsByPublicationStatus();
+
     @Override
     default Specification<ComicEntity> contains(
             List<String> fields,
