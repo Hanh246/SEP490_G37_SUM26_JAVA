@@ -19,4 +19,6 @@ public interface IUserLikeRepository extends AbstractCrudRepository<UserLikeEnti
 
     @Query("SELECT COUNT(ul) FROM UserLikeEntity ul WHERE ul.userId = :userId AND ul.deleted = false")
     long countByUserId(@Param("userId") UUID userId);
+
+    long countByCreatedAtGreaterThanEqualAndDeletedFalse(java.time.Instant createdAt);
 }

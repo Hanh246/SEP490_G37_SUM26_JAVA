@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/admin/statistics")
 @RequiredArgsConstructor
-@PreAuthorize("hasAuthority('ADMIN')")
+@PreAuthorize("hasAnyAuthority('ADMIN', 'MODERATOR')")
 @Tag(name = "Admin - Statistics", description = "Accurate platform statistics for the Admin dashboard")
 public class AdminStatisticsController {
 

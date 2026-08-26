@@ -28,6 +28,11 @@ public interface IPaymentTransactionRepository extends AbstractCrudRepository<Pa
             PaymentTransactionStatus status
     );
 
+    Page<PaymentTransactionEntity> findAllByUserIdAndDeletedFalseOrderByCreatedAtDesc(
+            UUID userId,
+            Pageable pageable
+    );
+
     @Query("""
             SELECT p FROM PaymentTransactionEntity p
             WHERE p.deleted = false

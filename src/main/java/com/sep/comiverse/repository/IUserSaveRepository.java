@@ -16,4 +16,6 @@ public interface IUserSaveRepository extends AbstractCrudRepository<UserSaveEnti
 
     @org.springframework.data.jpa.repository.Query("SELECT COUNT(us) FROM UserSaveEntity us WHERE us.userId = :userId AND us.deleted = false")
     long countByUserId(@org.springframework.data.repository.query.Param("userId") UUID userId);
+
+    long countByCreatedAtGreaterThanEqualAndDeletedFalse(java.time.Instant createdAt);
 }

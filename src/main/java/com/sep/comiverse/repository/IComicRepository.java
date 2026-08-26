@@ -23,6 +23,17 @@ import java.util.UUID;
 @Repository
 public interface IComicRepository
         extends AbstractCrudRepository<ComicEntity, UUID> {
+    long countByUpdatedAtGreaterThanEqualAndModerationStatusAndDeletedFalse(java.time.Instant threshold, com.sep.comiverse.entity.enums.ComicModerationStatus status);
+
+    List<ComicEntity> findByModerationStatusAndDeletedFalse(com.sep.comiverse.entity.enums.ComicModerationStatus status);
+
+    List<ComicEntity> findByModerationStatusInAndDeletedFalse(Collection<com.sep.comiverse.entity.enums.ComicModerationStatus> statuses);
+
+    @Query("SELECT c.publicationStatus, COUNT(c) FROM ComicEntity c WHERE c.deleted = false AND c.moderationStatus = 'PUBLISHED' GROUP BY c.publicationStatus")
+    List<Object[]> countComicsByPublicationStatus();
+
+    @Query("SELECT c.authorId, COUNT(c) FROM ComicEntity c WHERE c.deleted = false AND c.moderationStatus = 'PUBLISHED' GROUP BY c.authorId ORDER BY COUNT(c) DESC")
+    List<Object[]> findTopAuthorsByPublishedComics(org.springframework.data.domain.Pageable pageable);
 
     @Override
     default Specification<ComicEntity> contains(

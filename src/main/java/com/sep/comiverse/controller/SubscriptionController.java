@@ -5,6 +5,7 @@ import com.sep.comiverse.dto.response.BaseResponse;
 import com.sep.comiverse.dto.response.CheckoutSessionResponse;
 import com.sep.comiverse.dto.response.CheckoutStatusResponse;
 import com.sep.comiverse.dto.response.PortalSessionResponse;
+import com.sep.comiverse.dto.response.ReaderPaymentHistoryPageResponse;
 import com.sep.comiverse.dto.response.ReaderSubscriptionResponse;
 import com.sep.comiverse.dto.response.SubscriptionPlanResponse;
 import com.sep.comiverse.security.UserPrincipal;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -61,6 +63,19 @@ public class SubscriptionController {
         return ResponseEntity.ok(BaseResponse.<ReaderSubscriptionResponse>builder()
                 .success(true)
                 .data(subscriptionService.getCurrentSubscription(principal.getId()))
+                .build());
+    }
+
+    @GetMapping("/payments")
+    @PreAuthorize("hasAuthority('READER')")
+    public ResponseEntity<BaseResponse<ReaderPaymentHistoryPageResponse>> getMyPaymentHistory(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        return ResponseEntity.ok(BaseResponse.<ReaderPaymentHistoryPageResponse>builder()
+                .success(true)
+                .data(subscriptionService.getPaymentHistory(principal.getId(), page, size))
                 .build());
     }
 

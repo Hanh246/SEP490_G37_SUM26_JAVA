@@ -6,6 +6,8 @@ import com.sep.comiverse.dto.response.CheckoutStatusResponse;
 import com.sep.comiverse.dto.response.PaymentLogPageResponse;
 import com.sep.comiverse.dto.response.PaymentLogResponse;
 import com.sep.comiverse.dto.response.PortalSessionResponse;
+import com.sep.comiverse.dto.response.ReaderPaymentHistoryPageResponse;
+import com.sep.comiverse.dto.response.ReaderPaymentHistoryResponse;
 import com.sep.comiverse.dto.response.ReaderSubscriptionResponse;
 import com.sep.comiverse.entity.PaymentTransactionEntity;
 import com.sep.comiverse.entity.ReaderSubscriptionEntity;
@@ -67,6 +69,15 @@ public class StripeSubscriptionService {
 
         Optional<ReaderSubscriptionEntity> existingSubscription =
                 subscriptionRepository.findByUserIdAndDeletedFalse(userId);
+        if (existingSubscription.isEmpty()
+                && user.getPremiumExpiresAt() != null
+                && user.getPremiumExpiresAt().isAfter(LocalDateTime.now(ZoneOffset.UTC))) {
+            throw new CustomException(
+                    409,
+                    "Premium is already active for this account.",
+                    HttpStatus.CONFLICT
+            );
+        }
         existingSubscription
                 .filter(this::requiresBillingPortalBeforeNewCheckout)
                 .ifPresent(active -> {
@@ -140,25 +151,10 @@ public class StripeSubscriptionService {
             throw new CustomException(403, "You cannot view this payment session", HttpStatus.FORBIDDEN);
         }
 
-        // Webhook remains the primary source of truth. This reconciliation is a safe fallback
-        // for local development or temporary webhook-delivery failures.
         if (transaction.getStatus() == PaymentTransactionStatus.PENDING) {
-            try {
-                JsonNode stripeSession = stripeGatewayService.retrieveCheckoutSession(sessionId);
-                String checkoutStatus = stripeSession.path("status").asText("");
-                String paymentStatus = stripeSession.path("payment_status").asText("");
-                if ("complete".equalsIgnoreCase(checkoutStatus)
-                        && ("paid".equalsIgnoreCase(paymentStatus)
-                        || "no_payment_required".equalsIgnoreCase(paymentStatus))) {
-                    handleCheckoutCompleted(stripeSession);
-                    transaction = paymentRepository.findByStripeCheckoutSessionIdAndDeletedFalse(sessionId)
-                            .orElse(transaction);
-                }
-            } catch (RuntimeException ex) {
-                // Do not fail the reader result page merely because Stripe reconciliation is unavailable.
-                // Stripe will still retry the signed webhook.
-                log.warn("Unable to reconcile pending Stripe Checkout session {}: {}", sessionId, ex.getMessage());
-            }
+            reconcilePendingCheckout(transaction);
+            transaction = paymentRepository.findByStripeCheckoutSessionIdAndDeletedFalse(sessionId)
+                    .orElse(transaction);
         }
 
         ReaderSubscriptionEntity subscription = subscriptionRepository.findByUserIdAndDeletedFalse(userId).orElse(null);
@@ -250,6 +246,48 @@ public class StripeSubscriptionService {
                 .totalElements(result.getTotalElements())
                 .totalPages(result.getTotalPages())
                 .build();
+    }
+
+    @Transactional
+    public ReaderPaymentHistoryPageResponse getPaymentHistory(UUID userId, int page, int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), 50);
+        Pageable pageable = PageRequest.of(safePage, safeSize);
+        Page<PaymentTransactionEntity> result =
+                paymentRepository.findAllByUserIdAndDeletedFalseOrderByCreatedAtDesc(userId, pageable);
+        result.getContent().stream()
+                .filter(transaction -> transaction.getStatus() == PaymentTransactionStatus.PENDING)
+                .forEach(this::reconcilePendingCheckout);
+        return ReaderPaymentHistoryPageResponse.builder()
+                .content(result.getContent().stream().map(this::toReaderPaymentHistoryResponse).toList())
+                .page(result.getNumber())
+                .size(result.getSize())
+                .totalElements(result.getTotalElements())
+                .totalPages(result.getTotalPages())
+                .build();
+    }
+
+    private void reconcilePendingCheckout(PaymentTransactionEntity transaction) {
+        String sessionId = transaction.getStripeCheckoutSessionId();
+        if (sessionId == null || sessionId.isBlank()) return;
+        try {
+            JsonNode stripeSession = stripeGatewayService.retrieveCheckoutSession(sessionId);
+            String checkoutStatus = stripeSession.path("status").asText("");
+            String paymentStatus = stripeSession.path("payment_status").asText("");
+            if ("expired".equalsIgnoreCase(checkoutStatus)) {
+                handleCheckoutExpired(stripeSession);
+                return;
+            }
+            if ("complete".equalsIgnoreCase(checkoutStatus)
+                    && ("paid".equalsIgnoreCase(paymentStatus)
+                    || "no_payment_required".equalsIgnoreCase(paymentStatus))) {
+                handleCheckoutCompleted(stripeSession);
+            }
+        } catch (RuntimeException ex) {
+            // Webhook remains authoritative. A temporary Stripe outage must not
+            // prevent readers from opening their locally stored payment history.
+            log.warn("Unable to reconcile pending Stripe Checkout session {}: {}", sessionId, ex.getMessage());
+        }
     }
 
     private void handleCheckoutCompleted(JsonNode session) {
@@ -593,6 +631,9 @@ public class StripeSubscriptionService {
                 .currentPeriodEnd(subscription.getCurrentPeriodEnd())
                 .cancelAtPeriodEnd(subscription.getCancelAtPeriodEnd())
                 .premiumActive(isSubscriptionCurrentlyActive(subscription))
+                .requiresBillingManagement(requiresBillingPortalBeforeNewCheckout(subscription))
+                .billingPortalAvailable(subscription.getStripeCustomerId() != null
+                        && !subscription.getStripeCustomerId().isBlank())
                 .build();
     }
 
@@ -615,6 +656,21 @@ public class StripeSubscriptionService {
                 .paidAt(transaction.getPaidAt())
                 .createdAt(transaction.getCreatedAt())
                 .updatedAt(transaction.getUpdatedAt())
+                .build();
+    }
+
+    private ReaderPaymentHistoryResponse toReaderPaymentHistoryResponse(PaymentTransactionEntity transaction) {
+        return ReaderPaymentHistoryResponse.builder()
+                .id(transaction.getId())
+                .planCode(transaction.getPlanCode())
+                .planName(transaction.getPlanName())
+                .amount(transaction.getAmount())
+                .currency(transaction.getCurrency())
+                .status(transaction.getStatus())
+                .provider(transaction.getProvider())
+                .failureReason(transaction.getFailureReason())
+                .paidAt(transaction.getPaidAt())
+                .createdAt(transaction.getCreatedAt())
                 .build();
     }
 
