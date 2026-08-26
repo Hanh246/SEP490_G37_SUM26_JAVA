@@ -59,8 +59,7 @@ public class AdminStatisticsService {
         }
         comicStatusCounts.put("SUSPENDED", 0L);
         
-        List<com.sep.comiverse.entity.ComicEntity> publishedComics = comicRepository.findByModerationStatusInAndDeletedFalse(
-                List.of(ComicModerationStatus.PUBLISHED, ComicModerationStatus.UNPUBLISHED));
+        List<com.sep.comiverse.entity.ComicEntity> publishedComics = comicRepository.findAllByDeletedFalseWithGenres();
         Map<String, com.sep.comiverse.entity.ComicEntity> uniqueComics = new java.util.HashMap<>();
         for (com.sep.comiverse.entity.ComicEntity c : publishedComics) {
             String cleanTitle = (c.getTitle() != null ? c.getTitle() : "").toLowerCase().replaceAll("[^a-z0-9]", "").replaceAll("s$", "");
