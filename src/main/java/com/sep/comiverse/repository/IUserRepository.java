@@ -18,6 +18,8 @@ import java.util.UUID;
 @Repository
 public interface IUserRepository extends AbstractCrudRepository<UserEntity, UUID> {
     long countByStatusIgnoreCaseAndDeletedFalse(String status);
+    long countByCreatedAtGreaterThanEqualAndDeletedFalse(Instant threshold);
+    long countByLastSeenAtGreaterThanEqualAndDeletedFalse(Instant threshold);
 
     @Query("""
         SELECT r.roleName, COUNT(u)

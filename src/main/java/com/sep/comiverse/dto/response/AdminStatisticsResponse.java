@@ -21,6 +21,10 @@ public class AdminStatisticsResponse {
     private long totalPublishedComics;
     private long totalGenres;
     private long pendingSubmissions;
+    private long newUsersToday;
+    private long newComicsToday;
+    private long activeUsersToday;
+    private long onlineUsersNow;
     private Map<String, Long> roleCounts;
     private List<GenreDTO> genres;
     private Instant generatedAt;
