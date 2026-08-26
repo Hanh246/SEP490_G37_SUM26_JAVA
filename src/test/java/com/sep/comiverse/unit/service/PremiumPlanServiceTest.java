@@ -72,15 +72,15 @@ class PremiumPlanServiceTest {
 
         PremiumPlanSettingsResponse response = service.getPremiumPlanSettings();
 
-        assertEquals(0, response.getMonthlyPrice().compareTo(new BigDecimal("79000")));
-        assertEquals(0, response.getYearlyPrice().compareTo(new BigDecimal("790000")));
+        assertEquals(0, response.getMonthlyPrice().compareTo(new BigDecimal("3.16")));
+        assertEquals(0, response.getYearlyPrice().compareTo(new BigDecimal("31.60")));
         assertEquals(5, response.getBenefits().size());
         assertTrue(response.getBenefits().contains("Offline chapter downloads"));
     }
 
     @Test
     void getSettingsFallsBackToDefaultBenefitsWhenStoredJsonIsInvalid() {
-        SubscriptionPlanEntity monthly = plan("MONTHLY", new BigDecimal("79000"), BillingInterval.MONTH);
+        SubscriptionPlanEntity monthly = plan("MONTHLY", new BigDecimal("3.16"), BillingInterval.MONTH);
         monthly.setFeaturesJson("not-json");
         when(subscriptionPlanRepository.findByCodeIgnoreCaseAndDeletedFalse("MONTHLY"))
                 .thenReturn(Optional.of(monthly));
@@ -95,26 +95,26 @@ class PremiumPlanServiceTest {
 
     @Test
     void updateSettingsSanitizesBenefitsAndInvalidatesChangedStripePrices() {
-        SubscriptionPlanEntity monthly = plan("MONTHLY", new BigDecimal("79000"), BillingInterval.MONTH);
-        SubscriptionPlanEntity yearly = plan("YEARLY", new BigDecimal("790000"), BillingInterval.YEAR);
+        SubscriptionPlanEntity monthly = plan("MONTHLY", new BigDecimal("3.16"), BillingInterval.MONTH);
+        SubscriptionPlanEntity yearly = plan("YEARLY", new BigDecimal("31.60"), BillingInterval.YEAR);
         when(subscriptionPlanRepository.findByCodeIgnoreCaseAndDeletedFalse("MONTHLY"))
                 .thenReturn(Optional.of(monthly));
         when(subscriptionPlanRepository.findByCodeIgnoreCaseAndDeletedFalse("YEARLY"))
                 .thenReturn(Optional.of(yearly));
         UpdatePremiumPlanSettingsRequest request = UpdatePremiumPlanSettingsRequest.builder()
-                .monthlyPrice(new BigDecimal("89000"))
-                .yearlyPrice(new BigDecimal("890000"))
+                .monthlyPrice(new BigDecimal("3.56"))
+                .yearlyPrice(new BigDecimal("35.60"))
                 .benefits(List.of("  No ads  ", "Offline reading", "No ads", "  "))
                 .build();
 
         PremiumPlanSettingsResponse response = service.updatePremiumPlanSettings(request);
 
         assertEquals(List.of("No ads", "Offline reading"), response.getBenefits());
-        assertEquals(0, monthly.getPrice().compareTo(new BigDecimal("89000")));
-        assertEquals(0, yearly.getPrice().compareTo(new BigDecimal("890000")));
+        assertEquals(0, monthly.getPrice().compareTo(new BigDecimal("3.56")));
+        assertEquals(0, yearly.getPrice().compareTo(new BigDecimal("35.60")));
         assertNull(monthly.getStripePriceId());
         assertNull(yearly.getStripePriceId());
-        assertEquals("VND", monthly.getCurrency());
+        assertEquals("USD", monthly.getCurrency());
         assertEquals(BillingInterval.MONTH, monthly.getBillingInterval());
         assertEquals(BillingInterval.YEAR, yearly.getBillingInterval());
         verify(subscriptionPlanRepository).save(monthly);
@@ -123,15 +123,15 @@ class PremiumPlanServiceTest {
 
     @Test
     void updateSettingsKeepsStripePriceWhenBillingDefinitionDidNotChange() {
-        SubscriptionPlanEntity monthly = plan("MONTHLY", new BigDecimal("79000"), BillingInterval.MONTH);
-        SubscriptionPlanEntity yearly = plan("YEARLY", new BigDecimal("790000"), BillingInterval.YEAR);
+        SubscriptionPlanEntity monthly = plan("MONTHLY", new BigDecimal("3.16"), BillingInterval.MONTH);
+        SubscriptionPlanEntity yearly = plan("YEARLY", new BigDecimal("31.60"), BillingInterval.YEAR);
         when(subscriptionPlanRepository.findByCodeIgnoreCaseAndDeletedFalse("MONTHLY"))
                 .thenReturn(Optional.of(monthly));
         when(subscriptionPlanRepository.findByCodeIgnoreCaseAndDeletedFalse("YEARLY"))
                 .thenReturn(Optional.of(yearly));
         UpdatePremiumPlanSettingsRequest request = UpdatePremiumPlanSettingsRequest.builder()
-                .monthlyPrice(new BigDecimal("79000"))
-                .yearlyPrice(new BigDecimal("790000"))
+                .monthlyPrice(new BigDecimal("3.16"))
+                .yearlyPrice(new BigDecimal("31.60"))
                 .benefits(List.of("No ads"))
                 .build();
 
@@ -144,8 +144,8 @@ class PremiumPlanServiceTest {
     @Test
     void updateSettingsRejectsEmptySanitizedBenefits() {
         UpdatePremiumPlanSettingsRequest request = UpdatePremiumPlanSettingsRequest.builder()
-                .monthlyPrice(new BigDecimal("79000"))
-                .yearlyPrice(new BigDecimal("790000"))
+                .monthlyPrice(new BigDecimal("3.16"))
+                .yearlyPrice(new BigDecimal("31.60"))
                 .benefits(List.of(" ", "  "))
                 .build();
 
@@ -164,8 +164,8 @@ class PremiumPlanServiceTest {
         when(subscriptionPlanRepository.findByCodeIgnoreCaseAndDeletedFalse("MONTHLY"))
                 .thenReturn(Optional.empty());
         UpdatePremiumPlanSettingsRequest request = UpdatePremiumPlanSettingsRequest.builder()
-                .monthlyPrice(new BigDecimal("79000"))
-                .yearlyPrice(new BigDecimal("790000"))
+                .monthlyPrice(new BigDecimal("3.16"))
+                .yearlyPrice(new BigDecimal("31.60"))
                 .benefits(List.of("No ads"))
                 .build();
 
@@ -259,7 +259,7 @@ class PremiumPlanServiceTest {
                 .code(code)
                 .name("Premium " + code)
                 .price(price)
-                .currency("VND")
+                .currency("USD")
                 .billingInterval(interval)
                 .intervalCount(1)
                 .featuresJson("[\"No ads\"]")

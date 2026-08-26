@@ -10,7 +10,6 @@ import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.ComicMetricSnapshotEntity;
 import com.sep.comiverse.entity.CreatorPayoutSettingEntity;
-import com.sep.comiverse.entity.CreatorPayoutSettingEntity;
 import com.sep.comiverse.entity.GenreEntity;
 import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.entity.UserEntity;
@@ -29,7 +28,6 @@ import com.sep.comiverse.repository.projection.ComicChapterCountProjection;
 import com.sep.comiverse.service.AuditLogService;
 import com.sep.comiverse.service.AuthorComicService;
 import com.sep.comiverse.service.AuthorLicenseService;
-import com.sep.comiverse.service.CreatorPayoutSettingsService;
 import com.sep.comiverse.service.CreatorPayoutSettingsService;
 import com.sep.comiverse.service.NotificationService;
 import org.junit.jupiter.api.BeforeEach;
@@ -145,7 +143,7 @@ class AuthorComicServiceTest {
 
         ArgumentCaptor<ComicEntity> captor = ArgumentCaptor.forClass(ComicEntity.class);
         verify(comicRepository).save(captor.capture());
-        verify(authorLicenseService).assertPublishingAllowed(authorId);
+        verifyNoInteractions(authorLicenseService);
 
         ComicEntity saved = captor.getValue();
         assertEquals(authorId, saved.getAuthorId());
@@ -183,7 +181,7 @@ class AuthorComicServiceTest {
         assertEquals(409, error.getCode());
         assertTrue(error.getMessage().contains("Active comic draft/rework limit reached"));
         verify(comicRepository, never()).save(any(ComicEntity.class));
-        verify(authorLicenseService).assertPublishingAllowed(authorId);
+        verifyNoInteractions(authorLicenseService);
     }
 
     @Test
@@ -269,27 +267,24 @@ class AuthorComicServiceTest {
     }
 
     @Test
-    void createComicStopsBeforePersistenceWhenAuthorLicenseDoesNotAllowPublishing() {
+    void createComicDoesNotRequireAuthorLicense() {
         UUID authorId = UUID.randomUUID();
+        UUID comicId = UUID.randomUUID();
         AuthorComicCreateRequest request = createRequest(authorId);
-        CustomException licenseError = new CustomException(
-                403,
-                "Author license must be verified before publishing",
-                HttpStatus.FORBIDDEN
-        );
-        doThrow(licenseError)
-                .when(authorLicenseService)
-                .assertPublishingAllowed(authorId);
 
-        CustomException error = assertThrows(
-                CustomException.class,
-                () -> service.createComic(request)
-        );
+        when(comicRepository.save(any(ComicEntity.class))).thenAnswer(invocation -> {
+            ComicEntity saved = invocation.getArgument(0);
+            saved.setId(comicId);
+            return saved;
+        });
+        when(chapterRepository.countByComic_IdAndDeletedFalse(comicId)).thenReturn(0L);
 
-        assertEquals(403, error.getCode());
-        assertEquals(HttpStatus.FORBIDDEN, error.getHttpStatus());
-        verify(comicRepository, never()).save(any());
-        verifyNoInteractions(genreRepository);
+        AuthorComicResponse response = service.createComic(request);
+
+        assertEquals(comicId, response.getId());
+        assertEquals(ComicModerationStatus.DRAFT, response.getModerationStatus());
+        verifyNoInteractions(authorLicenseService);
+        verify(comicRepository).save(any(ComicEntity.class));
     }
 
     @ParameterizedTest
@@ -951,25 +946,22 @@ class AuthorComicServiceTest {
     // ===== submitForReview =====
 
     @Test
-    void submitForReviewStopsWhenLicenseDoesNotAllowPublishing() {
-        UUID comicId = UUID.randomUUID();
-        UUID authorId = UUID.randomUUID();
-        CustomException licenseError = new CustomException(
-                403,
-                "Author license must be verified before publishing",
-                HttpStatus.FORBIDDEN
-        );
-        doThrow(licenseError)
-                .when(authorLicenseService)
-                .assertPublishingAllowed(authorId);
+    void submitForReviewDoesNotRequireAuthorLicense() {
+        ComicEntity comic = ownedComic(ComicModerationStatus.DRAFT);
+        stubOwnedComic(comic);
+        when(chapterRepository.countByComic_IdAndDeletedFalse(comic.getId())).thenReturn(1L);
+        when(submissionRepository
+                .findTopByComicIdAndAuthorIdAndChapterIdIsNullAndQueueTypeIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(
+                        comic.getId(), comic.getAuthorId(), "author"
+                ))
+                .thenReturn(Optional.empty());
+        when(comicRepository.save(comic)).thenReturn(comic);
 
-        CustomException error = assertThrows(
-                CustomException.class,
-                () -> service.submitForReview(comicId, authorId)
-        );
+        AuthorComicResponse response = service.submitForReview(comic.getId(), comic.getAuthorId());
 
-        assertEquals(403, error.getCode());
-        verifyNoInteractions(comicRepository, chapterRepository, submissionRepository);
+        assertEquals(ComicModerationStatus.SUBMITTED_FOR_REVIEW, response.getModerationStatus());
+        verifyNoInteractions(authorLicenseService);
+        verify(submissionRepository).save(any(SubmissionEntity.class));
     }
 
     @Test
@@ -1345,7 +1337,7 @@ class AuthorComicServiceTest {
         assertEquals(0, response.getChapterCount());
         assertEquals(0.0, response.getRatingAverage());
         assertEquals(0, response.getRatingCount());
-        assertEquals(BigDecimal.ZERO, response.getEstimatedRevenue());
+        assertEquals(0, response.getEstimatedRevenue().compareTo(BigDecimal.ZERO));
         assertNotNull(response.getSnapshotAt());
     }
 
