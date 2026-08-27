@@ -6,7 +6,6 @@ import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
-import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.plugin.crud.ChapterCrudPlugin;
 import com.sep.comiverse.plugin.crud.ComicCrudPlugin;
@@ -139,7 +138,8 @@ class AuthorChapterServiceTest {
         );
 
         assertEquals(400, error.getCode());
-        verifyNoInteractions(authorLicenseService, authorComicService, cloudinaryStorageService);
+        verifyNoInteractions(authorLicenseService);
+        verifyNoInteractions(authorComicService, cloudinaryStorageService);
     }
 
     @Test
@@ -154,27 +154,35 @@ class AuthorChapterServiceTest {
         );
 
         assertEquals(400, error.getCode());
-        verifyNoInteractions(authorLicenseService, authorComicService, cloudinaryStorageService);
+        verifyNoInteractions(authorLicenseService);
+        verifyNoInteractions(authorComicService, cloudinaryStorageService);
     }
 
     @Test
-    void uploadChapterFolderDoesNotRequireAuthorLicenseAndContinuesNormalValidation() {
+    void uploadChapterFolderDoesNotRequireAuthorLicense() {
         UUID comicId = UUID.randomUUID();
         UUID authorId = UUID.randomUUID();
-        ChapterUploadRequest request = new ChapterUploadRequest(authorId, "1", "Title");
         ComicEntity comic = comic(comicId, authorId);
+        ChapterUploadRequest request = new ChapterUploadRequest(authorId, "1", "Title");
 
         when(authorComicService.getOwnedComic(comicId, authorId)).thenReturn(comic);
+        when(chapterRepository.existsByComic_IdAndChapterNumberAndDeletedFalse(comicId, "1"))
+                .thenReturn(false);
+        when(chapterRepository.existsByContentHashAndModerationStatus(anyString(), eq(ChapterStatus.REJECTED)))
+                .thenReturn(false);
+        when(cloudinaryStorageService.uploadImage(any(), anyString(), anyString()))
+                .thenReturn(CloudinaryUploadResult.builder().secureUrl("https://cdn.test/001.png").build());
 
-        CustomException error = assertThrows(
-                CustomException.class,
-                () -> service.uploadChapterFolder(comicId, request, List.of(), List.of())
+        var response = service.uploadChapterFolder(
+                comicId,
+                request,
+                List.of(png("01.png")),
+                List.of("Chapter 1/01.png")
         );
 
-        assertEquals(400, error.getCode());
-        assertTrue(error.getMessage().contains("at least one image"));
-        verify(authorComicService).getOwnedComic(comicId, authorId);
-        verifyNoInteractions(authorLicenseService, cloudinaryStorageService);
+        assertEquals(ChapterStatus.PREVIEW_READY, response.getStatus());
+        verifyNoInteractions(authorLicenseService);
+        verify(cloudinaryStorageService).uploadImage(any(), anyString(), anyString());
     }
 
     @Test
@@ -807,33 +815,11 @@ class AuthorChapterServiceTest {
     // ===== submitForReview =====
 
     @Test
-    void submitForReviewRejectsWhenComicIsNotPublished() {
-        UUID comicId = UUID.randomUUID();
-        UUID chapterId = UUID.randomUUID();
-        UUID authorId = UUID.randomUUID();
-        ComicEntity comic = comic(comicId, authorId);
-        comic.setModerationStatus(ComicModerationStatus.DRAFT);
-
-        when(authorComicService.getOwnedComic(comicId, authorId)).thenReturn(comic);
-
-        CustomException error = assertThrows(
-                CustomException.class,
-                () -> service.submitForReview(comicId, chapterId, authorId)
-        );
-
-        assertEquals(409, error.getCode());
-        assertEquals("Comic must be published before submitting chapters for review", error.getMessage());
-        verifyNoInteractions(chapterRepository, submissionRepository);
-        verifyNoInteractions(authorLicenseService);
-    }
-
-    @Test
     void submitForReviewDoesNotRequireAuthorLicense() {
         UUID comicId = UUID.randomUUID();
         UUID chapterId = UUID.randomUUID();
         UUID authorId = UUID.randomUUID();
         ComicEntity comic = comic(comicId, authorId);
-        comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
         ChapterEntity chapter = chapter(
                 comic,
                 chapterId,
@@ -841,11 +827,11 @@ class AuthorChapterServiceTest {
                 ChapterStatus.PREVIEW_READY,
                 List.of("a")
         );
-
         stubSubmitOwnership(comicId, chapterId, authorId, comic, chapter);
 
-        assertDoesNotThrow(() -> service.submitForReview(comicId, chapterId, authorId));
+        var response = service.submitForReview(comicId, chapterId, authorId);
 
+        assertEquals(ChapterStatus.SUBMITTED_FOR_REVIEW, response.getStatus());
         verifyNoInteractions(authorLicenseService);
         verify(submissionRepository).save(any(SubmissionEntity.class));
     }
@@ -856,7 +842,6 @@ class AuthorChapterServiceTest {
         UUID chapterId = UUID.randomUUID();
         UUID authorId = UUID.randomUUID();
         ComicEntity comic = comic(comicId, authorId);
-        comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
         ChapterEntity chapter = chapter(
                 comic,
                 chapterId,
@@ -882,7 +867,6 @@ class AuthorChapterServiceTest {
         UUID chapterId = UUID.randomUUID();
         UUID authorId = UUID.randomUUID();
         ComicEntity comic = comic(comicId, authorId);
-        comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
         ChapterEntity chapter = chapter(
                 comic,
                 chapterId,
@@ -908,7 +892,6 @@ class AuthorChapterServiceTest {
         UUID chapterId = UUID.randomUUID();
         UUID authorId = UUID.randomUUID();
         ComicEntity comic = comic(comicId, authorId);
-        comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
         ChapterEntity chapter = chapter(
                 comic,
                 chapterId,
@@ -934,7 +917,6 @@ class AuthorChapterServiceTest {
         UUID chapterId = UUID.randomUUID();
         UUID authorId = UUID.randomUUID();
         ComicEntity comic = comic(comicId, authorId);
-        comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
         ChapterEntity chapter = chapter(
                 comic,
                 chapterId,
@@ -964,7 +946,6 @@ class AuthorChapterServiceTest {
         UUID chapterId = UUID.randomUUID();
         UUID authorId = UUID.randomUUID();
         ComicEntity comic = comic(comicId, authorId);
-        comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
         ChapterEntity chapter = chapter(
                 comic,
                 chapterId,
@@ -1191,34 +1172,37 @@ class AuthorChapterServiceTest {
     // ===== replaceChapterFolder =====
 
     @Test
-    void replaceChapterFolderDoesNotRequireAuthorLicenseAndStillChecksOwnership() {
+    void replaceChapterFolderDoesNotRequireAuthorLicense() {
         UUID comicId = UUID.randomUUID();
         UUID chapterId = UUID.randomUUID();
         UUID authorId = UUID.randomUUID();
         ComicEntity comic = comic(comicId, authorId);
+        ChapterEntity chapter = chapter(
+                comic,
+                chapterId,
+                "1",
+                ChapterStatus.REJECTED,
+                List.of("old")
+        );
 
         when(authorComicService.getOwnedComic(comicId, authorId)).thenReturn(comic);
-        when(chapterRepository.findByIdAndComic_IdAndComic_AuthorIdAndDeletedFalse(
-                chapterId, comicId, authorId
-        )).thenReturn(Optional.empty());
+        stubOwnedChapter(comicId, chapterId, authorId, chapter);
+        when(chapterRepository.existsByContentHashAndModerationStatus(anyString(), eq(ChapterStatus.REJECTED)))
+                .thenReturn(false);
+        when(cloudinaryStorageService.uploadImage(any(), anyString(), anyString()))
+                .thenReturn(CloudinaryUploadResult.builder().secureUrl("https://cdn.test/new.png").build());
 
-        CustomException error = assertThrows(
-                CustomException.class,
-                () -> service.replaceChapterFolder(
-                        comicId,
-                        chapterId,
-                        authorId,
-                        List.of(png("01.png")),
-                        List.of("Chapter 1/01.png")
-                )
+        var response = service.replaceChapterFolder(
+                comicId,
+                chapterId,
+                authorId,
+                List.of(png("01.png")),
+                List.of("Chapter 1/01.png")
         );
 
-        assertEquals(404, error.getCode());
-        verify(authorComicService).getOwnedComic(comicId, authorId);
-        verify(chapterRepository).findByIdAndComic_IdAndComic_AuthorIdAndDeletedFalse(
-                chapterId, comicId, authorId
-        );
-        verifyNoInteractions(authorLicenseService, cloudinaryStorageService);
+        assertEquals(ChapterStatus.PREVIEW_READY, response.getStatus());
+        verifyNoInteractions(authorLicenseService);
+        verify(cloudinaryStorageService).uploadImage(any(), anyString(), anyString());
     }
 
     @Test

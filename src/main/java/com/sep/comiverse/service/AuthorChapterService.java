@@ -10,7 +10,6 @@ import com.sep.comiverse.entity.ChapterEntity;
 import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.SubmissionEntity;
 import com.sep.comiverse.entity.enums.ChapterStatus;
-import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.plugin.crud.ChapterCrudPlugin;
@@ -164,13 +163,6 @@ public class AuthorChapterService {
         // License does not block submitting a chapter for moderation.
         // authorLicenseService.assertPublishingAllowed(authorId);
         ComicEntity comic = authorComicService.getOwnedComic(comicId, authorId);
-        if (comic.getModerationStatus() != ComicModerationStatus.PUBLISHED) {
-            throw new CustomException(
-                    409,
-                    "Comic must be published before submitting chapters for review",
-                    HttpStatus.CONFLICT
-            );
-        }
         ChapterEntity chapter = getOwnedChapter(comicId, chapterId, authorId);
 
         if (!hasImages(chapter)) {
