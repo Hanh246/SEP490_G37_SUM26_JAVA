@@ -12,6 +12,7 @@ import com.sep.comiverse.entity.enums.NotificationPreferenceKey;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IForumCommentRepository;
 import com.sep.comiverse.repository.IForumThreadRepository;
+import com.sep.comiverse.repository.IForumThreadFollowRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,6 +52,9 @@ class ForumCommentServiceTest {
     @Mock
     private com.sep.comiverse.repository.IForumCommentLikeRepository forumCommentLikeRepository;
 
+    @Mock
+    private IForumThreadFollowRepository forumThreadFollowRepository;
+
     private ForumCommentService forumCommentService;
 
     private final UUID threadId = UUID.randomUUID();
@@ -64,7 +68,8 @@ class ForumCommentServiceTest {
                 forumThreadRepository,
                 userRepository,
                 notificationService,
-                forumCommentLikeRepository
+                forumCommentLikeRepository,
+                forumThreadFollowRepository
         );
     }
 
@@ -203,6 +208,38 @@ class ForumCommentServiceTest {
         verify(notificationService, never()).notifyUser(
                 any(), any(), any(), any(), any(),
                 org.mockito.ArgumentMatchers.eq(NotificationPreferenceKey.FORUM_ACTIVITY)
+        );
+    }
+
+    @Test
+    void createCommentNotifiesFollowersWithoutDuplicatingTheDirectRecipient() {
+        UUID followerId = UUID.randomUUID();
+        UUID savedId = UUID.randomUUID();
+        ForumThreadEntity thread = thread(ownerId);
+        when(forumThreadRepository.findById(threadId)).thenReturn(Optional.of(thread));
+        when(userRepository.findByIdWithRole(actorId)).thenReturn(Optional.of(user(actorId, "Reply User")));
+        when(forumCommentRepository.save(any(ForumCommentEntity.class)))
+                .thenAnswer(invocation -> savedComment(invocation.getArgument(0), savedId));
+        when(forumThreadFollowRepository.findFollowerUserIdsByThreadId(threadId))
+                .thenReturn(List.of(ownerId, followerId, actorId));
+
+        forumCommentService.createComment(threadId, request("A tracked reply", null), actorId);
+
+        verify(notificationService).notifyUser(
+                ownerId,
+                "New reply to your forum post",
+                "Reply User replied in \"Thread title\".",
+                "FORUM",
+                "/forum/thread/" + threadId + "?comment=" + savedId,
+                NotificationPreferenceKey.FORUM_ACTIVITY
+        );
+        verify(notificationService).notifyUser(
+                followerId,
+                "New activity in a followed thread",
+                "Reply User replied in \"Thread title\".",
+                "FORUM",
+                "/forum/thread/" + threadId + "?comment=" + savedId,
+                NotificationPreferenceKey.FORUM_ACTIVITY
         );
     }
 

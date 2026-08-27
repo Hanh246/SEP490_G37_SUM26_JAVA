@@ -53,4 +53,8 @@ public class ForumThreadEntity extends BaseEntity {
     @Column(name = "views")
     @Builder.Default
     private Integer views = 0;
+
+    @Column(name = "likes")
+    @Builder.Default
+    private Integer likes = 0;
 }

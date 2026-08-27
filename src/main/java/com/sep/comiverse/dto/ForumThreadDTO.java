@@ -14,6 +14,7 @@ public class ForumThreadDTO {
     private String title;
     private String author;
     private UUID authorId;
+    private String avatarUrl;
     private String category;
     private String content;
     private Boolean isPinned;
@@ -23,4 +24,7 @@ public class ForumThreadDTO {
     private Instant createdAt;
     private Integer replies;
     private Integer views;
+    private Integer likes;
+    private Boolean isLikedByCurrentUser;
+    private Boolean isFollowedByCurrentUser;
 }

@@ -12,6 +12,7 @@ import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.repository.IForumCommentRepository;
 import com.sep.comiverse.repository.IForumCommentLikeRepository;
 import com.sep.comiverse.repository.IForumThreadRepository;
+import com.sep.comiverse.repository.IForumThreadFollowRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.util.ProfanityFilterUtil;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +21,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.HashSet;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -33,6 +36,7 @@ public class ForumCommentService {
     private final NotificationService notificationService;
 
     private final IForumCommentLikeRepository forumCommentLikeRepository;
+    private final IForumThreadFollowRepository forumThreadFollowRepository;
 
     @Transactional(readOnly = true)
     public List<ForumCommentDTO> getComments(UUID threadId, UUID currentUserId) {
@@ -125,16 +129,33 @@ public class ForumCommentService {
         forumThreadRepository.save(thread);
 
         UUID recipientId = resolveRecipientId(thread, parent);
+        String actorName = displayName(actor);
+        String message = actorName + " replied in \"" + abbreviate(thread.getTitle(), 80) + "\".";
+        String actionUrl = "/forum/thread/" + threadId + "?comment=" + saved.getId();
+        Set<UUID> notifiedUserIds = new HashSet<>();
         if (recipientId != null && !recipientId.equals(actorId)) {
-            String actorName = displayName(actor);
             String notificationTitle = parent == null
                     ? "New reply to your forum post"
                     : "New reply to your forum comment";
-            String message = actorName + " replied in \"" + abbreviate(thread.getTitle(), 80) + "\".";
-            String actionUrl = "/forum/thread/" + threadId + "?comment=" + saved.getId();
             notificationService.notifyUser(
                     recipientId,
                     notificationTitle,
+                    message,
+                    "FORUM",
+                    actionUrl,
+                    NotificationPreferenceKey.FORUM_ACTIVITY
+            );
+            notifiedUserIds.add(recipientId);
+        }
+
+        List<UUID> followerIds = forumThreadFollowRepository.findFollowerUserIdsByThreadId(threadId);
+        for (UUID followerId : followerIds == null ? List.<UUID>of() : followerIds) {
+            if (followerId == null || followerId.equals(actorId) || !notifiedUserIds.add(followerId)) {
+                continue;
+            }
+            notificationService.notifyUser(
+                    followerId,
+                    "New activity in a followed thread",
                     message,
                     "FORUM",
                     actionUrl,

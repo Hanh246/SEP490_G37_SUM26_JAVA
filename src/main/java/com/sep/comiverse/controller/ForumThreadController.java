@@ -1,21 +1,31 @@
 package com.sep.comiverse.controller;
 
 import com.sep.comiverse.dto.ForumThreadDTO;
+import com.sep.comiverse.dto.pagination.PaginationMetadata;
+import com.sep.comiverse.dto.pagination.PaginationResponse;
 import com.sep.comiverse.dto.pagination.PaginationSearchDTO;
 import com.sep.comiverse.dto.request.ReportForumThreadRequest;
 import com.sep.comiverse.dto.response.BaseResponse;
+import com.sep.comiverse.dto.response.ForumThreadFollowResponse;
+import com.sep.comiverse.dto.response.ForumThreadLikeResponse;
 import com.sep.comiverse.entity.ForumThreadEntity;
 import com.sep.comiverse.exception.CustomException;
 import com.sep.comiverse.plugin.crud.ForumThreadCrudPlugin;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.security.JwtTokenUtil;
+import com.sep.comiverse.service.ForumThreadFollowService;
+import com.sep.comiverse.service.ForumThreadLikeService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
@@ -38,6 +48,12 @@ public class ForumThreadController extends BaseController<ForumThreadEntity, For
     private com.sep.comiverse.repository.IForumThreadRepository forumThreadRepository;
 
     @Autowired
+    private ForumThreadLikeService forumThreadLikeService;
+
+    @Autowired
+    private ForumThreadFollowService forumThreadFollowService;
+
+    @Autowired
     public ForumThreadController(ForumThreadCrudPlugin crud) {
         super(crud, ForumThreadEntity.class);
     }
@@ -56,8 +72,12 @@ public class ForumThreadController extends BaseController<ForumThreadEntity, For
                 : user.getFullName().trim();
         dto.setAuthorId(userId);
         dto.setAuthor(displayName);
+        dto.setAvatarUrl(user.getAvatarUrl());
         dto.setReplies(0);
         dto.setViews(0);
+        dto.setLikes(0);
+        dto.setIsLikedByCurrentUser(false);
+        dto.setIsFollowedByCurrentUser(false);
         dto.setIsPinned(false);
         dto.setIsLocked(false);
         dto.setIsReported(false);
@@ -74,9 +94,41 @@ public class ForumThreadController extends BaseController<ForumThreadEntity, For
 
     @GetMapping("/all")
     public ResponseEntity<BaseResponse<List<ForumThreadDTO>>> listAll() {
+        List<ForumThreadDTO> threads = decorateEngagementState(crudPlugin.listAll());
         return ResponseEntity.ok(BaseResponse.<List<ForumThreadDTO>>builder()
                 .success(true)
-                .data(crudPlugin.listAll())
+                .data(threads)
+                .build());
+    }
+
+    @Override
+    @GetMapping("/{id}")
+    public ResponseEntity<BaseResponse<ForumThreadDTO>> findById(@PathVariable UUID id) {
+        return crudPlugin.read(id)
+                .map(dto -> ResponseEntity.<BaseResponse<ForumThreadDTO>>ok(BaseResponse.<ForumThreadDTO>builder()
+                        .success(true)
+                        .data(decorateEngagementState(dto))
+                        .build()))
+                .orElseGet(() -> ResponseEntity.<BaseResponse<ForumThreadDTO>>status(HttpStatus.NOT_FOUND)
+                        .body(BaseResponse.<ForumThreadDTO>builder().success(false).build()));
+    }
+
+    @Override
+    @GetMapping
+    public ResponseEntity<PaginationResponse<List<ForumThreadDTO>>> findAll(
+            @Valid @ParameterObject PaginationSearchDTO paginationDTO
+    ) {
+        var page = crudPlugin.list(paginationDTO);
+        List<ForumThreadDTO> threads = decorateEngagementState(page.toList());
+        return ResponseEntity.ok(PaginationResponse.<List<ForumThreadDTO>>builder()
+                .metadata(new PaginationMetadata(
+                        paginationDTO.getPage(),
+                        paginationDTO.getSize(),
+                        page.getTotalElements(),
+                        page.getTotalPages()
+                ))
+                .success(true)
+                .data(threads)
                 .build());
     }
 
@@ -88,6 +140,9 @@ public class ForumThreadController extends BaseController<ForumThreadEntity, For
                 .orElseThrow(() -> new CustomException(404, "Discussion thread not found", HttpStatus.NOT_FOUND));
         dto.setAuthorId(existing.getAuthorId());
         dto.setAuthor(existing.getAuthor());
+        dto.setLikes(existing.getLikes());
+        dto.setIsLikedByCurrentUser(existing.getIsLikedByCurrentUser());
+        dto.setIsFollowedByCurrentUser(existing.getIsFollowedByCurrentUser());
         ForumThreadDTO updated = crudPlugin.update(id, dto);
         
         if (dto.getIsReported() != null && !dto.getIsReported()) {
@@ -98,7 +153,7 @@ public class ForumThreadController extends BaseController<ForumThreadEntity, For
         
         return ResponseEntity.ok(BaseResponse.<ForumThreadDTO>builder()
                 .success(true)
-                .data(updated)
+                .data(decorateEngagementState(updated))
                 .build());
     }
 
@@ -134,6 +189,29 @@ public class ForumThreadController extends BaseController<ForumThreadEntity, For
         return ResponseEntity.ok(BaseResponse.<Void>builder().success(true).build());
     }
 
+    @PostMapping("/{id}/like")
+    @PreAuthorize("isAuthenticated()")
+    @org.springframework.transaction.annotation.Transactional
+    public ResponseEntity<BaseResponse<ForumThreadLikeResponse>> toggleLike(@PathVariable UUID id) {
+        ForumThreadLikeResponse result = forumThreadLikeService.toggle(id, jwtTokenUtil.getCurrentUserId());
+        return ResponseEntity.ok(BaseResponse.<ForumThreadLikeResponse>builder()
+                .success(true)
+                .data(result)
+                .message(result.isLiked() ? "Thread liked" : "Thread unliked")
+                .build());
+    }
+
+    @PostMapping("/{id}/follow")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<BaseResponse<ForumThreadFollowResponse>> toggleFollow(@PathVariable UUID id) {
+        ForumThreadFollowResponse result = forumThreadFollowService.toggle(id, jwtTokenUtil.getCurrentUserId());
+        return ResponseEntity.ok(BaseResponse.<ForumThreadFollowResponse>builder()
+                .success(true)
+                .data(result)
+                .message(result.isFollowing() ? "Thread followed" : "Thread unfollowed")
+                .build());
+    }
+
     @PostMapping("/{id}/report")
     @PreAuthorize("isAuthenticated()")
     @org.springframework.transaction.annotation.Transactional
@@ -150,5 +228,55 @@ public class ForumThreadController extends BaseController<ForumThreadEntity, For
                 .success(true)
                 .message("Forum thread reported successfully")
                 .build());
+    }
+
+    private List<ForumThreadDTO> decorateEngagementState(List<ForumThreadDTO> threads) {
+        UUID currentUserId = resolveCurrentUserId();
+        Set<UUID> likedIds = forumThreadLikeService.findLikedThreadIds(currentUserId);
+        Set<UUID> followedIds = forumThreadFollowService.findFollowedThreadIds(currentUserId);
+        applyAuthorAvatars(threads);
+        threads.forEach(thread -> applyEngagementState(thread, likedIds, followedIds));
+        return threads;
+    }
+
+    private ForumThreadDTO decorateEngagementState(ForumThreadDTO thread) {
+        UUID currentUserId = resolveCurrentUserId();
+        Set<UUID> likedIds = forumThreadLikeService.findLikedThreadIds(currentUserId);
+        Set<UUID> followedIds = forumThreadFollowService.findFollowedThreadIds(currentUserId);
+        applyAuthorAvatars(List.of(thread));
+        applyEngagementState(thread, likedIds, followedIds);
+        return thread;
+    }
+
+    private void applyAuthorAvatars(List<ForumThreadDTO> threads) {
+        Set<UUID> authorIds = threads.stream()
+                .map(ForumThreadDTO::getAuthorId)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        if (authorIds.isEmpty()) {
+            return;
+        }
+
+        Map<UUID, String> avatarsByAuthorId = new HashMap<>();
+        userRepository.findAllById(authorIds).forEach(user -> {
+            if (!Boolean.TRUE.equals(user.getDeleted())) {
+                avatarsByAuthorId.put(user.getId(), user.getAvatarUrl());
+            }
+        });
+        threads.forEach(thread -> thread.setAvatarUrl(avatarsByAuthorId.get(thread.getAuthorId())));
+    }
+
+    private UUID resolveCurrentUserId() {
+        try {
+            return jwtTokenUtil.getCurrentUserId();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private void applyEngagementState(ForumThreadDTO thread, Set<UUID> likedIds, Set<UUID> followedIds) {
+        thread.setLikes(Math.max(0, thread.getLikes() == null ? 0 : thread.getLikes()));
+        thread.setIsLikedByCurrentUser(thread.getId() != null && likedIds.contains(thread.getId()));
+        thread.setIsFollowedByCurrentUser(thread.getId() != null && followedIds.contains(thread.getId()));
     }
 }
