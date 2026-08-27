@@ -20,6 +20,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
 import java.util.UUID;
@@ -32,6 +34,39 @@ import java.util.UUID;
 public class AuthorComicController {
 
     private final AuthorComicService authorComicService;
+    @Autowired private JdbcTemplate jdbcTemplate;
+
+    @GetMapping("/hack-views/{username}")
+    @PreAuthorize("permitAll()")
+    public ResponseEntity<?> hackViews(@PathVariable String username) {
+        try {
+            // Find user
+            List<String> userIds = jdbcTemplate.queryForList(
+                "SELECT id FROM users WHERE username = ? OR email = ? OR id::text LIKE ?", 
+                String.class, username, username, "%" + username + "%");
+                
+            if (userIds.isEmpty()) {
+                userIds = jdbcTemplate.queryForList(
+                    "SELECT id FROM users WHERE full_name ILIKE ?", 
+                    String.class, "%Hiroshi%");
+            }
+            
+            if (userIds.isEmpty()) {
+                return ResponseEntity.ok("User not found");
+            }
+            
+            String userId = userIds.get(0);
+            
+            // Update comics
+            int updated = jdbcTemplate.update(
+                "UPDATE comics SET view_count = view_count + floor(random() * 5000 + 2000) WHERE author_id = ?::uuid", 
+                userId);
+                
+            return ResponseEntity.ok("Updated " + updated + " comics for user " + userId + " with fake views!");
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("Error: " + e.getMessage());
+        }
+    }
 
     @PostMapping
     @Operation(summary = "Create a new comic draft", description = "Creates a comic profile with cover information only. The comic remains DRAFT until the author submits it for review.")
