@@ -226,6 +226,15 @@ class SecurityFilterIT extends AbstractBlackboxIT {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    @DisplayName("TC-SEC-021")
+    void emailTestEndpointIsNotPublic() throws Exception {
+        postJson("/test/email/util", """
+                {"to":"reader@example.com","subject":"test","content":"test"}
+                """)
+                .andExpect(status().isUnauthorized());
+    }
+
     // ── CSRF disabled ────────────────────────────────────────────────────────
 
     @Test

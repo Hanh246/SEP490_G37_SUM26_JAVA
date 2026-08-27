@@ -3,6 +3,7 @@ package com.sep.comiverse.unit.util;
 import com.sep.comiverse.util.EmailUtil;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sep.comiverse.client.SendGridClient;
 import com.sep.comiverse.exception.CustomException;
 import jakarta.mail.Session;
 import jakarta.mail.internet.InternetAddress;
@@ -22,12 +23,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
 
 @ExtendWith(MockitoExtension.class)
 class EmailUtilTest {
 
     @Mock
     private JavaMailSender mailSender;
+
+    @Mock
+    private SendGridClient sendGridClient;
 
     private MimeMessage message;
 
@@ -96,6 +101,45 @@ class EmailUtilTest {
                 () -> emailUtil.sendEmail("reader@example.com", "Subject", "<p>Body</p>", "Body")
         );
         verifyNoInteractions(mailSender);
+    }
+
+    @Test
+    void sendGridFailureReturnsRetryableGenericServiceError() {
+        doThrow(new RuntimeException("provider response must stay private"))
+                .when(sendGridClient)
+                .send(
+                        "ComiVerse <sender@example.com>",
+                        "reader@example.com",
+                        "Subject",
+                        "<p>Body</p>",
+                        true
+                );
+        EmailUtil emailUtil = new EmailUtil(
+                "sendgrid",
+                "",
+                "",
+                "",
+                "ComiVerse",
+                "",
+                "ComiVerse <onboarding@resend.dev>",
+                "ComiVerse <sender@example.com>",
+                mailSender,
+                new ObjectMapper(),
+                sendGridClient
+        );
+
+        CustomException error = assertThrows(
+                CustomException.class,
+                () -> emailUtil.sendEmail(
+                        "reader@example.com",
+                        "Subject",
+                        "<p>Body</p>",
+                        "Body"
+                )
+        );
+
+        assertEquals(503, error.getCode());
+        assertEquals("Email delivery service is temporarily unavailable.", error.getMessage());
     }
 
     private EmailUtil smtpEmailUtil(String password) {

@@ -1,12 +1,15 @@
 package com.sep.comiverse.unit.service;
 
 import com.sep.comiverse.dto.response.AdminStatisticsResponse;
+import com.sep.comiverse.entity.ComicEntity;
 import com.sep.comiverse.entity.GenreEntity;
 import com.sep.comiverse.entity.enums.ComicModerationStatus;
 import com.sep.comiverse.repository.IComicRepository;
 import com.sep.comiverse.repository.IGenreRepository;
 import com.sep.comiverse.repository.ISubmissionRepository;
 import com.sep.comiverse.repository.IUserRepository;
+import com.sep.comiverse.repository.IUserLikeRepository;
+import com.sep.comiverse.repository.IUserSaveRepository;
 import com.sep.comiverse.service.AdminStatisticsService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +21,7 @@ import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -30,6 +34,8 @@ class AdminStatisticsServiceTest {
     @Mock private IComicRepository comicRepository;
     @Mock private IGenreRepository genreRepository;
     @Mock private ISubmissionRepository submissionRepository;
+    @Mock private IUserLikeRepository userLikeRepository;
+    @Mock private IUserSaveRepository userSaveRepository;
 
     private AdminStatisticsService service;
 
@@ -39,7 +45,9 @@ class AdminStatisticsServiceTest {
                 userRepository,
                 comicRepository,
                 genreRepository,
-                submissionRepository
+                submissionRepository,
+                userLikeRepository,
+                userSaveRepository
         );
     }
 
@@ -58,7 +66,16 @@ class AdminStatisticsServiceTest {
                 new Object[]{"PROJECT_LEADER", 3L},
                 new Object[]{"ADMIN", 2L}
         ));
-        when(comicRepository.countByModerationStatusAndDeletedFalse(ComicModerationStatus.PUBLISHED)).thenReturn(42L);
+        when(comicRepository.findAllByDeletedFalseWithGenres()).thenReturn(
+                IntStream.range(0, 42)
+                        .mapToObj(index -> {
+                            ComicEntity comic = new ComicEntity();
+                            comic.setTitle("Published Comic " + index);
+                            comic.setModerationStatus(ComicModerationStatus.PUBLISHED);
+                            return comic;
+                        })
+                        .toList()
+        );
         when(genreRepository.count()).thenReturn(12L);
         when(genreRepository.findAll(any(Pageable.class))).thenReturn(new PageImpl<>(List.of(action)));
         when(submissionRepository.countByStatusIgnoreCaseAndDeletedFalse("pending")).thenReturn(7L);

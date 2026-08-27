@@ -207,7 +207,11 @@ public class EmailUtil {
             sendGridClient.send(sendGridFrom, toEmail, subject, content, isHtml);
         } catch (Exception e) {
             log.error("SendGrid email delivery failed for recipient domain {}", emailDomain(toEmail), e);
-            throw new CustomException(500, "Could not send email via SendGrid: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+            throw new CustomException(
+                    503,
+                    "Email delivery service is temporarily unavailable.",
+                    HttpStatus.SERVICE_UNAVAILABLE
+            );
         }
     }
 

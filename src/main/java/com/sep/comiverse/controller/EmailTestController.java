@@ -74,7 +74,6 @@ public class EmailTestController {
 
         Map<String, Object> result = new HashMap<>();
         result.put("recipient", email);
-        result.put("generatedOtp", otp);
         result.put("status", "OTP email sent successfully");
 
         return ResponseEntity.ok(BaseResponse.<Map<String, Object>>builder()

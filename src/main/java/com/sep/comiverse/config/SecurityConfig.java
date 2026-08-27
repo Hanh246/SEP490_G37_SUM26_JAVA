@@ -44,7 +44,6 @@ public class SecurityConfig {
             "/saves/**",
             "/sync/**",
             "/ws/**",
-            "/test/**",
             "/error",
             "/v3/api-docs/**",
             "/swagger-ui/**",
@@ -77,6 +76,7 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/forum-threads/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/forum-categories/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.POST, "/forum-threads/*/view").permitAll()
+                        .requestMatchers("/test/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2
