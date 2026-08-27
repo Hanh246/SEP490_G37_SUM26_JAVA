@@ -190,6 +190,18 @@ public class SubscriptionPlanService {
             createDefaultPlan("YEARLY", "Premium Yearly", new BigDecimal("790000"), BillingInterval.YEAR, 1, false, "Save more", 20);
             created = true;
         }
+        
+        // Auto-fix typo for Prenium Yearly
+        planRepository.findByCodeIgnoreCaseAndDeletedFalse("YEARLY1").ifPresent(plan -> {
+            if ("Prenium Yearly".equals(plan.getName()) || plan.getPrice().compareTo(new BigDecimal("10000000")) > 0) {
+                plan.setName("Premium Yearly");
+                plan.setPrice(new BigDecimal("49.99"));
+                plan.setBillingInterval(BillingInterval.YEAR);
+                plan.setIntervalCount(1);
+                planRepository.save(plan);
+            }
+        });
+        
         if (created) {
             log.info("Ensured default monthly and yearly subscription plans exist");
         }
