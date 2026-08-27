@@ -18,7 +18,6 @@ import com.sep.comiverse.repository.ITranslatorChapterSettlementRepository;
 import com.sep.comiverse.repository.ITranslatorEarningEntryRepository;
 import com.sep.comiverse.repository.IUserRepository;
 import com.sep.comiverse.security.UserPrincipal;
-import com.sep.comiverse.service.AuthorLicenseService;
 import com.sep.comiverse.service.CreatorPayoutAccountService;
 import com.sep.comiverse.service.CreatorPayoutService;
 import com.sep.comiverse.service.CreatorPayoutSettingsService;
@@ -65,7 +64,6 @@ class CreatorPayoutServiceTest {
     @Mock private StripeGatewayService stripeGatewayService;
     @Mock private CreatorPayoutSettingsService payoutSettingsService;
     @Mock private NamedParameterJdbcTemplate jdbcTemplate;
-    @Mock private AuthorLicenseService authorLicenseService;
 
     private CreatorPayoutService service;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -81,8 +79,7 @@ class CreatorPayoutServiceTest {
                 userRepository,
                 stripeGatewayService,
                 payoutSettingsService,
-                jdbcTemplate,
-                authorLicenseService
+                jdbcTemplate
         );
 
         ReflectionTestUtils.setField(service, "allowCurrentMonth", false);
@@ -216,27 +213,6 @@ class CreatorPayoutServiceTest {
         assertEquals(month, response.getPayoutMonth());
     }
 
-    @Test
-    void createRequestAuthorMustPassLicenseGateBeforePayoutCalculation() {
-        UserEntity author = user("AUTHOR");
-        when(userRepository.findByIdWithRole(author.getId())).thenReturn(Optional.of(author));
-        doThrow(new CustomException(
-                403,
-                "license inactive",
-                org.springframework.http.HttpStatus.FORBIDDEN
-        )).when(authorLicenseService).assertAuthorPayoutAllowed(author.getId());
-
-        CustomException error = assertThrows(
-                CustomException.class,
-                () -> service.createRequest(
-                        new UserPrincipal(author),
-                        request(lastClosedMonth(), "25.00")
-                )
-        );
-
-        assertEquals(403, error.getCode());
-        verifyNoInteractions(payoutProfileService);
-    }
 
     @Test
     void createRequestRejectsWhenStripePayoutProfileIsNotReady() {
@@ -501,7 +477,7 @@ class CreatorPayoutServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void createRequestActiveAuthorCreatesPendingPayoutFromViewAndFollowRevenue() {
+    void createRequestAuthorCreatesPendingPayoutWithoutLicenseGate() {
         UserEntity author = user("AUTHOR");
         author.setFullName("  Active Author  ");
         String month = lastClosedMonth();
@@ -567,8 +543,6 @@ class CreatorPayoutServiceTest {
         assertEquals(CreatorPayoutStatus.PENDING, saved.getStatus());
         assertEquals(account.getStripeConnectedAccountId(), saved.getStripeConnectedAccountId());
         assertEquals(CreatorPayoutStatus.PENDING, response.getStatus());
-
-        verify(authorLicenseService).assertAuthorPayoutAllowed(author.getId());
     }
 
     // ===== approve: State Transition / account snapshot =====
@@ -635,25 +609,19 @@ class CreatorPayoutServiceTest {
     }
 
     @Test
-    void approveAuthorRequestRequiresActiveLicense() {
+    void approveAuthorRequestDoesNotRequireLicenseVerification() {
         UUID payoutId = UUID.randomUUID();
         CreatorPayoutRequestEntity payout =
                 payout(payoutId, CreatorPayoutRole.AUTHOR, CreatorPayoutStatus.PENDING);
+        CreatorPayoutAccountEntity account = readyAccount(payout.getUserId(), "USD");
 
         when(payoutRequestRepository.findLockedById(payoutId)).thenReturn(Optional.of(payout));
-        doThrow(new CustomException(
-                403,
-                "license inactive",
-                org.springframework.http.HttpStatus.FORBIDDEN
-        )).when(authorLicenseService).assertAuthorPayoutAllowed(payout.getUserId());
+        when(payoutProfileService.requireReadyProfile(payout.getUserId())).thenReturn(account);
 
-        CustomException error = assertThrows(
-                CustomException.class,
-                () -> service.approve(payoutId, null)
-        );
+        var response = service.approve(payoutId, null);
 
-        assertEquals(403, error.getCode());
-        verifyNoInteractions(payoutProfileService);
+        assertEquals(CreatorPayoutStatus.APPROVED, payout.getStatus());
+        assertEquals(CreatorPayoutStatus.APPROVED, response.getStatus());
     }
 
     // ===== reject: State Transition =====
@@ -875,25 +843,22 @@ class CreatorPayoutServiceTest {
     }
 
     @Test
-    void payWithStripeAuthorRequestRequiresActiveLicense() {
+    void payWithStripeAuthorRequestDoesNotRequireLicenseVerification() throws Exception {
         UUID payoutId = UUID.randomUUID();
         CreatorPayoutRequestEntity payout =
                 payout(payoutId, CreatorPayoutRole.AUTHOR, CreatorPayoutStatus.APPROVED);
+        CreatorPayoutAccountEntity account = readyAccount(payout.getUserId(), "USD");
 
-        when(payoutRequestRepository.findLockedById(payoutId)).thenReturn(Optional.of(payout));
-        doThrow(new CustomException(
-                403,
-                "license inactive",
-                org.springframework.http.HttpStatus.FORBIDDEN
-        )).when(authorLicenseService).assertAuthorPayoutAllowed(payout.getUserId());
+        stubPayContext(payoutId, payout, account);
+        when(stripeGatewayService.createTransfer(
+                anyString(), any(), anyString(), any(), any(), anyString()))
+                .thenReturn(mapper.readTree("{\"id\":\"tr_author_no_license\"}"));
 
-        CustomException error = assertThrows(
-                CustomException.class,
-                () -> service.payWithStripe(payoutId)
-        );
+        var response = service.payWithStripe(payoutId);
 
-        assertEquals(403, error.getCode());
-        verifyNoInteractions(payoutProfileService, stripeGatewayService);
+        assertEquals(CreatorPayoutStatus.PAID, payout.getStatus());
+        assertEquals("tr_author_no_license", payout.getStripeTransferId());
+        assertEquals(CreatorPayoutStatus.PAID, response.getStatus());
     }
 
     @Test
@@ -1147,7 +1112,7 @@ class CreatorPayoutServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void getOverviewAuthorLicenseOverridesOtherwiseRequestableState() {
+    void getOverviewAuthorDoesNotRequireLicenseVerification() {
         UserEntity author = user("AUTHOR");
         String month = lastClosedMonth();
         CreatorPayoutAccountEntity account = readyAccount(author.getId(), "USD");
@@ -1183,12 +1148,10 @@ class CreatorPayoutServiceTest {
                 any(RowMapper.class)))
                 .thenReturn(List.of(revenue));
 
-        when(authorLicenseService.isAuthorPayoutAllowed(author.getId())).thenReturn(false);
-
         var response = service.getOverview(new UserPrincipal(author), month);
 
-        assertFalse(Boolean.TRUE.equals(response.getRequestable()));
-        assertTrue(response.getNotRequestableReason().contains("license is verified"));
+        assertTrue(Boolean.TRUE.equals(response.getRequestable()));
+        assertNull(response.getNotRequestableReason());
     }
 
     // ===== getAdminPayouts =====
