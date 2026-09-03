@@ -45,4 +45,8 @@ key.env
 ### Local Test Overrides ###
 src/test/resources/integration/h2-init.sql
 
+### Junk / Temp files ###
+_od_page.html
+package-lock.json
+tools/
 
